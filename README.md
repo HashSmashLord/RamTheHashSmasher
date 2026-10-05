@@ -11,7 +11,8 @@ and scoring pipeline works.
 | Piece | State |
 |---|---|
 | PRD + HashSmash technical brief | **done** — grounded in the real competition repo, vendored at `reference/hash-smash/` |
-| Orchestration backend (`server/`) | **built, tested (117 tests), mocked.** Fee ledger, budget→slot allocator, RAM slots, read-only coordinator, moderated idea queue, HTTP API all real; fee numbers and LLM calls are mock by default |
+| Orchestration backend (`server/`) | **built, tested (131 tests), mocked.** Fee ledger, budget→slot allocator, RAM slots, read-only coordinator, moderated idea queue, HTTP API all real; fee numbers and LLM calls are mock by default |
+| Per-RAM models (OpenRouter) | **done, wired, mock by default.** Each of the six exploratory tracks carries its launch-roster model in `server/lib/targets.js` (RAM 1 `sha256-r31` → `anthropic/claude-opus-5.5`, 2 `sha256-r32` → `anthropic/claude-fable-5.1`, 3 `sha3-256-r5` → `openai/gpt-6.1-sol-pro`, 4 `sha3-256-r6` → `z-ai/glm-5.3-prime`, 5 `blake3-r1` → `deepseek/deepseek-v4-pro`, 6 `blake3-r2` → `qwen/qwen3.8-max-prime`; see `docs/PRD.md` "Decided"). Every slot sends its own model on each LLM call, a 7th+ slot inherits its track's model, and `/api/slots` shows it. Optional `RAMHERD_LLM_MODEL` forces one model on every slot (testing). Calls are still mock unless `RAMHERD_LIVE=true` **and** `OPENROUTER_API_KEY` are both set; no live call to any roster model has been made yet |
 | Frontend dashboard (`src/`) | **built, demoable, mocked.** Real UI/UX against a mock data layer — see "Mock data and the API swap point" below |
 | Solver-agent loop → real HashSmash pipeline (`server/lib/hashsmash.js`) | **pipeline integration working end to end, locally, for `sha256-r31-exploratory`.** A RAM slot clones the vendored repo, writes a clearly labeled harness *draft* (the organizer's own `draft_claim()` template, no attack claimed), and runs HashSmash's real `local_tracks.py check` and `hashsmash_pipeline.py intake`. Result: `check` → `mechanically_valid`, `intake` → `draft_not_submitted` with a real `package_sha256` and evidence file. Opt-in with `RAMHERD_PIPELINE=local`. **Not done:** no research content yet (the LLM doesn't write real candidates), no judge run (paid, gated off), no live submission (not implemented on purpose). The real accepted r31 candidate can't pass local intake here because its experiment needs Docker, which isn't installed. See "Real HashSmash pipeline" below |
 | Real pump.fun token / real fee claiming / real compute spend | **blocked**, same as every real-money action this workspace runs into — needs the operator to do those parts directly |
@@ -116,10 +117,11 @@ Nothing in `index.html`, `styles.css`, or `app.js` needs to change for that swap
 
 - Fees collected, compute budget/spend, and active-slot counts — a small live-drifting mock
   state (`tickMockState`), not real pump.fun data.
-- The 9-RAM results board — real HashSmash track IDs and lane paths
+- The 6-RAM results board: the launch roster, one RAM per real HashSmash track
   (`sha256-r31`, `sha256-r32`, `sha3-256-r5`, `sha3-256-r6`, `blake3-r1`, `blake3-r2`, matching
   `reference/hash-smash/tracks/` and `reference/hash-smash/lanes/exploratory/candidates/`),
-  with invented but specific per-agent activity text.
+  each row showing that RAM's real assigned OpenRouter model (same slugs as
+  `server/lib/targets.js`), with invented but specific per-agent activity text.
 - Coordinator chat — seeded with 5 realistic Q&A pairs plus keyword-matched replies for
   anything else typed in; a real backend would route this to an actual model call.
 - Idea submission — client-side only; "submitting" increments a mock queue-position counter.
