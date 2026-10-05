@@ -1,0 +1,498 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-05T15:23:54Z",
+  "title": "Design System: RAMherd",
+  "extensions": {
+    "colorMeta": {
+      "pen": {
+        "role": "primary",
+        "displayName": "Pen Blue-Black",
+        "canonical": "oklch(34.7% 0.106 265.7)",
+        "tonalRamp": [
+          "#010037",
+          "#0c1e57",
+          "#273e7a",
+          "#445e9d",
+          "#6480c2",
+          "#85a3e8",
+          "#a8c8ff",
+          "#cdeeff"
+        ]
+      },
+      "pen-deep": {
+        "role": "primary",
+        "displayName": "Pen Deep",
+        "canonical": "oklch(28.9% 0.096 266.6)",
+        "tonalRamp": [
+          "#010133",
+          "#101f53",
+          "#2a3e75",
+          "#485f98",
+          "#6880bc",
+          "#89a3e2",
+          "#adc8ff",
+          "#d1eeff"
+        ]
+      },
+      "pen-soft": {
+        "role": "primary",
+        "displayName": "Pen Soft",
+        "canonical": "oklch(50.3% 0.094 271.7)",
+        "tonalRamp": [
+          "#040132",
+          "#161e52",
+          "#313d74",
+          "#4e5d97",
+          "#6e7fbb",
+          "#90a2e1",
+          "#b3c6ff",
+          "#d8ecff"
+        ]
+      },
+      "judge": {
+        "role": "secondary",
+        "displayName": "Judge Red",
+        "canonical": "oklch(51.1% 0.182 28.7)",
+        "tonalRamp": [
+          "#2d0000",
+          "#510000",
+          "#752019",
+          "#9a4238",
+          "#c06458",
+          "#e68779",
+          "#ffab9c",
+          "#ffd0c1"
+        ]
+      },
+      "felt": {
+        "role": "neutral",
+        "displayName": "Felt",
+        "canonical": "oklch(37.3% 0.057 166.9)",
+        "tonalRamp": [
+          "#001206",
+          "#002d1f",
+          "#204c3c",
+          "#406c5a",
+          "#618e7b",
+          "#83b19d",
+          "#a7d5c1",
+          "#cbfbe6"
+        ]
+      },
+      "felt-deep": {
+        "role": "neutral",
+        "displayName": "Felt Deep",
+        "canonical": "oklch(31.4% 0.046 168.3)",
+        "tonalRamp": [
+          "#001108",
+          "#082c21",
+          "#274a3d",
+          "#476a5c",
+          "#678c7d",
+          "#89afa0",
+          "#add3c4",
+          "#d2f9e9"
+        ]
+      },
+      "felt-rule": {
+        "role": "neutral",
+        "displayName": "Felt Rule",
+        "canonical": "rgba(232, 240, 234, 0.16)",
+        "tonalRamp": [
+          "#080d09",
+          "#212722",
+          "#3d443f",
+          "#5c635e",
+          "#7d847f",
+          "#a0a7a2",
+          "#c4cbc6",
+          "#e9f1eb"
+        ]
+      },
+      "felt-ink": {
+        "role": "neutral",
+        "displayName": "Felt Ink",
+        "canonical": "oklch(94.7% 0.012 153.7)",
+        "tonalRamp": [
+          "#080d09",
+          "#212722",
+          "#3d443f",
+          "#5c635e",
+          "#7d847f",
+          "#a0a7a2",
+          "#c4cbc6",
+          "#e9f1eb"
+        ]
+      },
+      "felt-ink-soft": {
+        "role": "neutral",
+        "displayName": "Felt Ink Soft",
+        "canonical": "oklch(81.8% 0.066 159.1)",
+        "tonalRamp": [
+          "#001202",
+          "#002e19",
+          "#1d4d35",
+          "#3e6d54",
+          "#5f8f74",
+          "#81b296",
+          "#a5d7ba",
+          "#c9fddf"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(97.0% 0.010 93.6)",
+        "tonalRamp": [
+          "#0c0b07",
+          "#262520",
+          "#44423c",
+          "#63615b",
+          "#84827c",
+          "#a7a59e",
+          "#cbc9c2",
+          "#f0eee7"
+        ]
+      },
+      "paper-shade": {
+        "role": "neutral",
+        "displayName": "Paper Shade",
+        "canonical": "oklch(92.8% 0.018 92.7)",
+        "tonalRamp": [
+          "#0e0b04",
+          "#28251b",
+          "#454237",
+          "#656156",
+          "#868277",
+          "#a9a599",
+          "#cdc9bc",
+          "#f2eee1"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Ruling",
+        "canonical": "oklch(83.3% 0.034 261.0)",
+        "tonalRamp": [
+          "#040b19",
+          "#1c2536",
+          "#384254",
+          "#566275",
+          "#778397",
+          "#99a6bb",
+          "#bdcae0",
+          "#e2efff"
+        ]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Ruling Strong",
+        "canonical": "oklch(62.1% 0.075 261.2)",
+        "tonalRamp": [
+          "#00072a",
+          "#0f2349",
+          "#2b416a",
+          "#49618c",
+          "#6983b0",
+          "#8ba6d5",
+          "#aecafb",
+          "#d3f0ff"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Printed Ink",
+        "canonical": "oklch(21.3% 0.013 264.3)",
+        "tonalRamp": [
+          "#080b11",
+          "#22252b",
+          "#3f4249",
+          "#5e6169",
+          "#7e828a",
+          "#a1a5ad",
+          "#c5c9d2",
+          "#eaeff7"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Printed Ink Soft",
+        "canonical": "oklch(43.5% 0.026 268.1)",
+        "tonalRamp": [
+          "#070b16",
+          "#202532",
+          "#3c4250",
+          "#5b6170",
+          "#7c8292",
+          "#9ea5b6",
+          "#c2c9db",
+          "#e7eeff"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The sheet title in the header box: wide and heavy, max 15ch. The build sets the hook sentence here; the product name lives on the strip."
+      },
+      "name": {
+        "displayName": "Name",
+        "purpose": "\"RAMherd\" on the felt strip: the Display voice at 1.15rem."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The h2 opening each part of the sheet: the board, the coordinator, the slip, the regulations."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "h3 inside a part: the notice's heading, the regulation sub-heads."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Prose at 1rem/1.55, max 68ch, including the event line, fund labels, entrant ids and controls. Tabular figures throughout."
+      },
+      "small": {
+        "displayName": "Small",
+        "purpose": "Secondary prose at 0.92rem: the table and log text, section leads' siblings, the notice, the regulations, field labels, the strip and footer lines."
+      },
+      "fine": {
+        "displayName": "Fine",
+        "purpose": "Sub-lines at 0.82rem with line-height 1.35: fund sub-lines, the key, the entrant's approach, hints, the mock-feed note."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "The three fund values in pen at 1.35rem; the only place a number grows past body size."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Column heads, row heads, by-round terms, the stamp and the Q/A marks: condensed (wdth 78-80), tracked, uppercase, 0.74rem. Never a kicker above a headline."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "The pen button's label: condensed (wdth 85), tracked, uppercase."
+      }
+    },
+    "shadows": [
+      {
+        "name": "pinned-sheet",
+        "value": "0 1px 2px rgba(0, 0, 0, 0.25), 0 24px 48px -20px rgba(0, 0, 0, 0.6)",
+        "purpose": "The sheet pinned on the felt, and nothing else. A 1px contact edge plus a long soft fall."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The one easing. Exponential ease-out from a visible default, used by the pen write and the meter."
+      },
+      {
+        "name": "ink-write",
+        "value": "clip-path: inset(0 100% 0 0) -> inset(0 0 0 0); 0.55s var(--ease-out) both",
+        "purpose": "\"The pen writes\": a changed cell is re-inked left to right. Added as .writing, removed on animationend. Never on first paint. Keyframes are defined only under prefers-reduced-motion: no-preference, and the script skips the class under reduce."
+      },
+      {
+        "name": "pen-meter-fill",
+        "value": "transform 0.6s var(--ease-out)",
+        "purpose": "The pen meter's fill (scaleX from the left) on a budget change; suppressed with .no-transition on first paint."
+      },
+      {
+        "name": "button-face",
+        "value": "background-color 0.15s ease, border-color 0.15s ease",
+        "purpose": "The pen button's hover; the only hover transition on the sheet."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "rows-to-blocks",
+        "value": "640px",
+        "purpose": "max-width: table rows become ruled blocks; ask form and fund rows stack; by-round strip stacks."
+      },
+      {
+        "name": "sheet-inset-md",
+        "value": "700px",
+        "purpose": "min-width: sheet inset 2rem, title cell 1.8rem, board/log gutter 1.6rem."
+      },
+      {
+        "name": "header-stacks",
+        "value": "860px",
+        "purpose": "max-width: header box, slip row and regulations go single-column; strip links collapse behind the ruled toggle."
+      },
+      {
+        "name": "board-stacks",
+        "value": "1000px",
+        "purpose": "max-width: the board row stacks and the log scrolls in a 36rem cap; above it the log takes the board's height."
+      },
+      {
+        "name": "sheet-inset-lg",
+        "value": "1100px",
+        "purpose": "min-width: sheet inset 2.2rem, title cell 2rem, board/log gutter 2rem."
+      },
+      {
+        "name": "max",
+        "value": "1320px",
+        "purpose": "The centred column's maximum width."
+      }
+    ],
+    "font": {
+      "family": "Archivo",
+      "source": "src/fonts/archivo-variable.woff2 (self-hosted, the only face)",
+      "axes": {
+        "wght": "100\u2013900",
+        "wdth": "62%\u2013125%"
+      },
+      "widthsUsed": {
+        "title-and-name": 112,
+        "prose": 100,
+        "button": 85,
+        "stamp-and-marks": 80,
+        "column-heads": 78
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Pen Button",
+      "kind": "button",
+      "refersTo": "button-pen",
+      "description": "The one button on the sheet: a pen-ink face with a condensed uppercase label. Hover presses harder (pen-deep); disabled dries to pen-soft and rewrites its label (\"Handing in\u2026\").",
+      "html": "<button class=\"ds-btn-pen\" type=\"button\">Hand in for review</button>",
+      "css": ".ds-btn-pen { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; background: var(--pen, #1f3570); color: var(--paper, #f7f5ee); border: 1px solid var(--pen, #1f3570); border-radius: 2px; padding: 0.68rem 1.15rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); font-weight: 700; font-stretch: 85%; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.85rem; cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease; } .ds-btn-pen:hover { background: var(--pen-deep, #15265a); border-color: var(--pen-deep, #15265a); } .ds-btn-pen:focus-visible { outline: 2px solid var(--pen, #1f3570); outline-offset: 3px; } .ds-btn-pen:disabled { background: var(--pen-soft, #51609a); border-color: var(--pen-soft, #51609a); cursor: default; }"
+    },
+    {
+      "name": "Ruled Control",
+      "kind": "input",
+      "refersTo": "control-ruled",
+      "description": "A text field set into the sheet as a ruled box: paper ground, strong-ruling border, pen text and caret, pen focus rule. Red never marks focus.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Contact <span class=\"ds-optional\">(optional)</span></span><input class=\"ds-ctl\" type=\"text\" placeholder=\"Email or @handle, if you want credit or a reply\"></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 0.35rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); color: var(--ink, #16191f); } .ds-field-label { font-weight: 600; font-size: 0.92rem; } .ds-optional { color: var(--ink-soft, #4b5160); font-weight: 400; } .ds-ctl { width: 100%; background: var(--paper, #f7f5ee); border: 1px solid var(--rule-strong, #6d87b4); border-radius: 2px; padding: 0.65rem 0.75rem; color: var(--pen, #1f3570); caret-color: var(--pen, #1f3570); font: inherit; font-size: 0.95rem; font-variant-numeric: tabular-nums; } .ds-ctl::placeholder { color: var(--ink-soft, #4b5160); opacity: 1; } .ds-ctl:focus-visible { outline: 2px solid var(--pen, #1f3570); outline-offset: 1px; border-color: var(--pen, #1f3570); } .ds-ctl:disabled { color: var(--pen-soft, #51609a); background: var(--paper-shade, #ebe7da); }"
+    },
+    {
+      "name": "Felt Strip",
+      "kind": "nav",
+      "refersTo": "felt-strip",
+      "description": "The board's nameplate: a flat felt-deep band with the name wide and heavy, in-page links in soft felt ink, and the external HashSmash link at the far right with a drawn arrow.",
+      "html": "<header class=\"ds-strip\"><a class=\"ds-strip-name\" href=\"#\">RAMherd</a><nav class=\"ds-strip-nav\"><a href=\"#\">The board</a><a href=\"#\">Coordinator</a><a href=\"#\">Hand in an idea</a><a href=\"#\">What counts</a><a class=\"ds-strip-ext\" href=\"#\">HashSmash <svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4.5 11.5l7-7M6 4.5h5.5V10\"/></svg></a></nav></header>",
+      "css": ".ds-strip { display: flex; align-items: center; gap: 1.6rem; min-height: 3.4rem; padding: 0 1.5rem; background: var(--felt-deep, #16392d); border-bottom: 1px solid var(--felt-rule, rgba(232, 240, 234, 0.16)); font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); } .ds-strip-name { font-weight: 800; font-stretch: 112%; font-size: 1.15rem; letter-spacing: -0.02em; color: var(--felt-ink, #e8f0ea); text-decoration: none; } .ds-strip-nav { display: flex; align-items: center; gap: 1.4rem; flex: 1; } .ds-strip-nav a { color: var(--felt-ink-soft, #9fd1b4); text-decoration: none; font-size: 0.92rem; font-weight: 500; display: inline-flex; align-items: center; gap: 0.3rem; } .ds-strip-nav a:hover { color: var(--felt-ink, #e8f0ea); text-decoration: underline; text-underline-offset: 0.22em; } .ds-strip-nav a:focus-visible { outline: 2px solid var(--felt-ink, #e8f0ea); outline-offset: 3px; } .ds-strip-ext { margin-left: auto; } .ds-strip-ext svg { width: 12px; height: 12px; }"
+    },
+    {
+      "name": "Judge Mark",
+      "kind": "custom",
+      "refersTo": "judge-mark",
+      "description": "HashSmash's stamp: the only red on the sheet and the only boxed word. A ruled, unfilled, condensed uppercase mark for a review state (in review; accepted and rejected come only from their judge). Not a chip: it never carries a fill, an icon, or a dismiss.",
+      "html": "<span class=\"ds-judge-mark\">in review</span>",
+      "css": ".ds-judge-mark { display: inline-block; color: var(--judge, #b8271f); border: 1.5px solid currentColor; border-radius: 2px; padding: 0.15rem 0.45rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); font-size: 0.7rem; font-weight: 700; font-stretch: 80%; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }"
+    },
+    {
+      "name": "Results Row",
+      "kind": "custom",
+      "refersTo": "sheet",
+      "description": "One written row of the wallchart: entrant, round, written status (drawn glyph + word + clock) over the activity, and the red-ruled judge margin. The second row shows stale ink.",
+      "html": "<table class=\"ds-results\"><thead><tr><th>Entrant</th><th>Round</th><th>Now</th><th class=\"ds-c-judge\">Judge</th></tr></thead><tbody><tr><td><span class=\"ds-entrant-id\">ram-05</span><span class=\"ds-entrant-approach\">SAT solver \u2014 Kissat</span></td><td><span class=\"ds-round-id\">SHA3-256 r5</span><span class=\"ds-round-path\">lanes/exploratory/candidates/sha3-256-r5/</span></td><td><div class=\"ds-now-line\"><svg class=\"ds-glyph\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"6\"/><path d=\"M5.3 8.3l1.9 1.9 3.6-4\"/></svg><span>Submitted</span><span class=\"ds-now-clock\">written 10m ago</span></div><p class=\"ds-now-activity\">Candidate written to lanes/exploratory/candidates/sha3-256-r5/ and queued via hashsmash_pipeline.py intake.</p></td><td class=\"ds-c-judge\"><span class=\"ds-judge-mark\">in review</span></td></tr><tr class=\"ds-stale\"><td><span class=\"ds-entrant-id\">ram-07</span><span class=\"ds-entrant-approach\">Differential search</span></td><td><span class=\"ds-round-id\">BLAKE3 r1</span><span class=\"ds-round-path\">lanes/exploratory/candidates/blake3-r1/</span></td><td><div class=\"ds-now-line\"><svg class=\"ds-glyph\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"6\" stroke-dasharray=\"2.4 2.2\"/></svg><span>Idle</span><span class=\"ds-now-clock\">written 7m ago</span></div><p class=\"ds-now-activity\">Waiting on this epoch's next budget tick \u2014 last branch exhausted without a usable trail.</p></td><td class=\"ds-c-judge\"><span class=\"ds-judge-none\">\u2014</span></td></tr></tbody></table>",
+      "css": ".ds-results { width: 100%; border-collapse: collapse; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); font-size: 0.92rem; color: var(--ink, #16191f); background: var(--paper, #f7f5ee); font-variant-numeric: tabular-nums; } .ds-results th { text-align: left; font-size: 0.74rem; font-weight: 700; font-stretch: 78%; text-transform: uppercase; letter-spacing: 0.07em; padding: 0.5rem 0.7rem 0.5rem 0; border-bottom: 2px solid var(--rule-strong, #6d87b4); } .ds-results td { padding: 0.85rem 0.7rem 0.85rem 0; border-bottom: 1px solid var(--rule, #bcc9df); vertical-align: top; } .ds-results .ds-c-judge { border-left: 1px solid var(--judge, #b8271f); padding-left: 0.7rem; padding-right: 0; width: 6.2rem; } .ds-entrant-id { display: block; color: var(--pen, #1f3570); font-weight: 700; font-size: 0.95rem; } .ds-entrant-approach { display: block; color: var(--ink-soft, #4b5160); font-size: 0.8rem; line-height: 1.35; margin-top: 0.2rem; } .ds-round-id { display: block; color: var(--pen, #1f3570); font-weight: 600; } .ds-round-path { display: block; color: var(--ink-soft, #4b5160); font-size: 0.74rem; line-height: 1.35; margin-top: 0.2rem; } .ds-now-line { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; color: var(--pen, #1f3570); font-weight: 600; margin-bottom: 0.3rem; } .ds-glyph { width: 15px; height: 15px; flex: none; } .ds-now-clock { color: var(--ink-soft, #4b5160); font-weight: 400; font-size: 0.82rem; margin-left: 0.15rem; } .ds-now-activity { margin: 0; color: var(--pen, #1f3570); font-size: 0.9rem; line-height: 1.5; max-width: 62ch; } .ds-judge-mark { display: inline-block; color: var(--judge, #b8271f); border: 1.5px solid currentColor; border-radius: 2px; padding: 0.15rem 0.45rem; font-size: 0.7rem; font-weight: 700; font-stretch: 80%; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; } .ds-judge-none { color: var(--ink-soft, #4b5160); } .ds-stale .ds-entrant-id, .ds-stale .ds-round-id, .ds-stale .ds-now-line, .ds-stale .ds-now-activity { color: var(--pen-soft, #51609a); } .ds-stale .ds-now-activity { font-weight: 400; }"
+    },
+    {
+      "name": "Fund Row with Pen Meter",
+      "kind": "custom",
+      "refersTo": "pen-meter",
+      "description": "One ruled fund row from the header box: a printed term beside a pen figure with its \"of\" denominator, and the drawn pen-rule meter beneath.",
+      "html": "<dl class=\"ds-fund\"><div class=\"ds-fund-row\"><dt>Compute spent, this 24h epoch</dt><dd class=\"ds-fund-value\">$268.42 <span class=\"ds-fund-of\">of $400.00</span></dd><dd class=\"ds-fund-sub\"><span class=\"ds-pen-meter\" aria-hidden=\"true\"><span style=\"transform: scaleX(0.671)\"></span></span></dd></div><div class=\"ds-fund-row\"><dt>RAMs funded</dt><dd class=\"ds-fund-value\">9 of 12</dd><dd class=\"ds-fund-sub\">budget-limited; more fees raise the ceiling</dd></div></dl>",
+      "css": ".ds-fund { margin: 0; display: flex; flex-direction: column; background: var(--paper, #f7f5ee); border: 1.5px solid var(--rule-strong, #6d87b4); font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); color: var(--ink, #16191f); font-variant-numeric: tabular-nums; } .ds-fund-row { display: grid; grid-template-columns: 1fr auto; column-gap: 1rem; row-gap: 0.25rem; align-items: baseline; padding: 1rem 1.4rem; border-bottom: 1px solid var(--rule, #bcc9df); } .ds-fund-row:last-child { border-bottom: 0; } .ds-fund-row dt { font-weight: 600; font-size: 0.95rem; } .ds-fund-row dd { margin: 0; } .ds-fund-value { color: var(--pen, #1f3570); font-weight: 700; font-size: 1.35rem; text-align: right; white-space: nowrap; } .ds-fund-of { color: var(--pen-soft, #51609a); font-weight: 500; font-size: 0.95rem; } .ds-fund-sub { grid-column: 1 / -1; color: var(--ink-soft, #4b5160); font-size: 0.82rem; } .ds-pen-meter { display: block; height: 7px; margin-top: 0.3rem; border: 1px solid var(--rule-strong, #6d87b4); background: var(--paper, #f7f5ee); } .ds-pen-meter > span { display: block; height: 100%; width: 100%; background: var(--pen, #1f3570); transform-origin: left center; transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1); }"
+    },
+    {
+      "name": "Coordinator Log Entry",
+      "kind": "custom",
+      "refersTo": "sheet",
+      "description": "One Q&A written in the log: Q and A marks in the condensed voice down a 1.5rem column, the question printed, the answer in pen. A pending answer reads \"Writing\u2026\" in pen-soft.",
+      "html": "<ol class=\"ds-log\"><li class=\"ds-log-pending\"><span class=\"ds-log-mark\">Q</span><p class=\"ds-log-q\">Has anything been submitted yet?</p><span class=\"ds-log-mark\">A</span><p class=\"ds-log-a\">Writing\u2026</p></li><li><span class=\"ds-log-mark\">Q</span><p class=\"ds-log-q\">Is SHA-256 broken?</p><span class=\"ds-log-mark\">A</span><p class=\"ds-log-a\">No. Nothing on this board is a claim that SHA-256, SHA3-256, or BLAKE3 is broken. We're working reduced-round and exploratory tracks inside HashSmash's own competition structure.</p></li></ol>",
+      "css": ".ds-log { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule, #bcc9df); background: var(--paper, #f7f5ee); font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); color: var(--ink, #16191f); } .ds-log li { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); row-gap: 0.4rem; padding: 0.85rem 0; border-bottom: 1px solid var(--rule, #bcc9df); } .ds-log-mark { font-size: 0.72rem; font-weight: 700; font-stretch: 80%; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft, #4b5160); padding-top: 0.25rem; } .ds-log-q, .ds-log-a { margin: 0; font-size: 0.92rem; line-height: 1.55; } .ds-log-q { font-weight: 600; } .ds-log-a { color: var(--pen, #1f3570); } .ds-log-pending .ds-log-a { color: var(--pen-soft, #51609a); }"
+    },
+    {
+      "name": "Part Opener",
+      "kind": "custom",
+      "refersTo": "sheet",
+      "description": "How a part of the sheet begins: the printed double rule (1px + 4px gap + 1px in strong ruling), then the Headline and its lead in soft printed ink. Nothing on the sheet is a card; parts are opened by rules.",
+      "html": "<section class=\"ds-part\"><h2 class=\"ds-part-h2\">The board, live</h2><p class=\"ds-part-lead\">One row per funded RAM: its round, its approach, what it is doing now, and when the row was last written.</p></section>",
+      "css": ".ds-part { background: var(--paper, #f7f5ee); padding: 0 0 1rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); color: var(--ink, #16191f); } .ds-part::before { content: ''; display: block; height: 4px; margin-bottom: 1.4rem; border-top: 1px solid var(--rule-strong, #6d87b4); border-bottom: 1px solid var(--rule-strong, #6d87b4); } .ds-part-h2 { margin: 0; font-size: clamp(1.45rem, 2.4vw, 1.85rem); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; text-wrap: balance; } .ds-part-lead { color: var(--ink-soft, #4b5160); max-width: 60ch; margin: 0.4rem 0 0; line-height: 1.55; }"
+    },
+    {
+      "name": "Confirmation Slip",
+      "kind": "custom",
+      "refersTo": "control-ruled",
+      "description": "The chart-keeper's written receipt after a hand-in: a pen-ruled box with a drawn tick. It is pen, not red, because it is written by the chart, not stamped by the judge.",
+      "html": "<p class=\"ds-confirm\" role=\"status\"><svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"6\"/><path d=\"M5.3 8.3l1.9 1.9 3.6-4\"/></svg><span><strong>Received.</strong> Queued for human review, position 4. No RAM sees it until a reviewer approves it.</span></p>",
+      "css": ".ds-confirm { display: flex; gap: 0.6rem; align-items: flex-start; border: 1.5px solid var(--pen, #1f3570); background: var(--paper, #f7f5ee); padding: 0.8rem 0.9rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); font-size: 0.9rem; line-height: 1.55; color: var(--pen, #1f3570); margin: 0; } .ds-confirm svg { width: 16px; height: 16px; flex: none; margin-top: 0.15em; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Tournament Wallchart",
+    "overview": "RAMherd's page is the results chart pinned in the hall between rounds. A bottle-green noticeboard felt owns the whole ground, the strip at the top and the footer. One tall off-white paper sheet is pinned on it and owns everything else: the ruled header box with the fund printed in it, the results board, the coordinator log, the idea slip, the regulations. Nothing floats above the sheet and nothing sits beside it; every part of the page is a part of that one sheet, opened by a printed double rule.\n\nThree inks do all the talking. Printed black is what the organiser set before the hall opened: headings, column heads, prose, regulations. Blue-black pen is what gets written live by whoever keeps the chart: the fund figures, each entrant's row, every answer in the log, and every control a visitor touches. One judge red is reserved for HashSmash's own review states and the ruled judge margin, and is used nowhere else; it never marks focus, error or emphasis. Feint blue rulings carry the grid. The scene is light: a hall under fluorescent tubes, flat colour, no gradients, no imagery, a drawn weave on the felt rather than a photographed one.\n\nA single grotesk with a real width axis (Archivo variable, self-hosted) does the work two families would otherwise do: wide and heavy for the sheet title and the name on the strip, condensed and tracked for column heads and stamps, normal for everything else, tabular figures wherever a number sits. Status is written, not chipped: a word, a small drawn glyph, and a clock. Rows nobody has written to for a while thin their ink. The world has one motion, \"the pen writes\": a changed cell re-inks left to right; nothing else moves.",
+    "keyCharacteristics": [
+      "One sheet on one wall: felt ground, a single paper surface, no cards, no panels, no second surface colour.",
+      "Three inks with fixed jobs: printed black, pen blue-black, judge red; no second accent.",
+      "Feint blue rulings and printed double rules carry all structure; borders are rulings, never outlines of boxes-for-their-own-sake.",
+      "One typeface, three widths: 112 for the title and name, 78\u201385 for column heads, stamps and buttons, 100 for prose.",
+      "Written status: word plus drawn glyph plus clock; stale rows thin to a paler pen; the judge's stamp is the only red.",
+      "One motion: a left-to-right re-ink on changed cells, off entirely under reduced motion.",
+      "Near-square geometry: a 2px hairline radius on the sheet, controls, stamp and toggle; nothing rounder."
+    ],
+    "rules": [
+      {
+        "name": "The Three Inks Rule",
+        "body": "Printed black is what the organiser set; pen blue-black is anything written live or touched by the visitor; judge red is HashSmash's verdict and the judge margin. A colour outside those three jobs is a fourth ink and does not exist.",
+        "section": "colors"
+      },
+      {
+        "name": "The Red Is The Judge Rule",
+        "body": "Judge Red appears only in the `judge-mark` stamp and the ruled left edge of the Judge column. It never marks focus, validation, errors, warnings or emphasis. Focus is a 2px pen outline at 3px offset on the sheet, a felt-ink outline on the felt.",
+        "section": "colors"
+      },
+      {
+        "name": "The Rulings Carry The Grid Rule",
+        "body": "Structure is drawn with rulings (`rule`, `rule-strong`) and printed double rules, never with background tints, filled bands, zebra stripes or boxed cards. The sheet has one tone; `paper-shade` is reserved for a disabled control.",
+        "section": "colors"
+      },
+      {
+        "name": "The Width Axis Rule",
+        "body": "Hierarchy is carried by width and weight, not by a second family. 112 wide for the title and the name, 78\u201385 condensed for column heads, stamps, marks and buttons, 100 for everything else. A second typeface is a fourth ink.",
+        "section": "typography"
+      },
+      {
+        "name": "The Column Head Rule",
+        "body": "The condensed, tracked, uppercase voice belongs to column heads, row heads, stamps and buttons: things that label a cell. It is never set above a headline as a kicker or eyebrow.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Every number sits in tabular figures so a rewritten value does not shift its neighbours. A fund figure is the only place a number grows past body size (1.35rem).",
+        "section": "typography"
+      },
+      {
+        "name": "The One Sheet Rule",
+        "body": "There is one surface on the wall. Nothing else casts a shadow, nothing floats above the sheet, and no part of the sheet is a second, inset surface. If a new element needs to be \"on top\", it is drawn as a ruled box on the sheet instead.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do write every live or visitor-touched value in `pen` (#1f3570) and every organiser-set word in `ink` (#16191f); if a value can change while the page is open, it is pen.",
+      "Do keep Judge Red (#b8271f) to the `judge-mark` stamp and the ruled Judge margin; show focus as a 2px pen outline (felt-ink on the felt).",
+      "Do draw structure with rulings: 1px `rule` (#bcc9df) between rows, 1.5px `rule-strong` (#6d87b4) around printed boxes, and the printed double rule (1px + 4px + 1px) to open each part of the sheet.",
+      "Do carry hierarchy on Archivo's width axis: wdth 112 at 800 for the title and name, wdth 78\u201385 at 700 uppercase for column heads, stamps and buttons, wdth 100 for prose; tabular figures on every number.",
+      "Do write status as a word, a drawn 15px glyph and a clock in one line, with fixed cell geometry across every state, and thin a row to `pen-soft` after 300 seconds without a write.",
+      "Do re-ink a changed cell left to right (0.55s, `cubic-bezier(0.16, 1, 0.3, 1)`), diff rows by key, never animate the first paint, and skip the motion under reduced motion.",
+      "Do keep one surface: the paper sheet with its pinned-sheet shadow; set new elements into it as ruled boxes.",
+      "Do keep the legend beneath the table fixed and in one place."
+    ],
+    "donts": [
+      "Don't add chips, pills, badges or filled status tokens; status is written, and the judge's stamp is the only boxed word.",
+      "Don't add cards, panels, tinted bands, zebra stripes or a second surface colour on the sheet; `paper-shade` is for a disabled control only.",
+      "Don't introduce a second accent, a success green, a warning amber, or any colour outside the three inks and the rulings.",
+      "Don't set the condensed uppercase voice above a headline as a kicker or eyebrow; it labels cells, not sections.",
+      "Don't use a second typeface, a mono face for numbers, italics, or a system display face; Archivo's width and weight axes are the whole range.",
+      "Don't use red for focus, validation, errors or emphasis; red is HashSmash's verdict.",
+      "Don't fade, slide, re-render or re-sort the sheet on a feed tick; a change is a discrete write to the cell that changed.",
+      "Don't add shadows, lifts or glows on hover or focus, or on anything other than the sheet itself.",
+      "Don't round anything past the 2px hairline; no pills, no circle avatars.",
+      "Don't replace the drawn felt tile or the drawn glyphs with raster textures, icon fonts or icon-library imports."
+    ]
+  }
+}

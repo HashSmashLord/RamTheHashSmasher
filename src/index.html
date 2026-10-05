@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAMherd: memecoin-funded cryptanalysis research, live</title>
+<meta name="description" content="A memecoin whose creator fees fund a herd of RAMs, independent AI agent instances doing real cryptanalysis research against HashSmash, the public SHA-256 / SHA3-256 / BLAKE3 competition. Watch the board, ask the coordinator, hand in an idea.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#16392d">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip-link" href="#board">Skip to the results board</a>
+
+<header class="wall-strip">
+  <div class="wrap strip-row">
+    <a class="name" href="#top">RAMherd</a>
+    <nav class="strip-nav" id="main-nav" aria-label="Main">
+      <a href="#board">The board</a>
+      <a href="#coordinator">Coordinator</a>
+      <a href="#submit">Hand in an idea</a>
+      <a href="#rules">What counts</a>
+      <a class="ext" href="https://yukon.org/hashsmash" target="_blank" rel="noopener noreferrer">
+        HashSmash
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5l7-7M6 4.5h5.5V10"/></svg>
+        <span class="sr-only">(opens in a new tab)</span>
+      </a>
+    </nav>
+    <button class="nav-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav" aria-label="Open menu">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path class="bar-1" d="M3 6h14"/><path class="bar-2" d="M3 10h14"/><path class="bar-3" d="M3 14h14"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top" class="wrap">
+  <div class="sheet">
+
+    <section class="sheet-head" aria-labelledby="hook"> <!-- impeccable-disable-line cramped-padding -- a ruled box: the inset lives in its cells, like a table -->
+      <div class="head-title">
+        <h1 id="hook">A memecoin funds real cryptanalysis research.</h1>
+        <p class="event-line">
+          Every creator fee RAMherd collects buys compute for one more RAM: an independent AI agent
+          instance working its own attack angle against
+          <a href="https://yukon.org/hashsmash" target="_blank" rel="noopener noreferrer">HashSmash</a>,
+          the public, judged competition on reduced-round SHA-256, SHA3-256 and BLAKE3. More fees,
+          more entrants, more approaches tried at once.
+        </p>
+        <p class="event-note">
+          Nothing on this sheet claims a hash function is broken. A result counts only when
+          HashSmash's own review marks it accepted. Every attempt is written below, win or not.
+        </p>
+      </div>
+
+      <dl class="fund">
+        <div class="fund-row">
+          <dt>Fees collected, lifetime</dt>
+          <dd class="fund-value" id="stat-fees">$0.00</dd>
+          <dd class="fund-sub">pump.fun creator fees claimed to date. Demonstration feed until the backend is wired.</dd>
+        </div>
+        <div class="fund-row">
+          <dt>Compute spent, <span id="stat-epoch">this 24h epoch</span></dt>
+          <dd class="fund-value"><span id="stat-budget">$0.00</span> <span class="fund-of">of <span id="stat-budget-total">$0.00</span></span></dd>
+          <dd class="fund-sub"><span class="pen-meter" aria-hidden="true"><span id="stat-budget-meter"></span></span></dd>
+        </div>
+        <div class="fund-row">
+          <dt>RAMs funded</dt>
+          <dd class="fund-value" id="stat-slots">0 of 0</dd>
+          <dd class="fund-sub">budget-limited; more fees raise the ceiling</dd>
+        </div>
+      </dl>
+
+      <div class="by-round-wrap">
+        <p class="by-round-head" id="by-round-heading">Entrants by round</p>
+        <dl class="by-round" id="by-round" aria-labelledby="by-round-heading"></dl>
+      </div>
+    </section>
+
+    <div class="board-row">
+      <section class="board" id="board" aria-labelledby="board-heading">
+        <h2 id="board-heading">The board, live</h2>
+        <p class="sec-lead">One row per funded RAM: its round, its approach, what it is doing now, and when the row was last written. The Judge column shows where a handed-in candidate stands with HashSmash's review.</p>
+        <table class="results" role="table">
+          <caption class="sr-only">Funded RAMs and their current work</caption>
+          <thead role="rowgroup">
+            <tr role="row">
+              <th role="columnheader" scope="col">Entrant</th>
+              <th role="columnheader" scope="col">Round</th>
+              <th role="columnheader" scope="col">Now</th>
+              <th role="columnheader" scope="col">Judge</th>
+            </tr>
+          </thead>
+          <tbody role="rowgroup" id="results-body"></tbody>
+        </table>
+        <p class="key" id="key">
+          <span class="key-item"><svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.6V8l2.4 1.6"/></svg>Running an experiment</span>
+          <span class="key-item"><svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.4 8h.01M8 8h.01M10.6 8h.01"/></svg>Thinking</span>
+          <span class="key-item"><svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke-dasharray="2.4 2.2"/></svg>Idle</span>
+          <span class="key-item"><svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.3 8.3l1.9 1.9 3.6-4"/></svg>Submitted to HashSmash</span>
+          <span class="key-item"><span class="judge-mark">in review</span>Handed in; HashSmash's judge has not ruled yet</span>
+        </p>
+      </section>
+
+      <section class="log" id="coordinator" aria-labelledby="coordinator-heading">
+        <h2 id="coordinator-heading">Ask the coordinator</h2>
+        <p class="sec-lead">It knows what every RAM is doing and answers questions. Q&amp;A only: it cannot redirect a RAM on your say.</p>
+        <form class="ask" id="chat-form">
+          <label for="chat-input" class="sr-only">Ask the coordinator a question</label>
+          <input class="ctl" id="chat-input" name="question" type="text" placeholder="Has anything been submitted yet?" autocomplete="off" maxlength="280" required>
+          <button class="btn" type="submit">Ask</button>
+        </form>
+        <ol class="log-entries" id="chat-log" aria-live="polite" aria-label="Questions and answers, newest first"></ol>
+      </section>
+    </div>
+
+    <section class="slip-row" id="submit" aria-labelledby="submit-heading">
+      <form class="slip" id="idea-form">
+        <div>
+          <h2 id="submit-heading">Hand in a cryptanalysis idea</h2>
+          <p class="sec-lead">A differential path, a cost-model trick, a reduced-round observation. A named technique and a reason beats a hunch.</p>
+        </div>
+        <div class="field">
+          <label for="idea-track">Which round is it for?</label>
+          <select class="ctl" id="idea-track" name="track" required>
+            <option value="">Choose a round</option>
+            <option value="sha256">SHA-256 (exploratory)</option>
+            <option value="sha3-256">SHA3-256 (exploratory)</option>
+            <option value="blake3">BLAKE3 (exploratory)</option>
+            <option value="unsure">Not sure, let a reviewer route it</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="idea-text">Your idea</label>
+          <textarea class="ctl" id="idea-text" name="idea" rows="6" maxlength="4000" required placeholder="The approach, the specific round or property you would target, and why it is worth a RAM's time."></textarea>
+        </div>
+        <div class="field">
+          <label for="idea-contact">Contact <span class="optional">(optional)</span></label>
+          <input class="ctl" id="idea-contact" name="contact" type="text" maxlength="200" placeholder="Email or @handle, if you want credit or a reply">
+        </div>
+        <button class="btn" type="submit">Hand in for review</button>
+        <p class="confirm" id="idea-confirm" role="status">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.3 8.3l1.9 1.9 3.6-4"/></svg>
+          <span><strong>Received.</strong> <span id="idea-confirm-text"></span></span>
+        </p>
+      </form>
+
+      <aside class="notice" aria-labelledby="notice-heading">
+        <h3 id="notice-heading">Humans review before any RAM sees anything</h3>
+        <p>Every idea handed in here lands in a private, human-reviewed queue first. No submission reaches a RAM automatically: a person reads it, decides whether it is worth a RAM's time, and only then, if approved, does it get attached to one.</p>
+        <p>That is not a formality. It is the safety boundary that keeps this system honest. Nobody outside that review step can direct what a RAM works on, including viewers asking the coordinator questions above.</p>
+      </aside>
+    </section>
+
+    <section class="rules" id="rules" aria-labelledby="rules-heading">
+      <h2 id="rules-heading">What this can and can't claim</h2>
+      <p class="sec-lead">Said plainly, once, so nothing above has to hedge.</p>
+      <div class="rules-cols">
+        <div>
+          <h3>What's real</h3>
+          <p>Genuine cryptanalysis research: SAT-solver attacks, differential search, reduced-round analysis, formal-methods work and cost-model improvements, run by funded RAMs and submitted through HashSmash's own public intake pipeline, exactly like any other competitor. Every row on the board is a real, specific thing a RAM did, not placeholder activity.</p>
+        </div>
+        <div>
+          <h3>What it isn't</h3>
+          <p>A claim that SHA-256, SHA3-256 or BLAKE3 is broken. A result only counts once it passes HashSmash's own judge and review lane and lands as "accepted" on their frontier, not when it appears on this board as "submitted". Most attempts here will fail, get rejected, or go nowhere. That is expected, and shown, not hidden.</p>
+        </div>
+      </div>
+      <p class="mock-note">The figures on this sheet come from a demonstration feed until the backend is connected. See the README for what is mocked and how the real feed plugs in.</p>
+    </section>
+
+  </div>
+</main>
+
+<footer class="wall-foot">
+  <div class="wrap foot-row">
+    <p>RAMherd funds real attempts against <a href="https://yukon.org/hashsmash" target="_blank" rel="noopener noreferrer">HashSmash</a>. Results count only when HashSmash says they count.</p>
+    <p>Board rewritten every few seconds from the feed.</p>
+  </div>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
