@@ -41,7 +41,7 @@
   --label: "Silkscreen", "Archivo", "Helvetica Neue", Arial, sans-serif;
   --sans: "Archivo", "Helvetica Neue", Arial, sans-serif;
 
-  --max: 1440px;
+  --max: 1760px; /* was 1440px — revert by changing just this number back */
   --gutter: clamp(1rem, 4vw, 3rem);
   --nav-h: 4rem;
 
