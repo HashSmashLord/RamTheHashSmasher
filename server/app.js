@@ -22,8 +22,13 @@ const SECURITY_HEADERS = {
 const DEFAULT_STATIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 // frame-src: the only thing a page may embed is an E2B sandbox's noVNC page
 // (https://6080-<id>.e2b.app), the server-side view-only stream; see lib/sandbox.js.
+// connect-src: same-origin (the API) plus the Solana RPC the launch page's
+// browser-side signing talks to directly (src/launch.js's signAndSendLaunch,
+// via web3.Connection) — never routed through our own server, so it needs its
+// own allowance. Covers both clusters since SOLANA_CLUSTER picks between them
+// at runtime; the page is never on both at once.
 const PAGE_CSP =
-  "default-src 'self'; img-src 'self' data:; frame-src https://*.e2b.app; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
+  "default-src 'self'; img-src 'self' data:; frame-src https://*.e2b.app; connect-src 'self' https://api.mainnet-beta.solana.com https://api.devnet.solana.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
 const STATIC_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
