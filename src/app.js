@@ -137,7 +137,7 @@ function buildRow() {
   const tr = document.createElement("tr");
   tr.setAttribute("role", "row");
   tr.innerHTML = `
-    <td role="cell" class="c-entrant"><span class="entrant-id"></span><span class="entrant-approach"></span></td>
+    <td role="cell" class="c-entrant"><span class="entrant-id"></span><span class="entrant-model"></span><span class="entrant-approach"></span></td>
     <td role="cell" class="c-round"><span class="round-id"></span><span class="round-path"></span></td>
     <td role="cell" class="c-now">
       <div class="now-line"><span class="now-glyph"></span><span class="now-word"></span><span class="now-clock"></span></div>
@@ -149,6 +149,7 @@ function buildRow() {
     seconds: Infinity,
     judge: null,
     id: tr.querySelector(".entrant-id"),
+    model: tr.querySelector(".entrant-model"),
     approach: tr.querySelector(".entrant-approach"),
     round: tr.querySelector(".round-id"),
     path: tr.querySelector(".round-path"),
@@ -163,6 +164,7 @@ function buildRow() {
 
 function updateRow(r, agent, first) {
   write(r.id, agent.id);
+  writePath(r.model, agent.model || "");
   write(r.approach, agent.approach);
   write(r.round, roundShort(agent.trackLabel));
   writePath(r.path, agent.lanePath);

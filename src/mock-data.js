@@ -46,14 +46,17 @@ const state = {
     computeBudgetEpoch: 400.0, // USD allocated this 24h epoch
     computeSpentEpoch: 268.42,
     epochLabel: "this 24h epoch",
-    slotsActive: 9,
+    slotsActive: 6,
     slotsMax: 12,
   },
 
+  // The launch roster (docs/PRD.md, "Decided"): one RAM per live exploratory track, each on
+  // its own assigned OpenRouter model. Same slugs as server/lib/targets.js; keep them in sync.
   agents: [
     {
       id: "ram-01",
       trackId: "sha256-r31",
+      model: "anthropic/claude-opus-5.5",
       approach: "SAT solver — CaDiCaL",
       status: "running",
       activity: "Running CaDiCaL against a 31-round reduced characteristic, clause count 2.1M, 4 of 8 branch orderings tried.",
@@ -61,74 +64,55 @@ const state = {
     },
     {
       id: "ram-02",
-      trackId: "sha256-r31",
-      approach: "Differential search",
+      trackId: "sha256-r32",
+      model: "anthropic/claude-fable-5.1",
+      approach: "Reduced-round analysis",
       status: "thinking",
-      activity: "Evaluating a new message-modification trail from last night's failed branch before committing solver time to it.",
+      activity: "Extending the r31 differential path by one round; checking the probability estimate holds above the submission floor before committing solver time.",
       updatedSecondsAgo: 41,
     },
     {
       id: "ram-03",
-      trackId: "sha256-r32",
-      approach: "Reduced-round analysis",
-      status: "running",
-      activity: "Extending the r31 differential path by one round; probability estimate holding above the submission floor so far.",
-      updatedSecondsAgo: 15,
-    },
-    {
-      id: "ram-04",
       trackId: "sha3-256-r5",
-      approach: "Formal methods",
-      status: "thinking",
-      activity: "Reading the Keccak[1600] round function for a cheaper linear approximation before re-running the verifier.",
-      updatedSecondsAgo: 96,
-    },
-    {
-      id: "ram-05",
-      trackId: "sha3-256-r5",
+      model: "openai/gpt-6.1-sol-pro",
       approach: "SAT solver — Kissat",
       status: "submitted",
       activity: "Candidate written to lanes/exploratory/candidates/sha3-256-r5/ and queued via hashsmash_pipeline.py intake.",
       updatedSecondsAgo: 612,
     },
     {
-      id: "ram-06",
+      id: "ram-04",
       trackId: "sha3-256-r6",
+      model: "z-ai/glm-5.3-prime",
       approach: "Cost-model refinement",
       status: "running",
       activity: "Re-costing a prior candidate's charged computation after a cheaper preprocessing step cut solver calls by ~18%.",
       updatedSecondsAgo: 23,
     },
     {
-      id: "ram-07",
+      id: "ram-05",
       trackId: "blake3-r1",
+      model: "deepseek/deepseek-v4-pro",
       approach: "Differential search",
       status: "idle",
       activity: "Waiting on this epoch's next budget tick — last branch exhausted without a usable trail.",
       updatedSecondsAgo: 203,
     },
     {
-      id: "ram-08",
-      trackId: "blake3-r1",
-      approach: "Reduced-round analysis",
-      status: "running",
-      activity: "Searching round-1 compression function for a rotational property that survives the finalization XORs.",
-      updatedSecondsAgo: 5,
-    },
-    {
-      id: "ram-09",
+      id: "ram-06",
       trackId: "blake3-r2",
+      model: "qwen/qwen3.8-max-prime",
       approach: "Formal methods",
-      status: "idle",
-      activity: "Idle — previous Z3 run on the r2 mixing schedule timed out at 6h; queued for a retry with a tighter bound.",
-      updatedSecondsAgo: 340,
+      status: "running",
+      activity: "Re-running Z3 on the r2 mixing schedule with a tighter bound after the previous 6h attempt timed out.",
+      updatedSecondsAgo: 15,
     },
   ],
 
   chatSeed: [
     {
       q: "Has anything actually been submitted to HashSmash yet?",
-      a: "Yes — one candidate from ram-05 on SHA3-256 r5 is in HashSmash's own review queue right now, submitted through their intake pipeline. It's marked \"in review,\" not accepted. Everything else on the board is still in progress.",
+      a: "Yes — one candidate from ram-03 on SHA3-256 r5 is in HashSmash's own review queue right now, submitted through their intake pipeline. It's marked \"in review,\" not accepted. Everything else on the board is still in progress.",
     },
     {
       q: "Does more money in the pool mean faster cracks?",
@@ -140,7 +124,7 @@ const state = {
     },
     {
       q: "What happens to a candidate that fails?",
-      a: "It stays visible. A failed branch (like ram-07's exhausted BLAKE3 r1 trail) gets logged and the slot moves to the next approach — we don't hide attempts that didn't pan out, win or not is the whole point of showing this live.",
+      a: "It stays visible. A failed branch (like ram-05's exhausted BLAKE3 r1 trail) gets logged and the slot moves to the next approach — we don't hide attempts that didn't pan out, win or not is the whole point of showing this live.",
     },
     {
       q: "Is SHA-256 broken?",

@@ -254,8 +254,10 @@ main.wrap { padding-top: clamp(1rem, 2.5vw, 1.5rem); padding-bottom: clamp(2rem,
 .results td { padding: 0.85rem 0.7rem 0.85rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
 .results th:last-child, .results td:last-child { padding-right: 0; }
 
-.c-entrant { width: 8.5rem; }
+.c-entrant { width: 9.5rem; }
 .entrant-id { display: block; color: var(--pen); font-weight: 700; font-size: 1rem; }
+/* the RAM's assigned OpenRouter model: printed ink, set by the organiser, breaks only after a '/' */
+.entrant-model { display: block; color: var(--ink); font-size: 0.82rem; font-weight: 600; line-height: 1.3; margin-top: 0.15rem; }
 .entrant-approach { display: block; color: var(--ink-soft); font-size: 0.82rem; line-height: 1.35; margin-top: 0.2rem; }
 
 .c-round { width: 11.5rem; }
