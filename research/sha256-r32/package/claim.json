@@ -1,0 +1,73 @@
+{
+  "schema_version": 3,
+  "submission_state": "ready",
+  "target_profile": "sha256-r32-prefix-v1",
+  "attack_class": "ordinary-collision",
+  "rounds": 32,
+  "lane": "exploratory",
+  "claim": {
+    "time_log2": 86,
+    "time_unit": "target-compressions",
+    "memory_log2_bytes": 39,
+    "preprocessing_log2": 36,
+    "success_probability": 0.9,
+    "nonuniform_advice_log2_bytes": 10
+  },
+  "restrictions": [
+    "Classical probabilistic 256-bit word-RAM attack under collision-frontier-v5. The target is complete SHA-256 with the standard IV, FIPS 180-4 padding, feed-forward, rounds 0 through 31 on every block, and all 256 output bits.",
+    "The output messages are B0 || M1 and B0 || M1', each 128 bytes before their common padding block. The algorithm accepts only distinct complete messages whose full trusted target digests agree.",
+    "Preprocessing charges the paper's reported 2^34.3 starting-point search plus exact fixed-slice table and tail enumeration, sorting, and direct-index construction. Total preprocessing is below 2^36 target-compression units and peak storage is below 2^39 bytes.",
+    "The online phase runs exactly 2^82 trials, uses a fresh independently uniform B0 in every trial, and assigns exactly one of the 196,608 tails cyclically by trial number. It never treats multiple tails sharing one first-block chaining value as independent.",
+    "Each trial is charged below 13 target-compression units, including five complete compression calls and 2^14 additional word operations. Total charged work is below 13*2^82 + 2^36 < 2^85.701, so the declared bound is 2^86.",
+    "The 0.9 success claim uses two disclosed exploratory premises: first-block acceptance probability q >= 2^-31 and average conditional full-collision probability over the fixed tail set at least 2^-49. Together they give cumulative success mass greater than 4-2^-62 and success probability greater than 0.981.",
+    "No new full ordinary r32 witness or collision certificate is claimed. Exact replays, finite enumeration hashes, a legal r32 prefix, and bounded fixed-seed measurements check the construction but do not prove the two score-critical probability premises.",
+    "Section 12 (added 2026-10-05 by RAMherd) independently reproduces every finite object of Sections 3-6, including both SHA-256 hashes, and measures the tail-yield premise directly through step 21 over 2^37.585 prefix-tail pairs. It observes no full collision and estimates the average yield near 2^-44.6 under one disclosed independence premise. It changes no algorithm step, resource bound, or success claim."
+  ],
+  "baseline_improved": "sha256-r32-nominal-v2",
+  "certificate_manifest": "certificates/manifest.json",
+  "heuristics": [
+    {
+      "id": "fixed-table-r32-density",
+      "statement": "For a fresh uniformly random 64-byte first block under the exact C32 target, the fixed prefix table and Section 5 filter accept with probability q at least 2^-31.",
+      "role": "score-critical",
+      "scope": "The 593,920-record fixed table derived from the ePrint 2026/1080 35-step starting point, the lexicographically first valid record rule, and C32 from the standard IV.",
+      "extrapolation": "The fixed table occupies exactly 408,576 of 2^32 A(-1) keys. Conditioned uniform-state samples estimate the complete filter near 2^-28.519, while matched C32 and C35 first-block streams each produced four distinct accepted blocks in 2^28+2^30 trials. The claim adds more than two bits of slack and models reduced-round C32 chaining outputs as pseudorandom for this predicate. Section 12.8 adds a run on fresh operating-system entropy with true C32(IV,B0) chaining values: 339 acceptances in 135,493,825,734 first blocks, rate 2^-28.574 (95% interval 2^-28.737 to 2^-28.428). Prefixes accepted this way match the conditioned sampler's tail-trail profile through step 18.",
+      "evidence_ids": [
+        "proof:122-232",
+        "proof:307-361",
+        "proof:363-394",
+        "proof:644-676"
+      ],
+      "limitations": "The fixed SplitMix64 streams establish reproducible observations, not ideal random sampling or a theorem about the C32 output distribution. A hidden structural bias correlated with this exact predicate could invalidate the lower bound. The fresh-entropy run is finite. It cannot exclude a bias smaller than its own resolution, and it compares the two samplers only through step 18."
+    },
+    {
+      "id": "fixed-slice-average-tail-yield",
+      "statement": "Conditioned on first-block acceptance, the average over the complete fixed set V of 196,608 tails of the probability of complete C32 second-block equality is at least 2^-49.",
+      "role": "score-critical",
+      "scope": "The one fixed starting point, fixed prefix table, corrected Figure 6 tail set, lexicographically first record rule, and exact C32 full-output predicate described in the proof.",
+      "extrapolation": "Two independent lines of support. (1) Transfer: the source counts 45 remaining conditions for this executed 35-step characteristic; the second-block trace is equal from 23 rounds onward and exhaustive replay from the published chaining value reproduces the unique published tail at both C32 and C35 after the three relation corrections; four bits of slack are added. (2) Direct measurement (Section 12): over 2^20 accepted prefixes from the conditioned uniform-state sampler and all 196,608 tails each (2^37.585 pairs), the published trail is followed through step 21 at cumulative rate 2^-33.585 (16 pairs from 16 distinct prefixes). Two exact lemmas (12.2) show the remaining event is the schedule-only event S, measured per prefix at F = 2^-10.985 [2^-11.056, 2^-10.918] given the schedule through dW21. Assuming the state trail through step 21 is independent of S given dW16..dW21, the average yield is estimated at 2^-44.57 (statistical range 2^-45.45 to 2^-43.80), 3.5 to 5.2 bits above the claimed 2^-49 and within about one bit of the paper's count.",
+      "evidence_ids": [
+        "proof:59-91",
+        "proof:234-283",
+        "proof:346-394",
+        "proof:487-532",
+        "proof:548-626",
+        "proof:627-643"
+      ],
+      "limitations": "No full C32 second-block collision was observed, so the yield itself is estimated rather than seen: the last factor (dW22, dW24) rests on the disclosed independence premise. That premise is supported at step-17 depth (2,350,937 pairs, 136 S hits, rate 2^-14.08 against 2^-13.98 unconditionally) but is weakly tested at step 18 and untested at steps 19-21. The conditioned sampler treats reduced-round C32 chaining outputs as uniform; real-first-block prefixes agree at shallow depth only. The measurement programs are RAMherd's own, not organizer-recomputed experiments. Dependencies among the remaining conditions, or a hidden bias of C32 outputs correlated with this predicate, could make the true average smaller."
+    },
+    {
+      "id": "starting-solution-resource-bound",
+      "statement": "The fixed 35-step starting solution used by the construction can be obtained within the package's 2^36 preprocessing bound and below 2^39 bytes of peak memory.",
+      "role": "supporting",
+      "scope": "Only the starting-point search that produced the fixed states and words reused by this candidate; all later finite enumeration and indexing costs are separately included in the same preprocessing ceiling.",
+      "extrapolation": "ePrint 2026/1080 reports approximately 2^34.3 work for Step 1 and reports the practical computation on a 378 GB server. The package rounds the total preprocessing upward after adding conservative operation ceilings for every enumerated candidate and direct-index slot.",
+      "evidence_ids": [
+        "proof:93-120",
+        "proof:396-424",
+        "proof:426-449"
+      ],
+      "limitations": "The historical SAT search and its peak memory were not independently rerun. The server capacity is an upper-bound proxy for peak memory rather than a direct utilization measurement."
+    }
+  ]
+}

@@ -9,12 +9,19 @@
 //   verdict (exit code, status, package_sha256, evidence file). Nothing here
 //   re-implements or mocks the Python; the Python decides.
 //
-//   NOT CLAIMED: any cryptanalysis result. The candidate this module writes
-//   is a harness-test DRAFT built from the organizer's own `draft_claim()`
-//   template, labeled as a test in both claim.json and proof.md. HashSmash's
-//   intake refuses to send a draft to the judge (`draft_not_submitted`), so
-//   this package can never be judged, scored, or ranked. Passing intake means
-//   "mechanically well-formed", not "a real attack".
+//   NOT CLAIMED by the harness path: any cryptanalysis result. For
+//   sha256-r31 the candidate this module writes is a harness-test DRAFT built
+//   from the organizer's own `draft_claim()` template, labeled as a test in
+//   both claim.json and proof.md. HashSmash's intake refuses to send a draft
+//   to the judge (`draft_not_submitted`), so that package can never be judged,
+//   scored, or ranked.
+//
+//   RESEARCH path (sha256-r32 only, see RESEARCH_CANDIDATES): the slot writes
+//   a real, committed candidate package (research/sha256-r32/package/). It
+//   extends the existing r32 package with an independent reproduction and a
+//   staged tail-yield measurement; its claim still rests on disclosed
+//   exploratory heuristics and nobody has judged it. Passing intake means
+//   "mechanically well-formed" for this package too, never "a real attack".
 //
 // Safety rails:
 //   - Every slot works in its own throwaway `git clone` of the vendored repo
@@ -43,9 +50,25 @@ export const DEFAULT_WORKSPACES_DIR = join(PROJECT_ROOT, '.ramherd', 'workspaces
 /**
  * Tracks this runner drives today. sha256-r31-exploratory is the research
  * brief's recommended first target (docs/research/hashsmash-technical-brief.md
- * section 5). Other tracks keep the slot manager's mock lifecycle.
+ * section 5) and runs the labeled harness draft. sha256-r32-exploratory runs
+ * the committed research package below. Other tracks keep the slot manager's
+ * mock lifecycle.
  */
-export const PIPELINE_TRACKS = Object.freeze(['sha256-r31-exploratory']);
+export const PIPELINE_TRACKS = Object.freeze(['sha256-r31-exploratory', 'sha256-r32-exploratory']);
+
+/**
+ * Tracks with real research content. A slot on one of these copies the
+ * committed package (claim.json, proof.md, certificates/manifest.json) into
+ * its own clone instead of drafting the empty template. The package is never
+ * edited by the slot: what passes or fails intake is exactly what is in git.
+ */
+export const RESEARCH_CANDIDATES = Object.freeze({
+  'sha256-r32-exploratory': Object.freeze({
+    dir: join(PROJECT_ROOT, 'research', 'sha256-r32', 'package'),
+    files: Object.freeze(['claim.json', 'proof.md', 'certificates/manifest.json']),
+    summary: 'sha256-r32 package extended with an independent reproduction of its finite construction and a staged measurement of its weakest premise (average tail yield); same 2^86 claim, still resting on disclosed exploratory heuristics, not judged',
+  }),
+});
 
 /** Marker placed in claim.json restrictions and proof.md of every harness draft. */
 export const HARNESS_MARKER = 'RAMherd harness integration test';
@@ -414,6 +437,30 @@ export function createHashSmashRunner({
     return { candidateDir, claim };
   }
 
+  /**
+   * Replaces the slot workspace's candidate with the committed research
+   * package for `track` (RESEARCH_CANDIDATES). Copies exactly the listed
+   * files, byte for byte; refuses anything else.
+   */
+  function writeResearchCandidate(workspaceDir, track) {
+    assertTrack(track);
+    const research = RESEARCH_CANDIDATES[track];
+    if (!research) throw new Error(`no research candidate for ${track}`);
+    const candidateDir = candidateDirFor(workspaceDir, track);
+    if (relative(wsRoot, candidateDir).startsWith('..')) throw new Error('refusing to write outside the workspaces dir');
+    for (const f of research.files) {
+      const src = join(research.dir, f);
+      if (!existsSync(src) || !lstatSync(src).isFile()) throw new Error(`research package file missing: ${relative(PROJECT_ROOT, src)}`);
+    }
+    rmSync(candidateDir, { recursive: true, force: true });
+    for (const f of research.files) {
+      mkdirSync(dirname(join(candidateDir, f)), { recursive: true });
+      writeFileSync(join(candidateDir, f), readFileSync(join(research.dir, f)));
+    }
+    const claim = JSON.parse(readFileSync(join(candidateDir, 'claim.json'), 'utf8'));
+    return { candidateDir, claim };
+  }
+
   /** `scripts/local_tracks.py check <track>` — mechanical validation only. */
   async function check(workspaceDir, track) {
     assertTrack(track);
@@ -451,16 +498,27 @@ export function createHashSmashRunner({
 
   /**
    * One full slot research cycle on a pipeline track: fresh workspace ->
-   * harness draft -> JS precheck -> real `check` -> real `intake` ->
-   * (judge/score only if gated on AND the package is `ready`, which a
-   * harness draft never is).
+   * research package (if the track has one) or harness draft -> JS precheck
+   * -> real `check` -> real `intake` -> (judge/score only if gated on AND the
+   * package is `ready`; a harness draft never is, and the judge gate is off
+   * by default, so a ready research package stops at a `gated` judge stage).
    */
   async function runCycle({ slotId, track }) {
     const ws = await prepareWorkspace(slotId);
-    const { candidateDir } = await writeHarnessDraft(ws.dir, track, { slotId });
+    const research = RESEARCH_CANDIDATES[track];
+    const { candidateDir, claim } = research
+      ? writeResearchCandidate(ws.dir, track)
+      : await writeHarnessDraft(ws.dir, track, { slotId });
+    const candidate = {
+      kind: research ? 'research' : 'harness-draft',
+      submissionState: claim.submission_state,
+      timeLog2: claim.claim?.time_log2 ?? null,
+      heuristics: (claim.heuristics || []).map((h) => h.id),
+      summary: research ? research.summary : 'labeled harness draft (organizer template, no attack claimed)',
+    };
     const precheck = precheckCandidate(candidateDir, ws.dir);
     const stages = [];
-    if (!precheck.ok) return { track, workspace: ws.dir, workspaceRelative: relative(PROJECT_ROOT, ws.dir), head: ws.head, candidateDir, precheck, stages };
+    if (!precheck.ok) return { track, workspace: ws.dir, workspaceRelative: relative(PROJECT_ROOT, ws.dir), head: ws.head, candidateDir, candidate, precheck, stages };
     stages.push(await check(ws.dir, track));
     stages.push(await intake(ws.dir, track));
     const intakeResult = stages.at(-1);
@@ -469,7 +527,7 @@ export function createHashSmashRunner({
       stages.push(j);
       if (j.outcome === 'ok') stages.push(await score(ws.dir, track));
     }
-    return { track, workspace: ws.dir, workspaceRelative: relative(PROJECT_ROOT, ws.dir), head: ws.head, candidateDir, precheck, stages };
+    return { track, workspace: ws.dir, workspaceRelative: relative(PROJECT_ROOT, ws.dir), head: ws.head, candidateDir, candidate, precheck, stages };
   }
 
   return Object.freeze({
@@ -477,11 +535,13 @@ export function createHashSmashRunner({
     workspacesDir: wsRoot,
     judgeAllowed,
     supportsTrack: (track) => PIPELINE_TRACKS.includes(track),
+    candidateKindFor: (track) => (RESEARCH_CANDIDATES[track] ? 'research' : 'harness-draft'),
     preflight,
     listTracks,
     prepareWorkspace,
     candidateDirFor,
     writeHarnessDraft,
+    writeResearchCandidate,
     precheck: precheckCandidate,
     check,
     intake,

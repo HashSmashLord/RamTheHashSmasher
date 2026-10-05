@@ -1,0 +1,15 @@
+mode real seed 0 prefixes 240 samples 92790929054 badreplay 0 seconds 6066
+pairs 47185920
+step 16 dW  in       47185920  pass       47185920
+step 16 dE  in       47185920  pass        5898218
+step 16 dA  in        5898218  pass        5898218
+step 17 dW  in        5898218  pass        5898218
+step 17 dE  in        5898218  pass           2826
+step 17 dA  in           2826  pass           1436
+step 18 dW  in           1436  pass           1436
+step 18 dE  in           1436  pass             27
+step 18 dA  in             27  pass             27
+step 19 dW  in             27  pass             27
+step 19 dE  in             27  pass              0
+followed trail through step 31: 0
+full C32 second-block collisions: 0

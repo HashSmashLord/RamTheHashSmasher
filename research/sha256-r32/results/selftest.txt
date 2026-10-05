@@ -1,0 +1,18 @@
+admissible W7 524288
+admissible W8 1048576
+surviving (W8,E4,A0) 44
+table records 593920
+distinct A(-1) keys 408576
+max records per key 4
+admissible W14 12
+tails 196608
+published record present 1
+published tail present 1
+regression accepted 1 record f3b8f7ae ab9c6465 6e417236 d68fa526 29b2d81b acb11ef2 replay 1
+  W : ac0df664 cba5ea0f 084ff9b7 11e523ea a594db00 b00bd891 b2cb7762 ab9c6465 6e417236 5100da8a 0912e57b a96b2054 45f2222c 4d12f88a
+  W': ac0df664 cba5ea0f 084ff9b7 11e523ea 8594db00 b44bd091 92cb7762 aa9d74ef 6e497e36 5100da8a 0912e57b a96b2054 41b22a2c 6d12f88a
+published-CV exhaustive tail scan: C32 collisions 1, C35 collisions 1
+staged scanner on published CV: full-trail 1, C32 collisions 1
+tails with the printed (uncorrected) equalities: 0
+3cd961f8e0efe18027ec7192b4f0fa9f449659fdae14a5969fe3f6b821c8ebc7  table_be.bin
+25fb017b0432d0848acb9c08e238220b66277ab987c2a9ff1ada3a8f463fc7b6  tails_be.bin

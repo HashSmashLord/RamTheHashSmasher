@@ -1,0 +1,23 @@
+mode cond seed 20261005 prefixes 1048576 samples 39321706218 badreplay 0 seconds 1187
+pairs 206158430208
+step 16 dW  in   206158430208  pass   206158430208
+step 16 dE  in   206158430208  pass    25769801483
+step 16 dA  in    25769801483  pass    25769801483
+step 17 dW  in    25769801483  pass    25769801483
+step 17 dE  in    25769801483  pass       12581660
+step 17 dA  in       12581660  pass        6290750
+step 18 dW  in        6290750  pass        6290750
+step 18 dE  in        6290750  pass          97863
+step 18 dA  in          97863  pass          97863
+step 19 dW  in          97863  pass          97863
+step 19 dE  in          97863  pass            813
+step 19 dA  in            813  pass            813
+step 20 dW  in            813  pass             90
+step 20 dE  in             90  pass             42
+step 20 dA  in             42  pass             42
+step 21 dW  in             42  pass             42
+step 21 dE  in             42  pass             16
+step 21 dA  in             16  pass             16
+step 22 dW  in             16  pass              0
+followed trail through step 31: 0
+full C32 second-block collisions: 0

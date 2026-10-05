@@ -1,0 +1,9 @@
+prefixes 330  pairs 64880640 = 2^25.951
+     check             in           pass  cond log2  cum log2  cum 95% interval (log2)
+step 16 dE       64880640        8110142     -3.000    -3.000  [-3.00, -3.00]
+step 17 dE        8110142           3924    -11.013   -14.013  [-14.06, -13.97]
+step 17 dA           3924           1996     -0.975   -14.988  [-15.05, -14.93]
+step 18 dE           1996             38     -5.715   -20.703  [-21.20, -20.25]
+step 19 dE             38              0       -inf      -inf  [-inf, -24.07]
+followed trail through step 31: 0
+step-17 survivors per prefix: mean 6.048, var 24.937, prefixes with >=1: 289/330, top 1% of prefixes hold 3.3% of survivors, max 23

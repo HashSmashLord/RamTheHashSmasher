@@ -1,0 +1,13 @@
+prefixes 1048576  pairs 206158430208 = 2^37.585
+     check             in           pass  cond log2  cum log2  cum 95% interval (log2)
+step 16 dE   206158430208    25769801483     -3.000    -3.000  [-3.00, -3.00]
+step 17 dE    25769801483       12581660    -11.000   -14.000  [-14.00, -14.00]
+step 17 dA       12581660        6290750     -1.000   -15.000  [-15.00, -15.00]
+step 18 dE        6290750          97863     -6.006   -21.006  [-21.02, -21.00]
+step 19 dE          97863            813     -6.911   -27.918  [-28.02, -27.82]
+step 20 dW            813             90     -3.175   -31.093  [-31.41, -30.80]
+step 20 dE             90             42     -1.100   -32.193  [-32.67, -31.76]
+step 21 dE             42             16     -1.392   -33.585  [-34.39, -32.89]
+step 22 dW             16              0       -inf      -inf  [-inf, -35.70]
+followed trail through step 31: 0
+step-17 survivors per prefix: mean 5.999, var 25.175, prefixes with >=1: 913003/1048576, top 1% of prefixes hold 3.7% of survivors, max 38

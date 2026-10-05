@@ -1,0 +1,6 @@
+schedfast seed 201 prefixes 32768 pairs 6442450944 dW20-pass 804438016 all-pass 402476
+schedfast seed 202 prefixes 32768 pairs 6442450944 dW20-pass 808599552 all-pass 395312
+schedfast seed 203 prefixes 32768 pairs 6442450944 dW20-pass 805945344 all-pass 414752
+schedfast seed 204 prefixes 32768 pairs 6442450944 dW20-pass 810434560 all-pass 394560
+schedfast seed 205 prefixes 32768 pairs 6442450944 dW20-pass 805699584 all-pass 416064
+schedfast seed 206 prefixes 32768 pairs 6442450944 dW20-pass 810762240 all-pass 366912

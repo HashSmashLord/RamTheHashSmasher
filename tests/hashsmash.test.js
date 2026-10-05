@@ -10,7 +10,8 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync, readdirSync, statSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -22,12 +23,16 @@ import {
   DEFAULT_REFERENCE_ROOT,
   HARNESS_MARKER,
   PIPELINE_TRACKS,
+  RESEARCH_CANDIDATES,
 } from '../server/lib/hashsmash.js';
 import { createSlotManager } from '../server/lib/slots.js';
 import { createMockLlmProvider } from '../server/lib/llm.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TRACK = 'sha256-r31-exploratory';
+const R32 = 'sha256-r32-exploratory';
+const R32_PACKAGE = join(ROOT, 'research', 'sha256-r32', 'package');
+const VENDORED_R32 = join(DEFAULT_REFERENCE_ROOT, 'lanes', 'exploratory', 'candidates', 'sha256-r32');
 const WS = join(ROOT, '.ramherd', `test-workspaces-${process.pid}`);
 
 function pythonOk() {
@@ -254,8 +259,8 @@ test('submitLive always refuses', async () => {
 
 test('a RAM slot on sha256-r31-exploratory drives the real pipeline through its lifecycle', { skip: SKIP }, async () => {
   const m = createSlotManager({ llmProvider: createMockLlmProvider(), pipelineRunner: runner(), idPrefix: 'itest' });
-  m.setSlotCount(2); // index 0 -> sha256-r31-exploratory, index 1 -> sha256-r32-exploratory
-  const [r31, r32] = m.getSlots();
+  m.setSlotCount(3); // 0 -> sha256-r31, 1 -> sha256-r32 (research package), 2 -> sha3-256-r5 (mock)
+  const [r31, , r5] = m.getSlots();
   assert.equal(r31.assignment.track, TRACK);
 
   await m.advance(r31.id); // idle -> thinking (mock LLM)
@@ -271,13 +276,138 @@ test('a RAM slot on sha256-r31-exploratory drives the real pipeline through its 
   assert.equal((await m.advance(r31.id)).status, 'idle');
 
   // Unsupported track keeps the mock lifecycle (no pipeline run).
-  await m.advance(r32.id);
-  await m.advance(r32.id);
-  const mock = await m.advance(r32.id);
+  assert.equal(r5.assignment.track, 'sha3-256-r5-exploratory');
+  await m.advance(r5.id);
+  await m.advance(r5.id);
+  const mock = await m.advance(r5.id);
   assert.equal(mock.status, 'submitted');
   assert.equal(mock.pipeline, null);
 });
 
+
+// ---------------------------------------------------------------------------
+// sha256-r32 research package (research/sha256-r32/package)
+// ---------------------------------------------------------------------------
+
+test('sha256-r32 is a pipeline track with a committed research package', () => {
+  assert.ok(PIPELINE_TRACKS.includes(R32));
+  assert.equal(RESEARCH_CANDIDATES[R32].dir, R32_PACKAGE);
+  for (const f of RESEARCH_CANDIDATES[R32].files) assert.ok(existsSync(join(R32_PACKAGE, f)), `${f} must be committed`);
+  assert.equal(runner().candidateKindFor(R32), 'research');
+  assert.equal(runner().candidateKindFor(TRACK), 'harness-draft');
+});
+
+test('research package: honest boundary statements are present and the claim is not rounded up', { skip: SKIP }, () => {
+  const proof = readFileSync(join(R32_PACKAGE, 'proof.md'), 'utf8');
+  const claim = JSON.parse(readFileSync(join(R32_PACKAGE, 'claim.json'), 'utf8'));
+  const vendored = JSON.parse(readFileSync(join(VENDORED_R32, 'claim.json'), 'utf8'));
+  // No better bound than the package it extends: same resource vector, same success.
+  assert.deepEqual(claim.claim, vendored.claim);
+  assert.equal(claim.target_profile, 'sha256-r32-prefix-v1');
+  assert.equal(claim.submission_state, 'ready');
+  // Still says plainly that no collision exists and the yield premise is not a theorem.
+  assert.match(proof, /No complete standard-IV r32 collision was computed/);
+  assert.match(proof, /## 12\. Independent reproduction and staged tail-yield measurement/);
+  assert.match(proof, /no full C32 second-block collision was observed/i);
+  // Original sections 1-11 are kept byte-for-byte, so every original proof:<line>
+  // evidence reference still points at the same text.
+  const original = readFileSync(join(VENDORED_R32, 'proof.md'), 'utf8');
+  assert.ok(proof.startsWith(original.trimEnd()), 'sections 1-11 must be the unchanged original text');
+  // Every heuristic keeps its id; the yield heuristic now cites the new section.
+  assert.deepEqual(claim.heuristics.map((h) => h.id), vendored.heuristics.map((h) => h.id));
+  const yieldH = claim.heuristics.find((h) => h.id === 'fixed-slice-average-tail-yield');
+  const lines = proof.split('\n').length;
+  const newRefs = yieldH.evidence_ids.filter((r) => Number(/^proof:(\d+)/.exec(r)?.[1]) > original.split('\n').length);
+  assert.ok(newRefs.length >= 1, 'yield heuristic must cite the new measurement section');
+  for (const r of newRefs) assert.ok(Number(/-(\d+)$/.exec(r)?.[1] ?? /:(\d+)$/.exec(r)[1]) <= lines);
+});
+
+test('research cycle on sha256-r32: real check and real intake on the committed package', { skip: SKIP }, async () => {
+  const r = runner();
+  const res = await r.runCycle({ slotId: 'r32-research', track: R32 });
+  assert.equal(res.precheck.ok, true, res.precheck.errors.join('; '));
+  assert.equal(res.candidate.kind, 'research');
+  assert.equal(res.candidate.submissionState, 'ready');
+  assert.equal(res.candidate.timeLog2, 86);
+  // What the pipeline saw is byte-for-byte the committed package.
+  for (const f of RESEARCH_CANDIDATES[R32].files) {
+    assert.deepEqual(readFileSync(join(res.candidateDir, f)), readFileSync(join(R32_PACKAGE, f)), f);
+  }
+  const [check, intake, judge, ...rest] = res.stages;
+  assert.equal(check.outcome, 'ok');
+  assert.equal(check.status, 'mechanically_valid');
+  assert.equal(check.parsed[0].submission_state, 'ready');
+  assert.equal(intake.outcome, 'ok');
+  assert.equal(intake.exitCode, 0);
+  assert.equal(intake.status, 'mechanically_valid');
+  assert.match(intake.parsed.package_sha256, /^[0-9a-f]{64}$/);
+  // The paid judge stays gated by default; score never runs after a gated judge.
+  assert.equal(judge.stage, 'judge');
+  assert.equal(judge.outcome, 'gated');
+  assert.deepEqual(rest, []);
+  const evidence = JSON.parse(readFileSync(intake.evidencePath, 'utf8'));
+  assert.equal(evidence.submission.intake_report.package_sha256, intake.parsed.package_sha256);
+  assert.equal(evidence.submission.intake_report.submission_state, 'ready');
+
+  // It is genuinely a different package from the vendored one.
+  const ws = await r.prepareWorkspace('r32-vendored');
+  const vendoredIntake = await r.intake(ws.dir, R32);
+  assert.equal(vendoredIntake.outcome, 'ok');
+  assert.notEqual(vendoredIntake.parsed.package_sha256, intake.parsed.package_sha256);
+});
+
+test('a RAM slot on sha256-r32-exploratory runs the research package, not the empty template', { skip: SKIP }, async () => {
+  const m = createSlotManager({ llmProvider: createMockLlmProvider(), pipelineRunner: runner(), idPrefix: 'r32test' });
+  m.setSlotCount(2);
+  const r32 = m.getSlots()[1];
+  assert.equal(r32.assignment.track, R32);
+  await m.advance(r32.id);
+  const running = await m.advance(r32.id);
+  assert.match(running.feed.at(-1).message, /committed research package/);
+  const done = await m.advance(r32.id);
+  assert.equal(done.status, 'validated');
+  assert.equal(done.pipeline.candidate, 'research');
+  assert.equal(done.pipeline.candidateDetail.timeLog2, 86);
+  assert.deepEqual(done.pipeline.stages.map((s) => [s.stage, s.outcome]), [['check', 'ok'], ['intake', 'ok'], ['judge', 'gated']]);
+  const last = done.feed.at(-1).message;
+  assert.match(last, /mechanical checks only/);
+  assert.match(last, /not a verdict/);
+  assert.doesNotMatch(last, /accepted|broken|collision found/i);
+});
+
+function compilerOk() {
+  try {
+    execFileSync('clang', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test('r32.c independently reproduces every finite fact the package states', { skip: compilerOk() ? false : 'clang not available' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ramherd-r32-'));
+  try {
+    execFileSync('clang', ['-O2', '-o', join(dir, 'r32'), join(ROOT, 'research', 'sha256-r32', 'r32.c'), '-lpthread'], { stdio: 'pipe' });
+    const out = execFileSync(join(dir, 'r32'), ['selftest'], { cwd: dir, encoding: 'utf8' });
+    const expect = {
+      'admissible W7': 524288, 'admissible W8': 1048576, 'surviving (W8,E4,A0)': 44,
+      'table records': 593920, 'distinct A(-1) keys': 408576, 'max records per key': 4,
+      'admissible W14': 12, tails: 196608, 'published record present': 1, 'published tail present': 1,
+      'tails with the printed (uncorrected) equalities:': 0,
+    };
+    for (const [k, v] of Object.entries(expect)) assert.match(out, new RegExp(`^${k.replace(/[()]/g, '\\$&')} ${v}$`, 'm'), k);
+    assert.match(out, /regression accepted 1 record f3b8f7ae ab9c6465 6e417236 d68fa526 29b2d81b acb11ef2 replay 1/);
+    assert.match(out, /published-CV exhaustive tail scan: C32 collisions 1, C35 collisions 1/);
+    const sha = (f) => createHash('sha256').update(readFileSync(join(dir, f))).digest('hex');
+    // The hashes printed in the package's proof.md sections 4 and 6.
+    assert.equal(sha('table_be.bin'), '3cd961f8e0efe18027ec7192b4f0fa9f449659fdae14a5969fe3f6b821c8ebc7');
+    assert.equal(sha('tails_be.bin'), '25fb017b0432d0848acb9c08e238220b66277ab987c2a9ff1ada3a8f463fc7b6');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Runs last so it covers every test above, including the r32 research cycles.
 test('the vendored repo and its real accepted candidate are never modified', { skip: SKIP }, () => {
   assert.equal(fingerprintRealCandidate(), before);
   const status = execFileSync('git', ['status', '--porcelain'], { cwd: DEFAULT_REFERENCE_ROOT, encoding: 'utf8' });
