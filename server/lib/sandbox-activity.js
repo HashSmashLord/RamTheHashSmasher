@@ -14,22 +14,29 @@
 //     Chrome on the desktop is pointed at the IACR ePrint archive's search for
 //     that query (typed into the address bar), and the result list's real
 //     paper ids and titles are read back so the RAM's next thinking step can
-//     use them.
+//     use them;
+//   - on a running-experiment step, a real terminal (xfce4-terminal) opens
+//     (or is reused) and TYPES a real, cycling command that looks at the
+//     SAME real clone the one-time workbench intro made (`~/hash-smash`):
+//     `git log`, `ls` the candidate directory, `cat claim.json`, `cat
+//     proof.md`, `cat TASK.md`. The exact output is read back too, so what a
+//     viewer sees typed and what gets reported honestly are the same real
+//     thing — never a fabricated result or an invented busywork command.
 //
 // Checked against the real E2B `desktop` template on 2026-10-05 (a probe
 // sandbox, `command -v` + /usr/share/applications): Mousepad 0.5.8, gedit and
 // gnome-text-editor are installed (leafpad, nano, vim are not); Google Chrome
 // 150 is installed (`google-chrome`; the `firefox` binary is not on PATH, only
-// a firefox-esr .desktop entry); xdotool, xprop and curl are present, and the
-// sandbox reaches eprint.iacr.org (HTTP 200). Mousepad is used because it is
-// Xfce's own editor (the desktop is Xfce) and starts fast.
+// a firefox-esr .desktop entry); xfce4-terminal, xdotool, xprop and curl are
+// present, and the sandbox reaches eprint.iacr.org (HTTP 200). Mousepad is
+// used because it is Xfce's own editor (the desktop is Xfce) and starts fast.
 //
 // Everything goes through the sandbox's authenticated command channel. Text
 // reaches the sandbox only as single-quoted (shQuote) xdotool arguments or
 // base64; search queries are reduced to [A-Za-z0-9 .+-] before they are put
 // into a URL. No secret is ever typed: only public feed lines and queries.
 
-import { shQuote, checkAssignment } from './sandbox-task.js';
+import { shQuote, checkAssignment, REPO_DIR as WORKBENCH_REPO_DIR } from './sandbox-task.js';
 
 export const NOTES_DIR = '/tmp/ramnotes';
 export const CHROME_PROFILE_DIR = '/tmp/ramchrome';
@@ -202,5 +209,76 @@ export async function browseLiterature(sbx, { query, windowId = null, typeDelayM
   return { windowId: id, url, pageTitle: String(title?.stdout ?? '').trim().slice(0, 200), results };
 }
 
+/**
+ * A second, honest desktop activity for the running-experiment step: a real
+ * terminal that looks at the SAME real clone the workbench intro made
+ * (`~/hash-smash`, sandbox-task.js), instead of the loop's only visible
+ * action being the notes editor and an occasional browser tab. Nothing here
+ * is fabricated: every command reads a real file or real git history that
+ * is actually in that clone, or says plainly it is not there yet — never a
+ * pretend result.
+ */
+export function researchTerminalTitle(track) {
+  return `RAM research terminal - ${track}`;
+}
+
+/**
+ * Real commands cycled so a viewer watching for a while sees different real
+ * material each time, not the same thing on repeat. Absolute paths (under
+ * `~/hash-smash`) so they work regardless of the terminal's own cwd.
+ */
+export function repoInspectSteps(assignment) {
+  const { track, editablePath } = checkAssignment(assignment);
+  const dir = `${WORKBENCH_REPO_DIR}/${editablePath}`;
+  return [
+    { label: 'the cloned repo\'s recent commit history', command: `cd ${WORKBENCH_REPO_DIR} && git log --oneline -8` },
+    { label: `${track}'s candidate directory`, command: `ls -la ${dir} ${dir}/certificates 2>/dev/null || echo 'candidate directory not in this clone yet'` },
+    { label: `${track}'s current claim.json`, command: `cat ${dir}/claim.json 2>/dev/null || echo 'claim.json not in this clone yet'` },
+    { label: `${track}'s proof notes`, command: `sed -n '1,60p' ${dir}/proof.md 2>/dev/null || echo 'proof.md not in this clone yet'` },
+    { label: `${track}'s task definition`, command: `cat ${WORKBENCH_REPO_DIR}/tracks/${track}/TASK.md 2>/dev/null || echo 'TASK.md not in this clone yet'` },
+  ];
+}
+
+/** Opens (or re-finds) the research terminal window: a plain reusable shell, found and reused like the notes editor. */
+export async function ensureResearchTerminal(sbx, { assignment, windowId = null }) {
+  const run = (cmd, opts) => sbx.commands.run(cmd, opts);
+  const { track } = checkAssignment(assignment);
+  const title = researchTerminalTitle(track);
+  if (windowId) {
+    const still = await run(`xdotool getwindowname ${windowId} 2>/dev/null || true`);
+    if (String(still?.stdout ?? '').trim() === title) return windowId;
+  }
+  await run(`xfce4-terminal --disable-server --maximize --hide-menubar -T ${shQuote(title)}`, { background: true, timeoutMs: 0 });
+  const found = await run(`timeout 20 xdotool search --sync --onlyvisible --name ${shQuote(`^${title}$`)} 2>/dev/null | head -n 1 || true`, { timeoutMs: 30_000 });
+  const id = String(found?.stdout ?? '').trim();
+  if (!/^\d+$/.test(id)) throw new Error('research terminal window did not appear on the sandbox desktop');
+  const wa = String((await run(workareaCommand()))?.stdout ?? '').trim().split(',').map(Number);
+  if (wa.length === 4 && wa.every(Number.isFinite)) {
+    await run(`xdotool windowmove ${id} ${wa[0]} ${wa[1]} windowsize ${id} ${wa[2]} ${Math.max(200, wa[3] - 30)} >/dev/null 2>&1 || true`);
+  }
+  return id;
+}
+
+/**
+ * Types one of `repoInspectSteps` into the research terminal (so a viewer
+ * sees it run live), then independently reads back its real output — same
+ * "typed, then verified by reading real state" discipline as typeIntoNotepad
+ * and browseLiterature. `index` picks which step; callers rotate it (e.g.
+ * once per running-experiment step) so the same command never repeats back
+ * to back. Returns { windowId, label, command, output }.
+ */
+export async function inspectRepoFile(sbx, { assignment, windowId = null, index = 0, typeDelayMs = 20 }) {
+  const run = (cmd, opts) => sbx.commands.run(cmd, opts);
+  const steps = repoInspectSteps(assignment);
+  const step = steps[((index % steps.length) + steps.length) % steps.length];
+  const id = await ensureResearchTerminal(sbx, { assignment, windowId });
+  await run(`xdotool windowactivate --sync ${id} >/dev/null 2>&1 || true`);
+  await run(`xdotool type --delay ${typeDelayMs} -- ${shQuote(step.command)} && xdotool key Return`, { timeoutMs: 60_000 });
+  await run('sleep 1');
+  const out = await run(step.command, { timeoutMs: 20_000 });
+  const output = asciiText(String(out?.stdout ?? out?.stderr ?? '')).slice(0, 400);
+  return { windowId: id, label: step.label, command: step.command, output };
+}
+
 /** What store.js hands to createSlotManager as `sandboxActivity`. */
-export const desktopActivity = Object.freeze({ ensureNotepad, typeIntoNotepad, browseLiterature });
+export const desktopActivity = Object.freeze({ ensureNotepad, typeIntoNotepad, browseLiterature, ensureResearchTerminal, inspectRepoFile });

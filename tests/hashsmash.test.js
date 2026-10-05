@@ -250,6 +250,51 @@ test('submitLive always refuses', async () => {
   await assert.rejects(() => runner().submitLive(), /not implemented/);
 });
 
+// ---------------------------------------------------------------------------
+// Attribution: which RAM (slot id, model, track, approach) produced a
+// candidate, recorded OUTSIDE the package and outside the vendored repo
+// clone. Pure fs code (no python/git), so unlike most of this file it does
+// not need the vendored repo and is never SKIP-gated.
+// ---------------------------------------------------------------------------
+
+test('writeAttribution records which RAM produced a candidate, outside the package, never touching claim.json', () => {
+  const attrDir = join(WS, 'attr-test-basic');
+  const r = runner({ attributionDir: attrDir });
+  const candidate = { kind: 'research', submissionState: 'ready', timeLog2: 86, successProbability: 0.9 };
+  const { path, record } = r.writeAttribution({
+    slotId: 'ram-3', track: R32, model: 'anthropic/claude-fable-5.1', approach: 'literature-replication', modelSource: 'roster', candidate, head: 'deadbeef',
+  });
+  assert.equal(path, join(attrDir, `ram-3__${R32}.json`));
+  assert.equal(record.slotId, 'ram-3');
+  assert.equal(record.track, R32);
+  assert.equal(record.model, 'anthropic/claude-fable-5.1');
+  assert.equal(record.approach, 'literature-replication');
+  assert.equal(record.modelSource, 'roster');
+  assert.equal(record.referenceHead, 'deadbeef');
+  assert.equal(record.candidateKind, 'research');
+  assert.equal(record.submissionState, 'ready');
+  assert.equal(record.timeLog2, 86);
+  assert.equal(record.successProbability, 0.9);
+  assert.match(record.note, /internal attribution record/i);
+  assert.match(record.note, /no real external submission mechanism yet/i);
+  assert.match(record.producedAt, /^\d{4}-\d{2}-\d{2}T/);
+  // Written to disk exactly as returned, and nowhere near the candidate package.
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), record);
+  assert.equal(dirname(path), resolve(attrDir));
+});
+
+test('writeAttribution tolerates an unknown model/approach (defaults to null) and refuses a bad slot id or track', () => {
+  const attrDir = join(WS, 'attr-test-defaults');
+  const r = runner({ attributionDir: attrDir });
+  const { record } = r.writeAttribution({ slotId: 'ram-4', track: TRACK, candidate: { kind: 'harness-draft' } });
+  assert.equal(record.model, null);
+  assert.equal(record.approach, null);
+  assert.equal(record.modelSource, null);
+  assert.equal(record.successProbability, null);
+  assert.throws(() => r.writeAttribution({ slotId: '../evil', track: TRACK, candidate: {} }), /invalid slot id/);
+  assert.throws(() => r.writeAttribution({ slotId: 'ok', track: 'not-a-real-track', candidate: {} }), /invalid track/);
+});
+
 test('a RAM slot on sha256-r31-exploratory drives the real pipeline through its lifecycle', { skip: SKIP }, async () => {
   const m = createSlotManager({ llmProvider: createMockLlmProvider(), pipelineRunner: runner(), idPrefix: 'itest' });
   m.setSlotCount(3); // 0 -> sha256-r31, 1 -> sha256-r32 (research package), 2 -> sha3-256-r5 (mock)

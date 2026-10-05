@@ -1,12 +1,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSlotManager, SLOT_STATUSES } from '../server/lib/slots.js';
+import { createSlotManager, SLOT_STATUSES, updateBestResult, loopGrounding } from '../server/lib/slots.js';
 import { createMockLlmProvider, createOpenRouterProvider } from '../server/lib/llm.js';
 import { createCostLedger } from '../server/lib/cost.js';
 
 function manager() {
   return createSlotManager({ llmProvider: createMockLlmProvider() });
 }
+
+test('updateBestResult only ever moves toward a genuinely better REAL number, never invents or regresses', () => {
+  const slot = { bestResult: null };
+  assert.equal(updateBestResult(slot, null), null, 'nothing to learn from yet');
+  assert.equal(slot.bestResult, null);
+  updateBestResult(slot, { timeLog2: 90, successProbability: 0.5 });
+  assert.deepEqual(slot.bestResult, { timeLog2: 90, successProbability: 0.5 });
+  // A worse real number never overwrites the best one.
+  updateBestResult(slot, { timeLog2: 95, successProbability: 0.3 });
+  assert.deepEqual(slot.bestResult, { timeLog2: 90, successProbability: 0.5 });
+  // A genuinely better real number on either axis does.
+  updateBestResult(slot, { timeLog2: 86, successProbability: 0.3 });
+  assert.deepEqual(slot.bestResult, { timeLog2: 86, successProbability: 0.5 });
+  updateBestResult(slot, { timeLog2: 86, successProbability: 0.9 });
+  assert.deepEqual(slot.bestResult, { timeLog2: 86, successProbability: 0.9 });
+  // Non-numeric fields (e.g. a harness draft with no success claim) are ignored, not treated as zero.
+  updateBestResult(slot, { timeLog2: null, successProbability: null });
+  assert.deepEqual(slot.bestResult, { timeLog2: 86, successProbability: 0.9 });
+});
+
+test('loopGrounding asks the model to beat its real best so far, or says honestly there is none yet', () => {
+  const slot = { feed: [], bestResult: null, lastSearch: null };
+  assert.match(loopGrounding(slot), /no real measured result yet this session/);
+  slot.bestResult = { timeLog2: 86, successProbability: 0.9 };
+  const g = loopGrounding(slot);
+  assert.match(g, /best REAL result so far this session: time 2\^86, success probability 0\.9/);
+  assert.match(g, /Try to beat it/);
+});
 
 test('setSlotCount(0) starts with no slots', () => {
   const m = manager();
