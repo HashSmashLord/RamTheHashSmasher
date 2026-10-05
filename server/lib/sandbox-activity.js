@@ -43,6 +43,14 @@ export const MAX_STEP_PAUSE_SEC = 30;
 export const DEFAULT_BROWSE_EVERY = 2;
 /** Hard cap on real thinking (LLM) calls one sandbox session may make before the loop stops. */
 export const DEFAULT_MAX_THINKING_PER_SESSION = 60;
+/**
+ * max_tokens for a loop thinking call. Measured on the real roster model
+ * (anthropic/claude-opus-5.5 via OpenRouter, 2026-10-05): reasoning is
+ * mandatory on that endpoint and used all of the default 300 tokens, leaving
+ * an empty answer; with 800 it finished (about 200 reasoning tokens) with a
+ * full answer and its SEARCH line, for about $0.008. A ceiling, not a spend.
+ */
+export const LOOP_THINKING_MAX_TOKENS = 800;
 /** The idle ceiling the loop is built to: never this long between two steps unless one is mid-call. */
 export const MAX_IDLE_MS = 60_000;
 
@@ -102,6 +110,10 @@ t=sys.stdin.read()
 for m in list(re.finditer(r'class="paperlink" href="/(\d{4}/\d+)".*?<strong>(.*?)</strong>',t,re.S))[:5]:
   print(m.group(1)+'\t'+html.unescape(re.sub(r'<[^>]+>','',m.group(2))).strip())`;
 
+export const MOUSEPAD_SETTINGS_COMMAND = 'gsettings set org.xfce.mousepad.preferences.view word-wrap true; '
+  + 'gsettings set org.xfce.mousepad.preferences.view use-default-monospace-font false; '
+  + "gsettings set org.xfce.mousepad.preferences.view font-name 'DejaVu Sans Mono 12'";
+
 function workareaCommand() {
   return "xprop -root _NET_WORKAREA | sed 's/.*= //' | cut -d, -f1-4 | tr -d ' '";
 }
@@ -122,6 +134,8 @@ export async function ensureNotepad(sbx, { assignment, windowId = null }) {
   const header = `RAM research notes - ${assignment.track} (${assignment.approach}), model ${assignment.model}\n`
     + 'Each entry below is typed live, as it happens: the RAM\'s real status change and its real feed line.\n';
   await run(`mkdir -p ${NOTES_DIR} && [ -f ${file} ] || printf %s ${shQuote(header)} > ${file}`);
+  // Word wrap + a readable font (Mousepad 0.5's own GSettings keys; best effort).
+  await run(`${MOUSEPAD_SETTINGS_COMMAND} >/dev/null 2>&1 || true`);
   await run(`mousepad --disable-server ${file}`, { background: true, timeoutMs: 0 });
   const found = await run(`timeout 20 xdotool search --sync --onlyvisible --name ${shQuote(name.replace(/\./g, '\\.'))} 2>/dev/null | head -n 1 || true`, { timeoutMs: 30_000 });
   const id = String(found?.stdout ?? '').trim();
@@ -134,6 +148,13 @@ export async function ensureNotepad(sbx, { assignment, windowId = null }) {
   return id;
 }
 
+/** One shell command that types `text` line by line, pressing Return between lines. */
+export function typeLinesCommand(text, typeDelayMs = 18) {
+  return String(text).split('\n')
+    .map((line, i) => `${i ? 'xdotool key Return' : 'true'}${line ? ` && xdotool type --delay ${Number(typeDelayMs)} -- ${shQuote(line)}` : ''}`)
+    .join(' && ');
+}
+
 /**
  * Types `block` at the end of the notes file in the editor, saves, and reads
  * the file back. Returns whether the saved file really ends with the block.
@@ -143,7 +164,9 @@ export async function typeIntoNotepad(sbx, { assignment, windowId, block, typeDe
   const file = notesFile(assignment);
   await run(`xdotool windowactivate --sync ${windowId} >/dev/null 2>&1 || true`);
   await run('xdotool key --clearmodifiers ctrl+End');
-  await run(`xdotool type --delay ${typeDelayMs} -- ${shQuote(block)}`, { timeoutMs: 90_000 });
+  // Line by line with real Return keys: a "\n" inside `xdotool type` is dropped by Mousepad
+  // (seen on the real template: every entry ran into the previous line).
+  await run(typeLinesCommand(block, typeDelayMs), { timeoutMs: 90_000 });
   await run('xdotool key --clearmodifiers ctrl+s && sleep 0.6');
   const back = await run(`tail -c ${block.length + 200} ${file} 2>/dev/null || true`);
   const norm = (s) => String(s).replace(/\s+/g, ' ').trim();

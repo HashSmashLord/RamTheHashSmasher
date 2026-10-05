@@ -141,7 +141,7 @@ import { assignmentForIndex, ACTIVE_TRACKS } from './targets.js';
 import { contextPayload } from './sandbox-context.js';
 import {
   parseThinking, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
-  DEFAULT_BROWSE_EVERY, DEFAULT_MAX_THINKING_PER_SESSION,
+  DEFAULT_BROWSE_EVERY, DEFAULT_MAX_THINKING_PER_SESSION, LOOP_THINKING_MAX_TOKENS,
 } from './sandbox-activity.js';
 
 // 'validated' = the candidate passed HashSmash's real local intake (mechanical
@@ -422,7 +422,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         slot.suggestions.map((s) => s.text).join(' | ') || 'none'
       }.`;
       const result = await llmProvider.complete(fromLoop
-        ? { model, system: LOOP_THINKING_SYSTEM, prompt: `${base}${loopGrounding(slot)}` }
+        ? { model, system: LOOP_THINKING_SYSTEM, prompt: `${base}${loopGrounding(slot)}`, maxTokens: LOOP_THINKING_MAX_TOKENS }
         : { model, system: 'You are a HashSmash solver agent. Describe, in one sentence, the next concrete thing you will try.', prompt: base });
       let text = result.text;
       slot.lastThink = { mocked: Boolean(result.mocked), search: null };
