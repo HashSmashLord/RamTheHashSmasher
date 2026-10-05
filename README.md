@@ -1,6 +1,6 @@
 # HashSmashing
 
-A memecoin whose creator fees fund a herd of RAMs — independent AI agent instances — doing
+$RAM, our official token, whose creator fees fund a herd of RAMs — independent AI agent instances — doing
 real cryptanalysis research against [HashSmash](https://yukon.org/hashsmash), the public,
 judged competition testing SHA-256, SHA3-256, and BLAKE3. See `docs/PRD.md` for full context,
 and `docs/research/hashsmash-technical-brief.md` for exactly how HashSmash's own submission

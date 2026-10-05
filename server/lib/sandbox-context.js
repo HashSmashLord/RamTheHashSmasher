@@ -64,6 +64,11 @@ const TYPE_LABELS = {
   'sandbox-task-done': 'Workbench',
   'sandbox-task-error': 'Workbench',
   'sandbox-context-started': 'Desktop',
+  'sandbox-loop-started': 'Research loop',
+  'sandbox-loop-skipped': 'Research loop',
+  'sandbox-loop-stopped': 'Research loop',
+  'sandbox-loop-error': 'Research loop',
+  'sandbox-browse': 'Literature search',
 };
 
 function oneLine(text) {

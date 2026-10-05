@@ -8,11 +8,12 @@ import { computeAllocation, withLaunchCeiling } from './lib/budget.js';
 import { createSlotManager } from './lib/slots.js';
 import { createCoordinator, createCoordinatorView } from './lib/coordinator.js';
 import { createIdeaQueue } from './lib/moderation.js';
-import { createLlmProvider, modelOverride } from './lib/llm.js';
+import { createLlmProvider, modelOverride, isLiveMode } from './lib/llm.js';
 import { createHashSmashRunner, pipelinePolicy } from './lib/hashsmash.js';
 import { createSandboxManager, sandboxPolicy } from './lib/sandbox.js';
 import { runWorkbenchTask } from './lib/sandbox-task.js';
 import { contextBanner } from './lib/sandbox-context.js';
+import { desktopActivity } from './lib/sandbox-activity.js';
 import { createCostLedger } from './lib/cost.js';
 import { createRamFunds } from './lib/ramfunds.js';
 import { createPayoutBook } from './lib/payouts.js';
@@ -90,7 +91,13 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   const autoRestart = sandboxManager && sandbox.autoRestart
     ? { enabled: true, baseDelayMs: sandbox.autoRestartBaseDelayMs, maxDelayMs: sandbox.autoRestartMaxDelayMs, maxFailures: sandbox.autoRestartMaxFailures }
     : null;
-  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, costLedger, modelOverride: modelOverride(env), autoRestart });
+  // Always-on research loop: opt-in with RAMHERD_SANDBOX_ACTIVE_LOOP=true on
+  // top of RAMHERD_SANDBOX=e2b. `live` is llm.js's own switch: in mock mode the
+  // loop never starts (slots.js says so in the feed instead).
+  const activeLoop = sandboxManager && sandbox.activeLoop
+    ? { enabled: true, live: isLiveMode(env), stepPauseMs: sandbox.activeLoopStepPauseMs, browseEvery: sandbox.activeLoopBrowseEvery, maxThinkingPerSession: sandbox.activeLoopMaxThinking }
+    : null;
+  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, sandboxActivity: activeLoop ? desktopActivity : null, activeLoop, costLedger, modelOverride: modelOverride(env), autoRestart });
   const ideaQueue = createIdeaQueue();
   // Pinata, opt-in with PINATA_JWT: a launchpad RAM's token metadata gets
   // pinned to IPFS instead of only living at this server's own endpoint.

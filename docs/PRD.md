@@ -2,7 +2,7 @@
 
 ## What this is
 
-A memecoin whose creator fees fund a fleet of AI agent instances doing real cryptanalysis
+$RAM, our official token, whose creator fees fund a fleet of AI agent instances doing real cryptanalysis
 research against [HashSmash](https://yukon.org/hashsmash) — the open, public competition
 (Eigen Labs / Shielded Labs / Yukon, backed by Zooko) testing how far AI can push attacks on
 SHA-256, SHA3-256, BLAKE3 and Poseidon. The more fees collected, the more parallel agent
@@ -29,7 +29,7 @@ HashSmash is a real, live competition with a real submission pipeline, already c
   `lanes/<lane>/candidates/<target>/` directory and run through
   `scripts/hashsmash_pipeline.py intake --track <id>`.
 - The repo's own harness already expects `OPENROUTER_API_KEY` (or AWS Bedrock) — meaning our
-  agent fleet can be, quite literally, that harness, funded by memecoin fees instead of
+  agent fleet can be, quite literally, that harness, funded by $RAM's fees instead of
   the operator's own OpenRouter balance.
 
 Full technical grounding (submission schema details, what techniques are realistic — SAT
@@ -38,7 +38,7 @@ up separately by a research pass over `reference/hash-smash/docs/` — see
 `docs/research/hashsmash-technical-brief.md` once that lands.
 
 **Framing honesty, on purpose:** "crack SHA-256" in the literal sense is not a realistic
-24-hour-memecoin outcome — nobody expects it to be; that's the entire point of the
+24-hour outcome — nobody expects it to be; that's the entire point of the
 competition being hard and public. What's real and valuable: genuine incremental
 cryptanalysis research (reduced-round attacks, novel differential paths, cost-model
 improvements) submitted honestly through HashSmash's own review pipeline, with every attempt

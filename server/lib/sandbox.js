@@ -99,6 +99,7 @@
 // calls are made by the host, never from inside the sandbox.
 
 import { randomInt } from 'node:crypto';
+import { DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC, DEFAULT_BROWSE_EVERY, DEFAULT_MAX_THINKING_PER_SESSION } from './sandbox-activity.js';
 
 const DEFAULT_TEMPLATE = 'desktop';
 const DEFAULT_TIMEOUT_MIN = 15;
@@ -197,6 +198,16 @@ export function sandboxPolicy(env = process.env) {
     autoRestartBaseDelayMs: intInRange(env.RAMHERD_SANDBOX_AUTORESTART_BACKOFF_SEC, DEFAULT_RESTART_BASE_DELAY_SEC, 1, 3600) * 1000,
     autoRestartMaxDelayMs: RESTART_MAX_DELAY_MS,
     autoRestartMaxFailures: intInRange(env.RAMHERD_SANDBOX_AUTORESTART_MAX_FAILURES, DEFAULT_RESTART_MAX_FAILURES, 1, 20),
+    // Always-on research loop (slots.js "Active loop"): drives a roster RAM's
+    // real advance() back to back while its sandbox runs and types each step on
+    // the desktop. Off unless RAMHERD_SANDBOX_ACTIVE_LOOP=true exactly (each
+    // thinking step is a real, billed model call when live). The pause between
+    // steps is clamped to 2..30 s so the RAM never idles a minute; an
+    // out-of-range value falls back to the default 5 s.
+    activeLoop: enabled && env.RAMHERD_SANDBOX_ACTIVE_LOOP === 'true',
+    activeLoopStepPauseMs: intInRange(env.RAMHERD_SANDBOX_ACTIVE_LOOP_PAUSE_SEC, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC) * 1000,
+    activeLoopBrowseEvery: intInRange(env.RAMHERD_SANDBOX_ACTIVE_LOOP_BROWSE_EVERY, DEFAULT_BROWSE_EVERY, 1, 100),
+    activeLoopMaxThinking: intInRange(env.RAMHERD_SANDBOX_ACTIVE_LOOP_MAX_CALLS, DEFAULT_MAX_THINKING_PER_SESSION, 1, 1000),
   });
 }
 

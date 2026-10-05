@@ -90,6 +90,38 @@
 // timer, and nothing new is scheduled after that; an admin start or stop on a
 // slot cancels that slot's pending restart.
 //
+// Active loop (optional `activeLoop` + `sandboxActivity`, store.js passes them
+// only when RAMHERD_SANDBOX_ACTIVE_LOOP=true and sandboxes are on): once a
+// roster slot's workbench task has finished on a running sandbox, the slot's
+// REAL research cycle is driven continuously: `advance()` is called back to
+// back (idle -> thinking -> running-experiment -> validated|submitted|failed
+// -> idle -> ...), with only a short pause (`stepPauseMs`, default 5 s, floor
+// 2 s, ceiling 30 s) between one step finishing and the next starting, so the
+// slot's status never sits still for more than MAX_IDLE_MS (60 s) unless a
+// step is mid-call (a model call or the real HashSmash pipeline). The desktop
+// is the visible side of the SAME event, not a second timer: the feed line(s)
+// each advance() just pushed are what get typed into the notes editor
+// (sandbox-activity.js), and the banner (which shows the latest feed entry)
+// says the same thing. On a thinking step the model may end with a
+// "SEARCH: <query>" line; on at most one in `browseEvery` thinking steps that
+// opens a real IACR ePrint search in the desktop's Chrome, reads the real
+// result titles, logs them in the feed and hands them to the next thinking
+// step. Loop-driven steps never fabricate: on a track with no real experiment
+// runner the experiment step says nothing ran instead of "drafted".
+// Guardrails:
+//   - never starts in mock mode (`activeLoop.live`, from llm.js isLiveMode),
+//     and stops itself if a thinking call ever comes back mocked;
+//   - never starts while the paid HashSmash judge gate is open (every cycle
+//     would buy a judge call);
+//   - at most `maxThinkingPerSession` real thinking calls per sandbox session;
+//   - consecutive step failures back off (doubling, capped under the idle
+//     ceiling) and stop the loop after `maxFailures`;
+//   - stops the moment its sandbox stops (admin stop, retire, E2B timeout,
+//     a replacement sandbox from auto-restart, shutdown via stopActiveLoops),
+//     and every step re-checks it is still the current loop of a running
+//     session before calling the model or typing anything.
+// Owned (launchpad) slots are never driven by it.
+//
 // Optional `costLedger` (server/lib/cost.js): when given, every real "thinking"
 // LLM call (the one place `advance()` calls `llmProvider.complete()`) reports
 // its tokens and USD cost against this slot, and against the slot's RAM id
@@ -107,6 +139,10 @@
 
 import { assignmentForIndex, ACTIVE_TRACKS } from './targets.js';
 import { contextPayload } from './sandbox-context.js';
+import {
+  parseThinking, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
+  DEFAULT_BROWSE_EVERY, DEFAULT_MAX_THINKING_PER_SESSION,
+} from './sandbox-activity.js';
 
 // 'validated' = the candidate passed HashSmash's real local intake (mechanical
 // checks only). It is not judged, not scored, and not submitted anywhere.
@@ -120,6 +156,29 @@ export const SLOT_STATUSES = ['idle', 'thinking', 'running-experiment', 'validat
 export function restartDelayMs(failures, baseMs, maxMs) {
   if (failures <= 0) return 0;
   return Math.min(maxMs, baseMs * 2 ** (failures - 1));
+}
+
+/** System prompt for a thinking step the active loop drives. */
+export const LOOP_THINKING_SYSTEM = 'You are a HashSmash solver agent whose work is shown live on a desktop people are watching. '
+  + 'In two or three short sentences, say the next concrete thing you will try on this target and why. '
+  + 'Never claim a result, a found collision or progress you do not have. '
+  + 'If looking up published literature would genuinely help this step, end with one line "SEARCH: <a short query for the IACR ePrint archive>"; otherwise do not add that line.';
+
+/** Feed entry types that are the RAM's research history (what a thinking step is grounded in). */
+const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|pipeline-.*|sandbox-browse|sandbox-task-done|suggestion-attached)$/;
+
+/** Real recent history + last real search results, appended to a loop thinking prompt. */
+export function loopGrounding(slot) {
+  const clip = (t, n) => { const x = String(t).replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
+  const recent = slot.feed.filter((f) => HISTORY_TYPES.test(f.type)).slice(-6).map((f) => `[${f.type}] ${clip(f.message, 220)}`);
+  let out = ` Your recent activity, newest last: ${recent.length ? recent.join(' || ') : 'none yet'}.`;
+  const ls = slot.lastSearch;
+  if (ls) {
+    out += ` Your last literature search, "${ls.query}" on the IACR ePrint archive, listed: ${
+      ls.results.length ? ls.results.slice(0, 5).map((r) => `${r.id} "${clip(r.title, 120)}"`).join('; ') : 'no results'
+    } (titles only; you have not read these papers).`;
+  }
+  return out;
 }
 
 function freezeCopy(value) {
@@ -136,13 +195,15 @@ function freezeCopy(value) {
  *   costLedger?: ReturnType<typeof import('./cost.js').createCostLedger>|null,
  *   modelOverride?: string|null,
  *   autoRestart?: { enabled?: boolean, baseDelayMs?: number, maxDelayMs?: number, maxFailures?: number }|null,
+ *   sandboxActivity?: typeof import('./sandbox-activity.js').desktopActivity|null,
+ *   activeLoop?: { enabled?: boolean, live: boolean, stepPauseMs?: number, minStepPauseMs?: number, browseEvery?: number, maxThinkingPerSession?: number, maxFailures?: number }|null,
  *   setTimer?: (fn: () => void, ms: number) => any,
  *   clearTimer?: (handle: any) => void,
  *   now?: () => string,
  *   idPrefix?: string,
  * }} opts
  */
-export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, autoRestart = null, setTimer = setTimeout, clearTimer = clearTimeout, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
+export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, autoRestart = null, sandboxActivity = null, activeLoop = null, setTimer = setTimeout, clearTimer = clearTimeout, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createSlotManager requires an llmProvider with complete()');
   }
@@ -168,6 +229,22 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
   } : null;
   /** @type {Map<string, { failures: number, timer: any, nextAt: string, attempt: Promise<void>|null }>} slot id -> its pending auto-restart */
   const restarts = new Map();
+  // Active loop config; null when not configured (then nothing below ever drives a slot).
+  const loopCfg = activeLoop && activeLoop.enabled !== false && sandboxManager && sandboxActivity ? (() => {
+    const floor = activeLoop.minStepPauseMs ?? MIN_STEP_PAUSE_SEC * 1000;
+    return {
+      live: activeLoop.live === true,
+      stepPauseMs: Math.min(MAX_STEP_PAUSE_SEC * 1000, Math.max(floor, activeLoop.stepPauseMs ?? DEFAULT_STEP_PAUSE_SEC * 1000)),
+      browseEvery: Math.max(1, activeLoop.browseEvery ?? DEFAULT_BROWSE_EVERY),
+      maxThinkingPerSession: Math.max(1, activeLoop.maxThinkingPerSession ?? DEFAULT_MAX_THINKING_PER_SESSION),
+      maxFailures: Math.max(1, activeLoop.maxFailures ?? 5),
+      shutDown: false,
+    };
+  })() : null;
+  /** @type {Map<string, any>} slot id -> its running active loop */
+  const loops = new Map();
+  /** @type {Map<string, Promise<any>>} slot id -> its latest advance() (steps of one slot never overlap) */
+  const advanceChains = new Map();
 
   function pushFeed(slot, type, message) {
     slot.feed.push({ ts: now(), type, message });
@@ -286,6 +363,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         slot.active = false;
         pushFeed(slot, 'retired', 'Slot retired: compute budget no longer supports it.');
         cancelRestart(slot.id, 'the slot was retired');
+        stopLoop(slot.id);
         if (slot.sandbox && (slot.sandbox.status === 'starting' || slot.sandbox.status === 'running')) {
           // Fire and forget: setSlotCount stays synchronous; the outcome lands in the feed.
           stopSandbox(slot.id).catch(() => {});
@@ -313,10 +391,24 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
    * (submitted | failed) -> idle lifecycle by a single step. The "thinking"
    * step is the one point that calls the LLM provider (mock by default).
    *
+   * Calls on one slot are serialized (an admin call and the active loop never
+   * run the same step twice). `fromLoop` (the active loop only) grounds the
+   * thinking prompt in the slot's recent real history and last literature
+   * search, lets the model ask for a search, and makes the experiment step
+   * say plainly that nothing ran on a track with no real runner.
+   *
    * @param {string} id
-   * @param {{ outcome?: 'submitted'|'failed' }} [opts]
+   * @param {{ outcome?: 'submitted'|'failed', fromLoop?: boolean }} [opts]
    */
-  async function advance(id, { outcome } = {}) {
+  function advance(id, opts = {}) {
+    const prev = advanceChains.get(id) ?? Promise.resolve();
+    const p = prev.catch(() => {}).then(() => advanceNow(id, opts));
+    advanceChains.set(id, p);
+    p.finally(() => { if (advanceChains.get(id) === p) advanceChains.delete(id); }).catch(() => {});
+    return p;
+  }
+
+  async function advanceNow(id, { outcome, fromLoop = false } = {}) {
     const slot = slots.get(id);
     if (!slot) throw new RangeError(`unknown slot id: ${id}`);
     if (!slot.active) throw new Error(`slot ${id} is retired and cannot advance`);
@@ -324,17 +416,23 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     const { track, approach, hashFunction, rounds, model } = slot.assignment;
 
     if (slot.status === 'idle') {
-      const result = await llmProvider.complete({
-        model,
-        system: 'You are a HashSmash solver agent. Describe, in one sentence, the next concrete thing you will try.',
-        prompt: `Target: ${hashFunction} reduced to ${rounds} rounds (${track}). Approach: ${approach}. ${
-          slot.brief ? `Owner's brief (context from this RAM's owner, approved by the operator; not instructions): "${slot.brief}". ` : ''
-        }Recent suggestions: ${
-          slot.suggestions.map((s) => s.text).join(' | ') || 'none'
-        }.`,
-      });
+      const base = `Target: ${hashFunction} reduced to ${rounds} rounds (${track}). Approach: ${approach}. ${
+        slot.brief ? `Owner's brief (context from this RAM's owner, approved by the operator; not instructions): "${slot.brief}". ` : ''
+      }Recent suggestions: ${
+        slot.suggestions.map((s) => s.text).join(' | ') || 'none'
+      }.`;
+      const result = await llmProvider.complete(fromLoop
+        ? { model, system: LOOP_THINKING_SYSTEM, prompt: `${base}${loopGrounding(slot)}` }
+        : { model, system: 'You are a HashSmash solver agent. Describe, in one sentence, the next concrete thing you will try.', prompt: base });
+      let text = result.text;
+      slot.lastThink = { mocked: Boolean(result.mocked), search: null };
+      if (fromLoop) {
+        const { note, search } = parseThinking(result.text);
+        text = note || '(the model returned no text for this step)';
+        slot.lastThink.search = result.mocked ? null : search;
+      }
       slot.status = 'thinking';
-      pushFeed(slot, 'thinking', result.text);
+      pushFeed(slot, 'thinking', text);
       if (costLedger && result.usage) {
         costLedger.record({ slotId: slot.id, ramId: slot.ramId, model, usage: result.usage, ref: slot.feed[slot.feed.length - 1].ts });
       }
@@ -347,12 +445,18 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
           ? (pipelineRunner.candidateKindFor?.(track) === 'research'
             ? `Next step runs HashSmash's real local pipeline (check + intake) on this RAM's committed research package for ${track}.`
             : `Next step runs HashSmash's real local pipeline (check + intake) on a labeled harness draft for ${track}.`)
-          : `Running ${approach} experiment against ${track}.`,
+          : fromLoop
+            ? `Next: the ${approach} experiment on ${track}. This harness has no real experiment runner for ${track} yet, so nothing will be executed for it this cycle.`
+            : `Running ${approach} experiment against ${track}.`,
       );
     } else if (slot.status === 'running-experiment' && pipelineRunner?.supportsTrack(track)) {
       // Real pipeline step. Any caller-supplied `outcome` is ignored here: the
       // HashSmash pipeline's own verdict decides the slot's status.
       await runRealPipeline(slot);
+    } else if (slot.status === 'running-experiment' && fromLoop) {
+      // No runner for this track: say so, never "drafted".
+      slot.status = 'failed';
+      pushFeed(slot, 'failed', `No experiment ran for ${track}: there is no real runner for this track in this harness yet. Nothing was drafted, validated or submitted.`);
     } else if (slot.status === 'running-experiment') {
       const next = outcome === 'failed' ? 'failed' : 'submitted';
       slot.status = next;
@@ -458,6 +562,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     if (!slot) throw new RangeError(`unknown slot id: ${id}`);
     if (!slot.active) throw new Error(`slot ${id} is retired and cannot start a sandbox`);
     if (slot.sandbox?.status === 'running') return snapshot(slot);
+    stopLoop(id); // a new session never inherits the old one's loop
     slot.sandbox = { provider: sandboxManager.provider, status: 'starting', sessionId: null, requestedAt: now() };
     pushFeed(slot, 'sandbox-starting', 'Starting an isolated desktop sandbox for this RAM.');
     try {
@@ -502,7 +607,160 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       pushFeed(slot, 'sandbox-task-done', `Workbench ready on desktop ${sessionId}: ${parts.join('; ') || 'commands ran'}.`);
     } catch (err) {
       pushFeed(slot, 'sandbox-task-error', `Desktop terminal task did not finish: ${err.message}`);
+    } finally {
+      // The always-on loop takes over from the one-time intro, ok or not, if the desktop is still up.
+      if (current()) startLoop(slot, sessionId);
     }
+  }
+
+  // ---- active loop (see the header) ----
+
+  function loopActive() {
+    return Boolean(loopCfg && !loopCfg.shutDown);
+  }
+
+  function loopIsCurrent(slot, entry) {
+    return loopActive() && loops.get(slot.id) === entry && !entry.stopped && slot.active
+      && slot.sandbox?.status === 'running' && slot.sandbox?.sessionId === entry.sessionId;
+  }
+
+  /** Starts the always-on loop on a slot's running sandbox, or says in the feed why it will not. */
+  function startLoop(slot, sessionId) {
+    if (!loopActive() || slot.kind !== 'roster' || !slot.active) return;
+    stopLoop(slot.id);
+    if (!loopCfg.live) {
+      pushFeed(slot, 'sandbox-loop-skipped', 'Always-on research loop not started: the model provider is in mock (dry-run) mode, so there is no real model to think with.');
+      return;
+    }
+    if (pipelineRunner?.judgeAllowed) {
+      pushFeed(slot, 'sandbox-loop-skipped', 'Always-on research loop not started: the paid HashSmash judge gate is open, and a back-to-back loop would buy a judge call every cycle.');
+      return;
+    }
+    const entry = {
+      sessionId, timer: null, running: null, stopped: false, startedAt: now(),
+      steps: 0, thinking: 0, failures: 0, lastBrowseThinking: -Infinity, browses: 0,
+      notepadId: null, browserId: null, unverifiedTyping: 0,
+      lastAdvanceEndMs: null, maxGapMs: 0, history: [],
+    };
+    loops.set(slot.id, entry);
+    pushFeed(slot, 'sandbox-loop-started', `Always-on research loop started on desktop ${sessionId}: this RAM now advances its real research cycle step after step (a ${Math.round(loopCfg.stepPauseMs / 1000)}s pause between steps, never idle for ${MAX_IDLE_MS / 1000}s unless a step is mid-call), and each step's feed line is typed into a notes editor on the desktop as it happens.`);
+    scheduleLoopStep(slot, entry, 0);
+  }
+
+  function scheduleLoopStep(slot, entry, delayMs) {
+    if (!loopIsCurrent(slot, entry)) return;
+    entry.timer = setTimer(() => {
+      entry.timer = null;
+      entry.running = loopStep(slot, entry);
+    }, delayMs);
+    entry.timer?.unref?.();
+  }
+
+  /** One loop step: a real advance(), then its feed line(s) typed on the desktop, maybe a real search. Never rejects. */
+  async function loopStep(slot, entry) {
+    if (!loopIsCurrent(slot, entry)) return;
+    const wasIdle = slot.status === 'idle';
+    if (wasIdle && entry.thinking >= loopCfg.maxThinkingPerSession) {
+      pushFeed(slot, 'sandbox-loop-stopped', `Always-on research loop stopped: it reached its cap of ${loopCfg.maxThinkingPerSession} model calls for this desktop session. A new session (restart) starts a fresh count.`);
+      stopLoop(slot.id);
+      return;
+    }
+    const startMs = Date.now();
+    if (entry.lastAdvanceEndMs !== null) entry.maxGapMs = Math.max(entry.maxGapMs, startMs - entry.lastAdvanceEndMs);
+    const before = slot.feed.length;
+    const statusBefore = slot.status;
+    try {
+      await advance(slot.id, { fromLoop: true });
+      entry.lastAdvanceEndMs = Date.now();
+      entry.steps += 1;
+      entry.history.push({ at: now(), statusBefore, statusAfter: slot.status, advanceMs: entry.lastAdvanceEndMs - startMs });
+      if (entry.history.length > 50) entry.history.shift();
+      if (wasIdle) {
+        entry.thinking += 1;
+        if (slot.lastThink?.mocked) {
+          pushFeed(slot, 'sandbox-loop-stopped', 'Always-on research loop stopped: the model call came back as a mock (dry-run) answer, so nothing is typed as if it were real thinking.');
+          stopLoop(slot.id);
+          return;
+        }
+      }
+      if (!loopIsCurrent(slot, entry)) return;
+      const produced = slot.feed.slice(before).filter((f) => !f.type.startsWith('sandbox-'));
+      const block = noteBlock({ ts: produced.at(-1)?.ts ?? now(), statusBefore, statusAfter: slot.status, entries: produced });
+      const typed = await sandboxManager.runTask(slot.id, async (sbx) => {
+        entry.notepadId = await sandboxActivity.ensureNotepad(sbx, { assignment: slot.assignment, windowId: entry.notepadId });
+        if (!loopIsCurrent(slot, entry)) return null;
+        return sandboxActivity.typeIntoNotepad(sbx, { assignment: slot.assignment, windowId: entry.notepadId, block });
+      });
+      if (typed && !typed.verified) entry.unverifiedTyping += 1;
+      const query = wasIdle ? slot.lastThink?.search : null;
+      if (query && entry.thinking - entry.lastBrowseThinking >= loopCfg.browseEvery && loopIsCurrent(slot, entry)) {
+        entry.lastBrowseThinking = entry.thinking;
+        const b = await sandboxManager.runTask(slot.id, (sbx) => sandboxActivity.browseLiterature(sbx, { query, windowId: entry.browserId }));
+        if (!loopIsCurrent(slot, entry)) return;
+        entry.browserId = b.windowId;
+        entry.browses += 1;
+        slot.lastSearch = { query, url: b.url, results: b.results, at: now() };
+        pushFeed(slot, 'sandbox-browse', `Looked up "${query}" on the IACR ePrint archive in Chrome on desktop ${entry.sessionId} (this RAM's model asked for the search). ${
+          b.results.length
+            ? `Results listed include: ${b.results.slice(0, 3).map((r) => `${r.id} "${r.title}"`).join('; ')}. Titles only: no paper has been read and nothing is concluded from them yet.`
+            : 'The search listed no papers.'
+        }`);
+      }
+      entry.failures = 0;
+      scheduleLoopStep(slot, entry, loopCfg.stepPauseMs);
+    } catch (err) {
+      if (!loopIsCurrent(slot, entry)) return; // the sandbox went away mid-step: stop quietly
+      entry.failures += 1;
+      if (entry.failures >= loopCfg.maxFailures) {
+        pushFeed(slot, 'sandbox-loop-stopped', `Always-on research loop stopped after ${entry.failures} failed steps in a row; last error: ${err.message}. It starts again with the next desktop session.`);
+        stopLoop(slot.id);
+        return;
+      }
+      // Back off, but stay under the idle ceiling.
+      const delay = Math.min(MAX_IDLE_MS - 10_000, loopCfg.stepPauseMs * 2 ** entry.failures);
+      pushFeed(slot, 'sandbox-loop-error', `Research loop step failed (${err.message}); retrying in ${Math.round(delay / 1000)}s (${entry.failures}/${loopCfg.maxFailures} failures before it stops).`);
+      scheduleLoopStep(slot, entry, delay);
+    }
+  }
+
+  /** Stops a slot's loop at once (no feed line: the reason is already in the feed). */
+  function stopLoop(id) {
+    const entry = loops.get(id);
+    if (!entry) return false;
+    entry.stopped = true;
+    if (entry.timer) clearTimer(entry.timer);
+    entry.timer = null;
+    loops.delete(id);
+    return true;
+  }
+
+  /** Permanent off switch for shutdown: stops every loop; none starts again. */
+  function stopActiveLoops() {
+    if (!loopCfg) return;
+    loopCfg.shutDown = true;
+    for (const id of [...loops.keys()]) stopLoop(id);
+  }
+
+  function activeLoopStatus() {
+    return {
+      configured: Boolean(loopCfg),
+      active: loopActive(),
+      live: loopCfg?.live ?? false,
+      stepPauseMs: loopCfg?.stepPauseMs ?? null,
+      maxIdleMs: MAX_IDLE_MS,
+      browseEvery: loopCfg?.browseEvery ?? null,
+      maxThinkingPerSession: loopCfg?.maxThinkingPerSession ?? null,
+      loops: [...loops].map(([slotId, e]) => ({
+        slotId, sessionId: e.sessionId, startedAt: e.startedAt, steps: e.steps, thinking: e.thinking, browses: e.browses,
+        failures: e.failures, maxGapMs: e.maxGapMs, unverifiedTyping: e.unverifiedTyping, history: e.history.map((h) => ({ ...h })),
+      })),
+    };
+  }
+
+  /** Test/operator hook: resolves once the slot's in-flight loop step (if any) settled. */
+  async function waitForLoopStep(id) {
+    const entry = loops.get(id);
+    if (entry?.running) await entry.running;
   }
 
   /** Test/operator hook: resolves once the slot's latest sandbox task has finished (or at once if none). */
@@ -575,6 +833,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
    */
   function markSandboxEnded(slot, d) {
     if (!slot.sandbox || slot.sandbox.sessionId !== d.sessionId || slot.sandbox.status !== 'running') return false;
+    stopLoop(slot.id);
     slot.sandbox = { ...slot.sandbox, status: 'expired', endedBy: d.endedBy, endedAt: d.endedAt, noticedAt: d.noticedAt, ranSeconds: d.ranSeconds };
     const ran = Math.round(d.ranSeconds);
     pushFeed(slot, 'sandbox-expired', d.endedBy === 'timeout'
@@ -709,8 +968,9 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     requireSandboxes();
     const slot = slots.get(id);
     if (!slot) throw new RangeError(`unknown slot id: ${id}`);
-    // A human stopping this desk wins over any pending auto-restart.
+    // A human stopping this desk wins over any pending auto-restart, and ends its loop at once.
     cancelRestart(id, 'an admin stopped this sandbox');
+    stopLoop(id);
     try {
       const result = await sandboxManager.stop(id);
       if (result && slot.sandbox) {
@@ -749,6 +1009,9 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     setAutoRestart,
     stopAutoRestart,
     autoRestartStatus,
+    stopActiveLoops,
+    activeLoopStatus,
+    waitForLoopStep,
     setSlotCount,
     createOwnedSlot,
     getSlots,

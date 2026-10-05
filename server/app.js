@@ -527,6 +527,7 @@ export function createApp(config) {
       // Switch auto-restart off for good BEFORE killing sandboxes, so no pending
       // restart can fire and start a new one after stopAll.
       store.slotManager.stopAutoRestart?.();
+      store.slotManager.stopActiveLoops?.();
       // Kill any running sandboxes first: they bill per second.
       if (store.sandboxManager) await store.sandboxManager.stopAll().catch(() => {});
       return new Promise((resolve) => {
