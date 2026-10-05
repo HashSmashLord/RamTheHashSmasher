@@ -64,6 +64,20 @@ export const CREATE_FEE_LAMPORTS = 200_000_000;
 /** The HashRammers treasury: receives the create fee and 100% of the token's creator fees. */
 export const TREASURY = '5M6Pc7ossZ8cuQAjnexH9vv2axEJoncgZ3C6uD2PJqHm';
 
+/**
+ * Front-end switch for the signing step. Live only when this AND the real server's
+ * `config.live` (GET /api/launchpad/config) are both true -- two independent gates, so
+ * flipping one alone never turns signing on. The single source of truth for both launch.js
+ * (the slip itself) and any other page that wants to say "not live yet" / "live now"
+ * honestly, instead of a hardcoded guess.
+ */
+export const LAUNCHPAD_LIVE = false;
+
+/** @param {{ live?: boolean }|null|undefined} config - the real `launchpad` block from GET /api/launchpad/config */
+export function isLaunchpadLive(config) {
+  return LAUNCHPAD_LIVE === true && config?.live === true;
+}
+
 const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const SYMBOL_CHARS = /^[A-Z0-9]+$/;
 // eslint-disable-next-line no-control-regex

@@ -14,14 +14,15 @@ import {
   LIMITS,
   CREATE_FEE_SOL,
   TREASURY,
+  LAUNCHPAD_LIVE,
+  isLaunchpadLive,
   familyByName,
   validateDraft,
   normalizeSymbol,
   toRamRequest,
 } from "./launchpad-rules.js";
 
-/** Front-end switch for the signing step. Live only when this AND the API's config.live are true. */
-export const LAUNCHPAD_LIVE = false;
+export { LAUNCHPAD_LIVE };
 
 const api = RAMherdAPI.launchpad;
 const $ = (id) => document.getElementById(id);
@@ -37,7 +38,7 @@ const state = {
 };
 
 export function isLive() {
-  return LAUNCHPAD_LIVE === true && state.config?.live === true;
+  return isLaunchpadLive(state.config);
 }
 
 // ---------------------------------------------------------------------------
@@ -530,9 +531,18 @@ function renderSignState() {
   const live = isLive();
   $("sign-btn").disabled = !live;
   $("sign-live-mark").hidden = live;
-  $("head-live-mark").textContent = live ? "Open" : "Not live yet";
+  $("head-live-mark").textContent = live ? "Live now" : "Not live yet";
   $("not-live-reason").hidden = live;
-  setIndex("sign", live ? "open" : "switched off", false);
+  setIndex("sign", live ? "live now" : "switched off", false);
+  const note = $("event-note");
+  if (note) {
+    note.textContent = live
+      ? "Live now. Fill in the slip, check it, and sign in Phantom to launch for real."
+      : "Not live yet. You can fill in and check the whole slip; the signing line stays switched off until the operator finishes the last setup step. Nothing here claims a hash function is broken.";
+  }
+  document.title = live
+    ? "Enter a RAM: HashRammers entry slip (live now)"
+    : "Enter a RAM: HashRammers entry slip (not live yet)";
 }
 
 $("sign-btn").addEventListener("click", async () => {
