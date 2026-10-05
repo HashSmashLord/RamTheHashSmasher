@@ -1,4 +1,7 @@
 import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { resolve, dirname, extname, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createStore } from './store.js';
 import { createRateLimiter } from './lib/ratelimit.js';
 
@@ -10,6 +13,23 @@ const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), interest-cohort=()',
   'Cross-Origin-Opener-Policy': 'same-origin',
+};
+
+// The static frontend (src/) is served from the same origin as the API, so one
+// deployable unit answers both. Pages get a CSP that allows same-origin assets only.
+const DEFAULT_STATIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src');
+const PAGE_CSP =
+  "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
+const STATIC_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
 const ERROR_MESSAGES = {
@@ -341,8 +361,34 @@ export function createApp(config) {
       return sendError(res, 404, 'not_found');
     }
 
+    if (parts[0] !== 'api' && (method === 'GET' || method === 'HEAD') && (await serveStatic(req, res, pathname))) return;
+
     req.routeLabel = 'not-found';
     return sendError(res, 404, 'not_found');
+  }
+
+  // Serves a file from the static dir. Returns false (caller sends 404) when there is none.
+  const staticDir = config.staticDir ?? DEFAULT_STATIC_DIR;
+  async function serveStatic(req, res, pathname) {
+    const rel = pathname.endsWith('/') ? `${pathname}index.html` : pathname;
+    const file = resolve(staticDir, `.${rel}`);
+    const type = STATIC_TYPES[extname(file).toLowerCase()];
+    if (!type || !file.startsWith(staticDir + sep) || rel.split('/').some((p) => p.startsWith('.'))) return false;
+    let body;
+    try {
+      body = await readFile(file);
+    } catch {
+      return false;
+    }
+    req.routeLabel = 'static';
+    res.writeHead(200, {
+      'Content-Type': type,
+      'Content-Length': body.length,
+      'Cache-Control': type.startsWith('text/html') ? 'no-cache' : 'public, max-age=300',
+      'Content-Security-Policy': PAGE_CSP,
+    });
+    res.end(req.method === 'HEAD' ? undefined : body);
+    return true;
   }
 
   const server = createServer(async (req, res) => {

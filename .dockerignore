@@ -1,0 +1,15 @@
+.git
+node_modules
+.env
+.env.*
+keys
+reference
+research
+docs
+tests
+.worktrees
+.ramherd
+.impeccable
+.claude
+NOTES.md
+BRIEF.md
