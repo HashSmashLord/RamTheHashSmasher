@@ -13,8 +13,15 @@
 // get a non-garbage review outcome on. Cycling multiple slots over the same
 // target with different approaches is this file's own assignment policy,
 // not something the manifest itself defines.
+//
+// Per-RAM models (docs/PRD.md, "Decided"): each track carries the OpenRouter
+// model slug its RAM runs by default. The launch roster is one RAM per track,
+// in this order, so RAM 1..6 = these six entries. A slot's assignment copies
+// `defaultModel` into `model`; `RAMHERD_LLM_MODEL` can force one model across
+// every slot instead (resolved in server/lib/slots.js, read in llm.js). The
+// slugs are the operator's verified OpenRouter ids: do not edit them by guess.
 
-/** The six active exploratory tracks, in manifest order. */
+/** The six active exploratory tracks, in manifest order, each with its default model. */
 export const ACTIVE_TRACKS = [
   {
     track: 'sha256-r31-exploratory',
@@ -22,6 +29,7 @@ export const ACTIVE_TRACKS = [
     rounds: 31,
     lane: 'exploratory',
     editablePath: 'lanes/exploratory/candidates/sha256-r31',
+    defaultModel: 'anthropic/claude-opus-5.5',
   },
   {
     track: 'sha256-r32-exploratory',
@@ -29,6 +37,7 @@ export const ACTIVE_TRACKS = [
     rounds: 32,
     lane: 'exploratory',
     editablePath: 'lanes/exploratory/candidates/sha256-r32',
+    defaultModel: 'anthropic/claude-fable-5.1',
   },
   {
     track: 'sha3-256-r5-exploratory',
@@ -36,6 +45,7 @@ export const ACTIVE_TRACKS = [
     rounds: 5,
     lane: 'exploratory',
     editablePath: 'lanes/exploratory/candidates/sha3-256-r5',
+    defaultModel: 'openai/gpt-6.1-sol-pro',
   },
   {
     track: 'sha3-256-r6-exploratory',
@@ -43,6 +53,7 @@ export const ACTIVE_TRACKS = [
     rounds: 6,
     lane: 'exploratory',
     editablePath: 'lanes/exploratory/candidates/sha3-256-r6',
+    defaultModel: 'z-ai/glm-5.3-prime',
   },
   {
     track: 'blake3-r1-exploratory',
@@ -50,6 +61,7 @@ export const ACTIVE_TRACKS = [
     rounds: 1,
     lane: 'exploratory',
     editablePath: 'lanes/exploratory/candidates/blake3-r1',
+    defaultModel: 'deepseek/deepseek-v4-pro',
   },
   {
     track: 'blake3-r2-exploratory',
@@ -57,6 +69,7 @@ export const ACTIVE_TRACKS = [
     rounds: 2,
     lane: 'exploratory',
     editablePath: 'lanes/exploratory/candidates/blake3-r2',
+    defaultModel: 'qwen/qwen3.8-max-prime',
   },
 ];
 
@@ -94,5 +107,12 @@ export function assignmentForIndex(index) {
   }
   const track = ACTIVE_TRACKS[index % ACTIVE_TRACKS.length];
   const approach = APPROACHES[Math.floor(index / ACTIVE_TRACKS.length) % APPROACHES.length];
-  return { ...track, approach };
+  // A slot beyond the first six doubles up on a track and inherits that
+  // track's model, so the model always follows the track.
+  return { ...track, approach, model: track.defaultModel };
 }
+
+/** The launch-time default roster: RAM n (1-based) -> its track and model. */
+export const DEFAULT_ROSTER = Object.freeze(
+  ACTIVE_TRACKS.map((t, i) => Object.freeze({ ram: i + 1, track: t.track, model: t.defaultModel })),
+);

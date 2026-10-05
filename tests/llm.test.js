@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLlmProvider, createMockLlmProvider, createOpenRouterProvider, isLiveMode } from '../server/lib/llm.js';
+import { createLlmProvider, createMockLlmProvider, createOpenRouterProvider, isLiveMode, modelOverride } from '../server/lib/llm.js';
 
 test('mock provider never touches the network and labels its output as mocked', async () => {
   const provider = createMockLlmProvider();
@@ -64,4 +64,49 @@ test('isLiveMode needs both RAMHERD_LIVE=true and an API key', () => {
   assert.equal(isLiveMode({ RAMHERD_LIVE: 'true' }), false);
   assert.equal(isLiveMode({ OPENROUTER_API_KEY: 'x' }), false);
   assert.equal(isLiveMode({ RAMHERD_LIVE: 'true', OPENROUTER_API_KEY: 'x' }), true);
+});
+
+// --- per-call model ---
+
+function recordingFetch() {
+  const bodies = [];
+  const fetchImpl = async (url, opts) => {
+    bodies.push(JSON.parse(opts.body));
+    return { ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+  };
+  return { bodies, fetchImpl };
+}
+
+test('createOpenRouterProvider sends the per-call model, not its default', async () => {
+  const { bodies, fetchImpl } = recordingFetch();
+  const provider = createOpenRouterProvider({ apiKey: 'sk-fake', model: 'openrouter/auto', fetchImpl });
+  const result = await provider.complete({ prompt: 'x', model: 'z-ai/glm-5.3-prime' });
+  assert.equal(bodies[0].model, 'z-ai/glm-5.3-prime');
+  assert.equal(result.model, 'z-ai/glm-5.3-prime');
+});
+
+test('createOpenRouterProvider falls back to its default model when a call names none', async () => {
+  const { bodies, fetchImpl } = recordingFetch();
+  const provider = createOpenRouterProvider({ apiKey: 'sk-fake', model: 'some/default', fetchImpl });
+  await provider.complete({ prompt: 'x' });
+  assert.equal(bodies[0].model, 'some/default');
+});
+
+test('mock provider reports the model it was asked for but never calls it', async () => {
+  const result = await createMockLlmProvider().complete({ prompt: 'x', model: 'qwen/qwen3.8-max-prime' });
+  assert.equal(result.mocked, true);
+  assert.equal(result.model, 'qwen/qwen3.8-max-prime');
+  assert.match(result.text, /not called/);
+});
+
+test('modelOverride reads RAMHERD_LLM_MODEL, and treats unset or blank as no override', () => {
+  assert.equal(modelOverride({}), null);
+  assert.equal(modelOverride({ RAMHERD_LLM_MODEL: '' }), null);
+  assert.equal(modelOverride({ RAMHERD_LLM_MODEL: '   ' }), null);
+  assert.equal(modelOverride({ RAMHERD_LLM_MODEL: ' openai/gpt-6.1-sol-pro ' }), 'openai/gpt-6.1-sol-pro');
+});
+
+test('RAMHERD_LLM_MODEL alone never turns live mode on', () => {
+  assert.equal(createLlmProvider({ RAMHERD_LLM_MODEL: 'anthropic/claude-opus-5.5' }).kind, 'mock');
+  assert.equal(createLlmProvider({ RAMHERD_LLM_MODEL: 'x', OPENROUTER_API_KEY: 'sk-fake' }).kind, 'mock');
 });

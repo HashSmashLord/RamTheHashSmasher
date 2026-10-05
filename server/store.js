@@ -8,7 +8,7 @@ import { computeAllocation } from './lib/budget.js';
 import { createSlotManager } from './lib/slots.js';
 import { createCoordinator, createCoordinatorView } from './lib/coordinator.js';
 import { createIdeaQueue } from './lib/moderation.js';
-import { createLlmProvider } from './lib/llm.js';
+import { createLlmProvider, modelOverride } from './lib/llm.js';
 import { createHashSmashRunner, pipelinePolicy } from './lib/hashsmash.js';
 
 /**
@@ -26,7 +26,9 @@ export function createStore({ budgetConfig, env = process.env }) {
   const pipelineRunner = pipeline.enabled
     ? createHashSmashRunner({ judgeAllowed: pipeline.judgeAllowed, env })
     : null;
-  const slotManager = createSlotManager({ llmProvider, pipelineRunner });
+  // Each slot calls its own roster model unless RAMHERD_LLM_MODEL forces one
+  // model on all of them. Mock vs live is still only llm.js's decision.
+  const slotManager = createSlotManager({ llmProvider, pipelineRunner, modelOverride: modelOverride(env) });
   const ideaQueue = createIdeaQueue();
 
   function getAllocation() {

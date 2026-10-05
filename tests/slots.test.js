@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSlotManager, SLOT_STATUSES } from '../server/lib/slots.js';
-import { createMockLlmProvider } from '../server/lib/llm.js';
+import { createMockLlmProvider, createOpenRouterProvider } from '../server/lib/llm.js';
 
 function manager() {
   return createSlotManager({ llmProvider: createMockLlmProvider() });
@@ -172,4 +172,77 @@ test('pipeline slot: a failed precheck never reports success', async () => {
   const slot = await m.advance(id);
   assert.equal(slot.status, 'failed');
   assert.equal(slot.feed.at(-1).type, 'pipeline-precheck');
+});
+
+// --- per-RAM models: what each slot actually sends to the provider ---
+
+const ROSTER_MODELS = [
+  'anthropic/claude-opus-5.5',
+  'anthropic/claude-fable-5.1',
+  'openai/gpt-6.1-sol-pro',
+  'z-ai/glm-5.3-prime',
+  'deepseek/deepseek-v4-pro',
+  'qwen/qwen3.8-max-prime',
+];
+
+function spyProvider() {
+  const calls = [];
+  return {
+    calls,
+    provider: {
+      kind: 'spy',
+      async complete(req) {
+        calls.push(req);
+        return { text: 'spy', mocked: true, model: req.model ?? null };
+      },
+    },
+  };
+}
+
+async function thinkAll(m) {
+  for (const { id } of m.getSlots()) await m.advance(id); // idle -> thinking: the one LLM call
+}
+
+test('with no override, each of the six slots calls the provider with its own roster model', async () => {
+  const { calls, provider } = spyProvider();
+  const m = createSlotManager({ llmProvider: provider });
+  m.setSlotCount(6);
+  assert.deepEqual(m.getSlots().map((s) => [s.assignment.model, s.assignment.modelSource]), ROSTER_MODELS.map((x) => [x, 'roster']));
+  await thinkAll(m);
+  assert.deepEqual(calls.map((c) => c.model), ROSTER_MODELS);
+  // and each call is about that slot's own track
+  const tracks = m.getSlots().map((s) => s.assignment.track);
+  calls.forEach((c, i) => assert.ok(c.prompt.includes(tracks[i])));
+});
+
+test('a modelOverride forces one model on every slot and every provider call', async () => {
+  const { calls, provider } = spyProvider();
+  const m = createSlotManager({ llmProvider: provider, modelOverride: 'openrouter/test-model' });
+  m.setSlotCount(6);
+  for (const s of m.getSlots()) {
+    assert.equal(s.assignment.model, 'openrouter/test-model');
+    assert.equal(s.assignment.modelSource, 'override');
+    assert.ok(s.assignment.defaultModel); // the roster model is still recorded on the track
+  }
+  await thinkAll(m);
+  assert.equal(calls.length, 6);
+  assert.ok(calls.every((c) => c.model === 'openrouter/test-model'));
+});
+
+test('per-slot models reach the HTTP body through the real OpenRouter provider (fake fetch, no network)', async () => {
+  const sent = [];
+  const fetchImpl = async (url, opts) => {
+    sent.push(JSON.parse(opts.body).model);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: 'next step' } }] }) };
+  };
+  const provider = createOpenRouterProvider({ apiKey: 'sk-fake', fetchImpl });
+  const m = createSlotManager({ llmProvider: provider });
+  m.setSlotCount(6);
+  await thinkAll(m);
+  assert.deepEqual(sent, ROSTER_MODELS);
+});
+
+test('createSlotManager rejects a blank or non-string modelOverride', () => {
+  assert.throws(() => createSlotManager({ llmProvider: createMockLlmProvider(), modelOverride: '  ' }), TypeError);
+  assert.throws(() => createSlotManager({ llmProvider: createMockLlmProvider(), modelOverride: 42 }), TypeError);
 });

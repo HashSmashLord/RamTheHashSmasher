@@ -75,6 +75,14 @@ test('admin reallocate actually resizes the slot pool to match the budget', asyn
   const slots = await (await s.get('/api/slots')).json();
   assert.equal(slots.slots.length, 3);
   assert.ok(slots.slots[0].assignment.track);
+  // Each slot's assigned model is on the public route (roster unless the shell forces an override).
+  if (!process.env.RAMHERD_LLM_MODEL) {
+    assert.deepEqual(slots.slots.map((x) => x.assignment.model), [
+      'anthropic/claude-opus-5.5',
+      'anthropic/claude-fable-5.1',
+      'openai/gpt-6.1-sol-pro',
+    ]);
+  }
 });
 
 test('a single slot can be read and advanced through its lifecycle by an admin', async (t) => {

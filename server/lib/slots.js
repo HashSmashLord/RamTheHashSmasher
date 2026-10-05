@@ -16,6 +16,13 @@
 // `hashsmash_pipeline.py intake`. The slot's outcome is whatever that real
 // pipeline returns. That proves the integration works; it is not, and is never
 // reported as, a cryptanalysis result. Other tracks keep the mock lifecycle.
+//
+// Per-RAM models: each slot's assignment carries `model` (its track's roster
+// model from targets.js) and `modelSource` ('roster' | 'override'). When the
+// caller passes `modelOverride` (store.js passes `RAMHERD_LLM_MODEL`), every
+// slot gets that one model instead. Every LLM call a slot makes sends its own
+// `model`; whether that call is live or mock is still decided only by
+// llm.js's `isLiveMode`, never here.
 
 import { assignmentForIndex } from './targets.js';
 
@@ -31,13 +38,17 @@ function freezeCopy(value) {
  * @param {{
  *   llmProvider: import('./llm.js').LlmProvider,
  *   pipelineRunner?: ReturnType<typeof import('./hashsmash.js').createHashSmashRunner>,
+ *   modelOverride?: string|null,
  *   now?: () => string,
  *   idPrefix?: string,
  * }} opts
  */
-export function createSlotManager({ llmProvider, pipelineRunner = null, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
+export function createSlotManager({ llmProvider, pipelineRunner = null, modelOverride = null, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createSlotManager requires an llmProvider with complete()');
+  }
+  if (modelOverride !== null && (typeof modelOverride !== 'string' || !modelOverride.trim())) {
+    throw new TypeError('modelOverride must be a non-empty string or null');
   }
 
   /** @type {Map<string, any>} */
@@ -65,7 +76,10 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, now = ()
   }
 
   function activateOne() {
-    const assignment = assignmentForIndex(nextAssignmentIndex++);
+    const base = assignmentForIndex(nextAssignmentIndex++);
+    const assignment = modelOverride
+      ? { ...base, model: modelOverride.trim(), modelSource: 'override' }
+      : { ...base, modelSource: 'roster' };
     const id = `${idPrefix}-${nextSlotSeq++}`;
     const slot = {
       id,
@@ -78,7 +92,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, now = ()
       createdAt: now(),
       updatedAt: now(),
     };
-    pushFeed(slot, 'activated', `Slot activated on ${assignment.track} (${assignment.approach}).`);
+    pushFeed(slot, 'activated', `Slot activated on ${assignment.track} (${assignment.approach}), model ${assignment.model}.`);
     slots.set(id, slot);
     return slot;
   }
@@ -138,10 +152,11 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, now = ()
     if (!slot) throw new RangeError(`unknown slot id: ${id}`);
     if (!slot.active) throw new Error(`slot ${id} is retired and cannot advance`);
 
-    const { track, approach, hashFunction, rounds } = slot.assignment;
+    const { track, approach, hashFunction, rounds, model } = slot.assignment;
 
     if (slot.status === 'idle') {
       const result = await llmProvider.complete({
+        model,
         system: 'You are a HashSmash solver agent. Describe, in one sentence, the next concrete thing you will try.',
         prompt: `Target: ${hashFunction} reduced to ${rounds} rounds (${track}). Approach: ${approach}. Recent suggestions: ${
           slot.suggestions.map((s) => s.text).join(' | ') || 'none'

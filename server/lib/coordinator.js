@@ -51,6 +51,7 @@ function summarize(view) {
       status: s.status,
       track: s.assignment.track,
       approach: s.assignment.approach,
+      model: s.assignment.model,
       lastFeedEntry: s.feed[s.feed.length - 1] || null,
       suggestionCount: s.suggestions.length,
     })),
@@ -64,7 +65,7 @@ function buildPrompt(summary, question) {
     `Active slots: ${summary.slotCount.active} (max ${summary.allocation.maxSlots}, $${summary.allocation.usdPerSlot}/slot)`,
     `Status breakdown: ${JSON.stringify(summary.slotCount.byStatus)}`,
     ...summary.slots.map(
-      (s) => `- ${s.id} [${s.active ? 'active' : 'retired'}/${s.status}] ${s.track} via ${s.approach}: ${
+      (s) => `- ${s.id} [${s.active ? 'active' : 'retired'}/${s.status}] ${s.track} via ${s.approach} on ${s.model}: ${
         s.lastFeedEntry ? s.lastFeedEntry.message : 'no activity yet'
       }`,
     ),

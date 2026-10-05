@@ -12,11 +12,16 @@
 // this codebase reads `RAMHERD_LIVE` directly. `createLlmProvider` uses it, and
 // so does the HashSmash pipeline policy (`hashsmash.js`) to gate the paid judge
 // stage behind the exact same switch.
+//
+// Which model: every `complete()` call may carry its own `model`. Solver slots
+// always pass their assigned one (per-RAM roster in targets.js, or the
+// `RAMHERD_LLM_MODEL` override, resolved by `modelOverride(env)` below). A call
+// with no `model` (the coordinator today) uses the provider's default.
 
 /**
  * @typedef {object} LlmProvider
  * @property {'mock'|'openrouter'|string} kind
- * @property {(req: { system?: string, prompt: string }) => Promise<{ text: string, mocked: boolean }>} complete
+ * @property {(req: { system?: string, prompt: string, model?: string }) => Promise<{ text: string, mocked: boolean, model: string|null }>} complete
  */
 
 /**
@@ -29,12 +34,14 @@
 export function createMockLlmProvider() {
   return {
     kind: 'mock',
-    async complete({ prompt }) {
+    async complete({ prompt, model }) {
       const trimmed = String(prompt || '').trim();
       const excerpt = trimmed.length > 160 ? `${trimmed.slice(0, 160)}…` : trimmed;
+      const wouldCall = model ? ` Assigned model (not called): ${model}.` : '';
       return {
-        text: `[mock] no live model call was made (dry-run mode). Prompt excerpt: "${excerpt}"`,
+        text: `[mock] no live model call was made (dry-run mode).${wouldCall} Prompt excerpt: "${excerpt}"`,
         mocked: true,
+        model: model || null,
       };
     },
   };
@@ -45,14 +52,18 @@ export function createMockLlmProvider() {
  * when both the live flag and an API key are present; never constructed by
  * tests, which exercise it as a plain function against a fake `fetchImpl`.
  *
+ * `model` is only the fallback for calls that don't name one; a per-call
+ * `model` (what every solver slot sends) always wins.
+ *
  * @param {{ apiKey: string, model?: string, fetchImpl?: typeof fetch }} opts
  * @returns {LlmProvider}
  */
-export function createOpenRouterProvider({ apiKey, model = 'openrouter/auto', fetchImpl = fetch }) {
+export function createOpenRouterProvider({ apiKey, model: defaultModel = 'openrouter/auto', fetchImpl = fetch }) {
   if (!apiKey) throw new TypeError('createOpenRouterProvider requires an apiKey');
   return {
     kind: 'openrouter',
-    async complete({ system, prompt }) {
+    async complete({ system, prompt, model }) {
+      const useModel = model || defaultModel;
       const res = await fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -60,7 +71,7 @@ export function createOpenRouterProvider({ apiKey, model = 'openrouter/auto', fe
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model,
+          model: useModel,
           messages: [
             ...(system ? [{ role: 'system', content: system }] : []),
             { role: 'user', content: prompt },
@@ -73,7 +84,7 @@ export function createOpenRouterProvider({ apiKey, model = 'openrouter/auto', fe
       }
       const data = await res.json();
       const text = data?.choices?.[0]?.message?.content ?? '';
-      return { text, mocked: false };
+      return { text, mocked: false, model: useModel };
     },
   };
 }
@@ -90,10 +101,25 @@ export function isLiveMode(env = process.env) {
   return env.RAMHERD_LIVE === 'true' && Boolean(env.OPENROUTER_API_KEY);
 }
 
+/**
+ * Optional `RAMHERD_LLM_MODEL`: one OpenRouter slug forced on every slot (e.g.
+ * to test with a single cheap model). Unset or blank -> null, meaning each
+ * slot uses its own roster model. This is the only place it is read.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {string|null}
+ */
+export function modelOverride(env = process.env) {
+  const value = String(env.RAMHERD_LLM_MODEL ?? '').trim();
+  return value || null;
+}
+
 export function createLlmProvider(env = process.env) {
   if (!isLiveMode(env)) return createMockLlmProvider();
   return createOpenRouterProvider({
     apiKey: env.OPENROUTER_API_KEY,
-    model: env.RAMHERD_LLM_MODEL || 'openrouter/auto',
+    // Fallback for calls that name no model (the coordinator). Solver slots
+    // always name theirs.
+    model: modelOverride(env) || 'openrouter/auto',
   });
 }
