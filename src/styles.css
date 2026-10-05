@@ -453,6 +453,10 @@ select.ctl option { background: var(--bg); color: var(--ink); }
 .judge-score { color: var(--ink-3); white-space: nowrap; }
 .judge-score-value { color: var(--ink); }
 
+/* a real link out to yukon.org's own leaderboard: muted like the score, underlines on focus/hover */
+.judge-leaderboard-link { color: var(--ink-3); white-space: nowrap; text-decoration: none; }
+.judge-leaderboard-link:hover, .judge-leaderboard-link:focus-visible { color: var(--ink); text-decoration: underline; }
+
 /* stale: a RAM nobody has heard from in a while dims */
 .tile.stale .tile-id, .tile.stale .now-line, .tile.stale .round-id { color: var(--ink-3); }
 .tile.stale .tile-activity { color: var(--ink-3); }

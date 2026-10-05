@@ -71,13 +71,18 @@ export function mountRamPage({ feed }) {
 
   function renderFacts(detail) {
     const judge = detail.judge !== undefined ? detail.judge : JUDGE_WORD[detail.status] || null;
+    // This page only ever says what HashSmash told this server (or honestly says nothing
+    // has come back yet) -- it never claims to know what the real leaderboard shows. The
+    // link is so a viewer can go look for themselves, not a stand-in for checking it here.
+    const reviewStatus = judge ? `<span class="judge-mark"${JUDGE_FULL[judge] ? ` title="${JUDGE_FULL[judge]}"` : ""}>${judge}</span>` : "nothing handed in yet";
+    const leaderboardLink = `<a class="ext judge-leaderboard-link" href="https://www.yukon.org/leaderboard" target="_blank" rel="noopener noreferrer">Check the real leaderboard<span class="sr-only"> (opens in a new tab)</span></a>`;
     const rows = [
       ["Live for", detail.liveLabel],
       ["Model", detail.model, true],
       ["Approach", detail.approach],
       ["Round", `${roundShort(detail)} (${detail.trackLabel})`],
       ["Candidate path", detail.lanePath, true],
-      ["HashSmash review", judge ? `<span class="judge-mark"${JUDGE_FULL[judge] ? ` title="${JUDGE_FULL[judge]}"` : ""}>${judge}</span>` : "nothing handed in yet"],
+      ["HashSmash review", `${reviewStatus} ${leaderboardLink}`],
       [SCORE_TERM, scoreText(detail.log2T) ?? "not scored yet"],
       ["Server slot", slotIdFor(detail)],
     ];

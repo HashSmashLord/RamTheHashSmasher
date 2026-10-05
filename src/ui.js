@@ -143,6 +143,11 @@ export function writeCounts(el, breakdown) {
   return true;
 }
 
+// The real external leaderboard, so a viewer can go look for themselves. Appended to every
+// tile's judge column regardless of state -- a link to go check, never a claim about what's
+// there.
+const LEADERBOARD_LINK = `<a class="ext judge-leaderboard-link" href="https://www.yukon.org/leaderboard" target="_blank" rel="noopener noreferrer">Leaderboard<span class="sr-only"> (opens in a new tab)</span></a>`;
+
 // The judge's column: HashSmash's review state, then their score. Only a handed-in
 // candidate has either; every other row leaves it blank (an em dash).
 export function judgeMarkup(agent) {
@@ -155,6 +160,7 @@ export function judgeMarkup(agent) {
   } else {
     parts.push(`<span class="judge-none" aria-hidden="true">—</span><span class="sr-only">nothing from the judge yet</span>`);
   }
+  parts.push(LEADERBOARD_LINK);
   if (judge || score) {
     parts.push(
       `<span class="judge-score"><span class="judge-score-term">${SCORE_TERM}</span> ` +
