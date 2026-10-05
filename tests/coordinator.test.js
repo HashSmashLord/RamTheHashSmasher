@@ -5,6 +5,7 @@ import { createSlotManager } from '../server/lib/slots.js';
 import { createMockFeeSource, createFeeLedger } from '../server/lib/ledger.js';
 import { createMockLlmProvider } from '../server/lib/llm.js';
 import { computeAllocation, DEFAULT_BUDGET_CONFIG } from '../server/lib/budget.js';
+import { createCostLedger } from '../server/lib/cost.js';
 
 function buildRig() {
   const feeSource = createMockFeeSource({ initialUsd: 100 });
@@ -67,6 +68,27 @@ test('getSummary() is grounded in real current state, not invented', async () =>
   assert.equal(summary.ledger.totalUsd, 100);
   assert.equal(summary.slotCount.active, 2);
   assert.equal(summary.slots.length, 2);
+});
+
+test('ask() reports its own usage to costLedger under a fixed "herder" id, not the viewer-facing answer', async () => {
+  const { ledger, slotManager } = buildRig();
+  await ledger.refresh();
+  const view = createCoordinatorView({ slotManager, ledger, getAllocation: () => computeAllocation(ledger.getSnapshot().totalUsd, DEFAULT_BUDGET_CONFIG) });
+  const costLedger = createCostLedger();
+  const coordinator = createCoordinator({ view, llmProvider: createMockLlmProvider(), costLedger });
+
+  const result = await coordinator.ask('How many agents are active?');
+  assert.equal(result.costUsd, undefined); // not part of the answer
+  assert.equal(costLedger.forSlot('herder').entries.length, 1);
+});
+
+test('ask() works exactly as before with no costLedger (it is optional)', async () => {
+  const { ledger, slotManager } = buildRig();
+  await ledger.refresh();
+  const view = createCoordinatorView({ slotManager, ledger, getAllocation: () => computeAllocation(ledger.getSnapshot().totalUsd, DEFAULT_BUDGET_CONFIG) });
+  const coordinator = createCoordinator({ view, llmProvider: createMockLlmProvider() });
+  const result = await coordinator.ask('How many agents are active?');
+  assert.equal(result.ok, true);
 });
 
 test('ask() answers are grounded: the mock provider echoes real state, not a free invention', async () => {

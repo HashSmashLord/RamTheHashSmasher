@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSlotManager, SLOT_STATUSES } from '../server/lib/slots.js';
 import { createMockLlmProvider, createOpenRouterProvider } from '../server/lib/llm.js';
+import { createCostLedger } from '../server/lib/cost.js';
 
 function manager() {
   return createSlotManager({ llmProvider: createMockLlmProvider() });
@@ -75,6 +76,44 @@ test('advance() cycles idle -> thinking -> running-experiment -> submitted -> id
   slot = await m.advance(id);
   assert.equal(slot.status, 'idle');
   assert.equal(slot.feed.at(-1).type, 'cycle-reset');
+});
+
+test('the "thinking" step reports its usage to costLedger, keyed by slot id', async () => {
+  const costLedger = createCostLedger();
+  const m = createSlotManager({ llmProvider: createMockLlmProvider(), costLedger });
+  m.setSlotCount(1);
+  const [{ id }] = m.getSlots();
+  await m.advance(id); // idle -> thinking: the one step that calls the provider
+  const forSlot = costLedger.forSlot(id);
+  assert.equal(forSlot.entries.length, 1);
+  assert.equal(forSlot.totals.calls, 1); // mock mode: honestly zero tokens/cost, but it IS recorded
+});
+
+test('cost tracking never appears on the public slot snapshot', async () => {
+  const costLedger = createCostLedger();
+  const m = createSlotManager({ llmProvider: createMockLlmProvider(), costLedger });
+  m.setSlotCount(1);
+  const [{ id }] = m.getSlots();
+  const slot = await m.advance(id);
+  assert.equal(slot.costUsd, undefined);
+  assert.equal(slot.usage, undefined);
+  assert.equal(JSON.stringify(slot).includes('cost'), false);
+});
+
+test('without a costLedger, advance() works exactly as before (costLedger is optional)', async () => {
+  const m = manager();
+  m.setSlotCount(1);
+  const [{ id }] = m.getSlots();
+  const slot = await m.advance(id);
+  assert.equal(slot.status, 'thinking');
+});
+
+test('an owned RAM\'s cost is recorded against its ramId, not just its slot id', async () => {
+  const costLedger = createCostLedger();
+  const m = createSlotManager({ llmProvider: createMockLlmProvider(), costLedger });
+  const slot = m.createOwnedSlot({ ramId: 'ram-0001', owner: 'wallet', track: 'sha256-r31-exploratory', approach: 'owner-pick', model: 'anthropic/claude-opus-5.5', brief: 'x' });
+  await m.advance(slot.id);
+  assert.equal(costLedger.forRam('ram-0001').entries.length, 1);
 });
 
 test('advance() with outcome "failed" lands in the failed status', async () => {

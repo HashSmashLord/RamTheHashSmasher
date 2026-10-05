@@ -19,10 +19,23 @@
 // with no `model` (the coordinator today) uses the provider's default.
 
 /**
+ * @typedef {object} LlmUsage
+ * @property {number} promptTokens
+ * @property {number} completionTokens
+ * @property {number} totalTokens
+ * @property {number|null} costUsd - null when the provider didn't report a cost (always null in mock mode).
+ */
+
+/**
  * @typedef {object} LlmProvider
  * @property {'mock'|'openrouter'|string} kind
- * @property {(req: { system?: string, prompt: string, model?: string }) => Promise<{ text: string, mocked: boolean, model: string|null }>} complete
+ * @property {(req: { system?: string, prompt: string, model?: string }) => Promise<{ text: string, mocked: boolean, model: string|null, usage: LlmUsage }>} complete
  */
+
+/** Usage shape for a call that made no real request (mock mode, or a provider that reports none). */
+function zeroUsage() {
+  return { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: null };
+}
 
 /**
  * A provider that never calls out to the network. Produces short, visibly
@@ -42,6 +55,7 @@ export function createMockLlmProvider() {
         text: `[mock] no live model call was made (dry-run mode).${wouldCall} Prompt excerpt: "${excerpt}"`,
         mocked: true,
         model: model || null,
+        usage: zeroUsage(),
       };
     },
   };
@@ -84,7 +98,20 @@ export function createOpenRouterProvider({ apiKey, model: defaultModel = 'openro
       }
       const data = await res.json();
       const text = data?.choices?.[0]?.message?.content ?? '';
-      return { text, mocked: false, model: useModel };
+      // OpenRouter always includes `usage` on the completed response (no
+      // request flag needed): prompt/completion/total tokens by the model's
+      // own tokenizer, and `cost` in USD actually charged to the account. A
+      // field that's missing (rare, provider-dependent) stays null rather
+      // than being coerced to 0, so a cost total downstream can tell "zero"
+      // from "not reported" instead of silently understating real spend.
+      const u = data?.usage;
+      const usage = {
+        promptTokens: Number.isFinite(u?.prompt_tokens) ? u.prompt_tokens : 0,
+        completionTokens: Number.isFinite(u?.completion_tokens) ? u.completion_tokens : 0,
+        totalTokens: Number.isFinite(u?.total_tokens) ? u.total_tokens : 0,
+        costUsd: Number.isFinite(u?.cost) ? u.cost : null,
+      };
+      return { text, mocked: false, model: useModel, usage };
     },
   };
 }

@@ -35,6 +35,12 @@
 // slot stops its sandbox so nothing is left billing. The sandbox does not run
 // the slot's work yet: that still happens on the host as before.
 //
+// Optional `costLedger` (server/lib/cost.js): when given, every real "thinking"
+// LLM call (the one place `advance()` calls `llmProvider.complete()`) reports
+// its tokens and USD cost against this slot, and against the slot's RAM id
+// if it's an owned one. Backend bookkeeping only: nothing here puts a cost
+// figure into `snapshot()`, so the public/admin slot API is unchanged by it.
+//
 // Owned slots (launchpad RAMs, server/lib/rams.js): `createOwnedSlot` makes a
 // slot that belongs to a user's wallet, on the track/approach/model that user
 // chose, carrying their operator-approved brief. Owned slots are `kind:
@@ -59,12 +65,13 @@ function freezeCopy(value) {
  *   llmProvider: import('./llm.js').LlmProvider,
  *   pipelineRunner?: ReturnType<typeof import('./hashsmash.js').createHashSmashRunner>,
  *   sandboxManager?: ReturnType<typeof import('./sandbox.js').createSandboxManager>|null,
+ *   costLedger?: ReturnType<typeof import('./cost.js').createCostLedger>|null,
  *   modelOverride?: string|null,
  *   now?: () => string,
  *   idPrefix?: string,
  * }} opts
  */
-export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, modelOverride = null, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
+export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, costLedger = null, modelOverride = null, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createSlotManager requires an llmProvider with complete()');
   }
@@ -241,6 +248,9 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       });
       slot.status = 'thinking';
       pushFeed(slot, 'thinking', result.text);
+      if (costLedger && result.usage) {
+        costLedger.record({ slotId: slot.id, ramId: slot.ramId, model, usage: result.usage, ref: slot.feed[slot.feed.length - 1].ts });
+      }
     } else if (slot.status === 'thinking') {
       slot.status = 'running-experiment';
       pushFeed(

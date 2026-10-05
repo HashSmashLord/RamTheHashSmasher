@@ -99,6 +99,42 @@ test('mock provider reports the model it was asked for but never calls it', asyn
   assert.match(result.text, /not called/);
 });
 
+test('mock provider reports honestly-zero usage, not a fabricated cost', async () => {
+  const result = await createMockLlmProvider().complete({ prompt: 'x' });
+  assert.deepEqual(result.usage, { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: null });
+});
+
+test('createOpenRouterProvider reads real token counts and cost straight off the response', async () => {
+  const fakeFetch = async () => ({
+    ok: true,
+    json: async () => ({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160, cost: 0.00234 },
+    }),
+  });
+  const provider = createOpenRouterProvider({ apiKey: 'sk-fake', fetchImpl: fakeFetch });
+  const result = await provider.complete({ prompt: 'x' });
+  assert.deepEqual(result.usage, { promptTokens: 120, completionTokens: 40, totalTokens: 160, costUsd: 0.00234 });
+});
+
+test('createOpenRouterProvider leaves costUsd null (not 0) when the response omits it', async () => {
+  const fakeFetch = async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } }),
+  });
+  const provider = createOpenRouterProvider({ apiKey: 'sk-fake', fetchImpl: fakeFetch });
+  const result = await provider.complete({ prompt: 'x' });
+  assert.equal(result.usage.costUsd, null);
+  assert.equal(result.usage.totalTokens, 12);
+});
+
+test('createOpenRouterProvider defaults usage to zero when the response has no usage field at all', async () => {
+  const fakeFetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) });
+  const provider = createOpenRouterProvider({ apiKey: 'sk-fake', fetchImpl: fakeFetch });
+  const result = await provider.complete({ prompt: 'x' });
+  assert.deepEqual(result.usage, { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: null });
+});
+
 test('modelOverride reads RAMHERD_LLM_MODEL, and treats unset or blank as no override', () => {
   assert.equal(modelOverride({}), null);
   assert.equal(modelOverride({ RAMHERD_LLM_MODEL: '' }), null);

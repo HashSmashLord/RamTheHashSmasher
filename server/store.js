@@ -11,6 +11,7 @@ import { createIdeaQueue } from './lib/moderation.js';
 import { createLlmProvider, modelOverride } from './lib/llm.js';
 import { createHashSmashRunner, pipelinePolicy } from './lib/hashsmash.js';
 import { createSandboxManager, sandboxPolicy } from './lib/sandbox.js';
+import { createCostLedger } from './lib/cost.js';
 import { createRamFunds } from './lib/ramfunds.js';
 import { createPayoutBook } from './lib/payouts.js';
 import { createRamRegistry } from './lib/rams.js';
@@ -48,15 +49,39 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
         ...(loadSandboxSdk ? { loadSdk: loadSandboxSdk } : {}),
       })
     : null;
-  // Each slot calls its own roster model unless RAMHERD_LLM_MODEL forces one
-  // model on all of them. Mock vs live is still only llm.js's decision.
-  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, modelOverride: modelOverride(env) });
-  const ideaQueue = createIdeaQueue();
   // Launchpad: user-created RAMs, each with its own funding account and owned
   // slot, plus the payout book for judged wins. Bookkeeping only: nothing in
   // these modules can sign, send or claim.
   const ramFunds = createRamFunds();
   const payouts = createPayoutBook();
+
+  // Per-RAM compute spend (tokens + real USD), backend-only — see cost.js.
+  // Not exposed on any route yet, by design: the figures should exist before
+  // the frontend has anywhere to put them. An owned RAM's own LLM calls also
+  // charge its funding account (ramfunds.js already totals "compute" there
+  // for the launchpad), so that account's USD total was never missing this;
+  // a roster RAM has no funding account to charge, so costLedger is the only
+  // record of its spend. `chargeCompute` throws if `ramId`'s account isn't
+  // open yet (e.g. a slot created directly in a test with no registered
+  // RAM) — caught and skipped rather than ever letting cost tracking crash
+  // a real "thinking" step.
+  const costLedger = createCostLedger();
+  const baseRecord = costLedger.record;
+  costLedger.record = (entry) => {
+    baseRecord(entry);
+    if (entry.ramId && typeof entry.usage?.costUsd === 'number' && entry.usage.costUsd > 0) {
+      try {
+        ramFunds.chargeCompute(entry.ramId, { usd: entry.usage.costUsd, ref: entry.ref, note: `LLM call (${entry.model || 'unknown model'})` });
+      } catch {
+        // RAM has no open funding account (not this project's launchpad flow) — cost stays recorded in costLedger alone.
+      }
+    }
+  };
+
+  // Each slot calls its own roster model unless RAMHERD_LLM_MODEL forces one
+  // model on all of them. Mock vs live is still only llm.js's decision.
+  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, costLedger, modelOverride: modelOverride(env) });
+  const ideaQueue = createIdeaQueue();
   const rams = createRamRegistry({ slotManager, funds: ramFunds, payouts, publicBaseUrl: launchpad.publicBaseUrl, treasury: launchpad.treasury });
 
   function getAllocation() {
@@ -65,7 +90,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   }
 
   const coordinatorView = createCoordinatorView({ slotManager, ledger, getAllocation });
-  const coordinator = createCoordinator({ view: coordinatorView, llmProvider });
+  const coordinator = createCoordinator({ view: coordinatorView, llmProvider, costLedger });
 
   /** The one deliberate operation that ties budget to slot count. Admin-only. */
   function reallocateSlotsFromBudget() {
@@ -84,6 +109,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
     sandboxManager,
     slotManager,
     ideaQueue,
+    costLedger,
     ramFunds,
     payouts,
     rams,

@@ -15,6 +15,11 @@
 // A reallocation (resizing slots) or a fee-ledger change is a separate,
 // deliberate operation performed by the HTTP admin layer directly against
 // the slot manager / fee source — never reachable through this module.
+//
+// Optional `costLedger` (server/lib/cost.js): a real `ask()` call still costs
+// tokens, so it's recorded there too (under a fixed 'herder' id), same as a
+// RAM's own calls in slots.js. Write-only from here, and not part of `ask`'s
+// return value — the viewer-facing answer is unaffected either way.
 
 /**
  * @param {{
@@ -77,9 +82,10 @@ function buildPrompt(summary, question) {
  * @param {{
  *   view: ReturnType<typeof createCoordinatorView>,
  *   llmProvider: import('./llm.js').LlmProvider,
+ *   costLedger?: ReturnType<typeof import('./cost.js').createCostLedger>|null,
  * }} deps
  */
-export function createCoordinator({ view, llmProvider }) {
+export function createCoordinator({ view, llmProvider, costLedger = null }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createCoordinator requires an llmProvider with complete()');
   }
@@ -99,6 +105,12 @@ export function createCoordinator({ view, llmProvider }) {
         'You are read-only: you cannot start, stop, or resize agents, move funds, or approve ideas.',
       prompt: buildPrompt(summary, trimmed),
     });
+    if (costLedger && result.usage) {
+      // The Herder isn't a RAM/slot, but it's still a real LLM call when
+      // live; recorded under a fixed pseudo-slot id so it shows up in totals
+      // instead of going uncounted.
+      costLedger.record({ slotId: 'herder', ramId: null, model: result.model, usage: result.usage, ref: summary.generatedAt });
+    }
     return { ok: true, question: trimmed, answer: result.text, groundedAt: summary.generatedAt };
   }
 
