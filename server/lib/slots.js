@@ -23,6 +23,15 @@
 // slot gets that one model instead. Every LLM call a slot makes sends its own
 // `model`; whether that call is live or mock is still decided only by
 // llm.js's `isLiveMode`, never here.
+//
+// Optional `sandboxManager` (server/lib/sandbox.js, only built when
+// RAMHERD_SANDBOX=e2b): a slot CAN be associated with one E2B desktop sandbox
+// session. Starting one is always an explicit call (`startSandbox`), never a
+// side effect of activation or advance(). The public snapshot carries only the
+// session's id/status/times; the VNC stream URL (which holds its password) is
+// only available through `getSandboxStream`, used by an admin route. Retiring a
+// slot stops its sandbox so nothing is left billing. The sandbox does not run
+// the slot's work yet: that still happens on the host as before.
 
 import { assignmentForIndex } from './targets.js';
 
@@ -38,12 +47,13 @@ function freezeCopy(value) {
  * @param {{
  *   llmProvider: import('./llm.js').LlmProvider,
  *   pipelineRunner?: ReturnType<typeof import('./hashsmash.js').createHashSmashRunner>,
+ *   sandboxManager?: ReturnType<typeof import('./sandbox.js').createSandboxManager>|null,
  *   modelOverride?: string|null,
  *   now?: () => string,
  *   idPrefix?: string,
  * }} opts
  */
-export function createSlotManager({ llmProvider, pipelineRunner = null, modelOverride = null, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
+export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, modelOverride = null, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createSlotManager requires an llmProvider with complete()');
   }
@@ -70,6 +80,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, modelOve
       feed: freezeCopy(slot.feed),
       suggestions: freezeCopy(slot.suggestions),
       pipeline: slot.pipeline ? freezeCopy(slot.pipeline) : null,
+      sandbox: slot.sandbox ? { ...slot.sandbox } : null,
       createdAt: slot.createdAt,
       updatedAt: slot.updatedAt,
     };
@@ -89,6 +100,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, modelOve
       feed: [],
       suggestions: [],
       pipeline: null,
+      sandbox: null,
       createdAt: now(),
       updatedAt: now(),
     };
@@ -121,6 +133,10 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, modelOve
       for (const slot of toRetire) {
         slot.active = false;
         pushFeed(slot, 'retired', 'Slot retired: compute budget no longer supports it.');
+        if (slot.sandbox && (slot.sandbox.status === 'starting' || slot.sandbox.status === 'running')) {
+          // Fire and forget: setSlotCount stays synchronous; the outcome lands in the feed.
+          stopSandbox(slot.id).catch(() => {});
+        }
       }
     }
     return getSlots();
@@ -258,7 +274,66 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, modelOve
     return snapshot(slot);
   }
 
+  function requireSandboxes() {
+    if (!sandboxManager) throw new Error('sandboxes are disabled (set RAMHERD_SANDBOX=e2b and E2B_API_KEY)');
+  }
+
+  /**
+   * Creates (or returns the existing) E2B desktop sandbox for an active slot.
+   * @param {string} id
+   */
+  async function startSandbox(id) {
+    requireSandboxes();
+    const slot = slots.get(id);
+    if (!slot) throw new RangeError(`unknown slot id: ${id}`);
+    if (!slot.active) throw new Error(`slot ${id} is retired and cannot start a sandbox`);
+    if (slot.sandbox?.status === 'running') return snapshot(slot);
+    slot.sandbox = { provider: sandboxManager.provider, status: 'starting', sessionId: null, requestedAt: now() };
+    pushFeed(slot, 'sandbox-starting', 'Starting an isolated desktop sandbox for this RAM.');
+    try {
+      const info = await sandboxManager.start(id);
+      slot.sandbox = { ...info, status: 'running' };
+      pushFeed(slot, 'sandbox-started', `Desktop sandbox ${info.sessionId} running (${info.template}), hard stop at ${info.expiresAt}.`);
+    } catch (err) {
+      slot.sandbox = { provider: sandboxManager.provider, status: 'failed', sessionId: null, error: err.message, failedAt: now() };
+      pushFeed(slot, 'sandbox-error', `Desktop sandbox could not start: ${err.message}`);
+      throw err;
+    }
+    return snapshot(slot);
+  }
+
+  /**
+   * Kills the slot's sandbox, if it has a live one. Works on retired slots too.
+   * @param {string} id
+   */
+  async function stopSandbox(id) {
+    requireSandboxes();
+    const slot = slots.get(id);
+    if (!slot) throw new RangeError(`unknown slot id: ${id}`);
+    try {
+      const result = await sandboxManager.stop(id);
+      if (result && slot.sandbox) {
+        slot.sandbox = { ...slot.sandbox, status: 'stopped', stoppedAt: result.stoppedAt, ranSeconds: result.ranSeconds };
+        pushFeed(slot, 'sandbox-stopped', `Desktop sandbox ${result.sessionId} stopped after ${Math.round(result.ranSeconds)}s.`);
+      }
+    } catch (err) {
+      pushFeed(slot, 'sandbox-error', `Desktop sandbox stop failed: ${err.message}`);
+      throw err;
+    }
+    return snapshot(slot);
+  }
+
+  /** Admin only: stream URL incl. VNC password, or null. */
+  function getSandboxStream(id) {
+    if (!slots.has(id)) throw new RangeError(`unknown slot id: ${id}`);
+    return sandboxManager ? sandboxManager.getStream(id) : null;
+  }
+
   return {
+    sandboxesEnabled: Boolean(sandboxManager),
+    startSandbox,
+    stopSandbox,
+    getSandboxStream,
     setSlotCount,
     getSlots,
     getSlot,

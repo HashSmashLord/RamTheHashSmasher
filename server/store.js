@@ -10,11 +10,16 @@ import { createCoordinator, createCoordinatorView } from './lib/coordinator.js';
 import { createIdeaQueue } from './lib/moderation.js';
 import { createLlmProvider, modelOverride } from './lib/llm.js';
 import { createHashSmashRunner, pipelinePolicy } from './lib/hashsmash.js';
+import { createSandboxManager, sandboxPolicy } from './lib/sandbox.js';
 
 /**
- * @param {{ budgetConfig: import('./lib/budget.js').BudgetConfig, env?: NodeJS.ProcessEnv }} opts
+ * @param {{
+ *   budgetConfig: import('./lib/budget.js').BudgetConfig,
+ *   env?: NodeJS.ProcessEnv,
+ *   loadSandboxSdk?: () => Promise<{ Sandbox: any }>,
+ * }} opts
  */
-export function createStore({ budgetConfig, env = process.env }) {
+export function createStore({ budgetConfig, env = process.env, loadSandboxSdk }) {
   const feeSource = createMockFeeSource();
   const ledger = createFeeLedger({ source: feeSource });
   const llmProvider = createLlmProvider(env);
@@ -26,9 +31,22 @@ export function createStore({ budgetConfig, env = process.env }) {
   const pipelineRunner = pipeline.enabled
     ? createHashSmashRunner({ judgeAllowed: pipeline.judgeAllowed, env })
     : null;
+  // E2B desktop sandboxes: opt-in with RAMHERD_SANDBOX=e2b (off by default).
+  // Without the flag no manager exists and the SDK is never imported, even if
+  // E2B_API_KEY is set. With the flag but no key, sandboxes stay off too.
+  const sandbox = sandboxPolicy(env);
+  const sandboxManager = sandbox.ready
+    ? createSandboxManager({
+        apiKey: env.E2B_API_KEY,
+        template: sandbox.template,
+        timeoutMs: sandbox.timeoutMs,
+        maxConcurrent: sandbox.maxConcurrent,
+        ...(loadSandboxSdk ? { loadSdk: loadSandboxSdk } : {}),
+      })
+    : null;
   // Each slot calls its own roster model unless RAMHERD_LLM_MODEL forces one
   // model on all of them. Mock vs live is still only llm.js's decision.
-  const slotManager = createSlotManager({ llmProvider, pipelineRunner, modelOverride: modelOverride(env) });
+  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, modelOverride: modelOverride(env) });
   const ideaQueue = createIdeaQueue();
 
   function getAllocation() {
@@ -52,6 +70,8 @@ export function createStore({ budgetConfig, env = process.env }) {
     llmProvider,
     pipeline,
     pipelineRunner,
+    sandbox,
+    sandboxManager,
     slotManager,
     ideaQueue,
     coordinator,

@@ -67,7 +67,8 @@ function parseJson(raw) {
 }
 
 export function createApp(config) {
-  const store = createStore({ budgetConfig: config.budget });
+  // config.env / config.loadSandboxSdk exist for tests; production uses process.env and the real SDK.
+  const store = createStore({ budgetConfig: config.budget, env: config.env ?? process.env, loadSandboxSdk: config.loadSandboxSdk });
   const ideaLimiter = createRateLimiter(config.ideaRateLimit);
   const log = config.log || (() => {});
 
@@ -121,7 +122,10 @@ export function createApp(config) {
   }
 
   function getSlots(req, res) {
-    sendOk(res, { slots: store.slotManager.getSlots() });
+    sendOk(res, {
+      slots: store.slotManager.getSlots(),
+      sandboxes: { enabled: store.slotManager.sandboxesEnabled, provider: store.sandbox.provider },
+    });
   }
 
   function getSlot(req, res, id) {
@@ -194,6 +198,32 @@ export function createApp(config) {
     } catch (err) {
       sendError(res, 400, 'bad_request', err.message);
     }
+  }
+
+  async function postAdminSlotSandbox(req, res, id, action) {
+    const body = await readJsonBody(req, res);
+    if (body === undefined) return;
+    if (!store.slotManager.sandboxesEnabled) {
+      return sendError(res, 409, 'bad_request', 'Sandboxes are disabled. Set RAMHERD_SANDBOX=e2b and E2B_API_KEY.');
+    }
+    const current = store.slotManager.getSlot(id);
+    if (!current) return sendError(res, 404, 'not_found');
+    if (action === 'start' && !current.active) return sendError(res, 409, 'bad_request', 'Retired slots cannot start a sandbox.');
+    try {
+      const slot = action === 'start'
+        ? await store.slotManager.startSandbox(id)
+        : await store.slotManager.stopSandbox(id);
+      sendOk(res, { slot }, action === 'start' ? 201 : 200);
+    } catch (err) {
+      sendError(res, 502, 'bad_request', err.message);
+    }
+  }
+
+  function getAdminSlotSandbox(req, res, id) {
+    if (!store.slotManager.getSlot(id)) return sendError(res, 404, 'not_found');
+    const stream = store.slotManager.getSandboxStream(id);
+    if (!stream) return sendError(res, 404, 'not_found', 'This slot has no running sandbox.');
+    sendOk(res, { sandbox: stream });
   }
 
   function getAdminIdeas(req, res, status) {
@@ -293,6 +323,12 @@ export function createApp(config) {
       if (parts.length === 5 && parts[2] === 'slots' && parts[4] === 'advance' && method === 'POST') {
         return postAdminSlotAdvance(req, res, parts[3]);
       }
+      if (parts.length === 5 && parts[2] === 'slots' && parts[4] === 'sandbox' && method === 'GET') {
+        return getAdminSlotSandbox(req, res, parts[3]);
+      }
+      if (parts.length === 6 && parts[2] === 'slots' && parts[4] === 'sandbox' && ['start', 'stop'].includes(parts[5]) && method === 'POST') {
+        return postAdminSlotSandbox(req, res, parts[3], parts[5]);
+      }
       if (parts.length === 4 && parts[2] === 'ideas' && ['pending', 'approved', 'rejected'].includes(parts[3]) && method === 'GET') {
         return getAdminIdeas(req, res, parts[3]);
       }
@@ -346,11 +382,14 @@ export function createApp(config) {
           resolve(server.address());
         });
       }),
-    close: () =>
-      new Promise((resolve) => {
+    close: async () => {
+      // Kill any running sandboxes first: they bill per second.
+      if (store.sandboxManager) await store.sandboxManager.stopAll().catch(() => {});
+      return new Promise((resolve) => {
         ideaLimiter.stop();
         server.closeAllConnections?.();
         server.close(() => resolve());
-      }),
+      });
+    },
   };
 }

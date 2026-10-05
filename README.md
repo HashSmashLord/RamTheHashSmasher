@@ -11,10 +11,11 @@ and scoring pipeline works.
 | Piece | State |
 |---|---|
 | PRD + HashSmash technical brief | **done** — grounded in the real competition repo, vendored at `reference/hash-smash/` |
-| Orchestration backend (`server/`) | **built, tested (131 tests), mocked.** Fee ledger, budget→slot allocator, RAM slots, read-only coordinator, moderated idea queue, HTTP API all real; fee numbers and LLM calls are mock by default |
+| Orchestration backend (`server/`) | **built, tested (154 tests), mocked.** Fee ledger, budget→slot allocator, RAM slots, read-only coordinator, moderated idea queue, HTTP API all real; fee numbers and LLM calls are mock by default |
 | Per-RAM models (OpenRouter) | **done, wired, mock by default.** Each of the six exploratory tracks carries its launch-roster model in `server/lib/targets.js` (RAM 1 `sha256-r31` → `anthropic/claude-opus-5.5`, 2 `sha256-r32` → `anthropic/claude-fable-5.1`, 3 `sha3-256-r5` → `openai/gpt-6.1-sol-pro`, 4 `sha3-256-r6` → `z-ai/glm-5.3-prime`, 5 `blake3-r1` → `deepseek/deepseek-v4-pro`, 6 `blake3-r2` → `qwen/qwen3.8-max-prime`; see `docs/PRD.md` "Decided"). Every slot sends its own model on each LLM call, a 7th+ slot inherits its track's model, and `/api/slots` shows it. Optional `RAMHERD_LLM_MODEL` forces one model on every slot (testing). Calls are still mock unless `RAMHERD_LIVE=true` **and** `OPENROUTER_API_KEY` are both set; no live call to any roster model has been made yet |
 | Frontend dashboard (`src/`) | **built, demoable, mocked.** Real UI/UX against a mock data layer — see "Mock data and the API swap point" below |
 | Solver-agent loop → real HashSmash pipeline (`server/lib/hashsmash.js`) | **pipeline integration working end to end, locally, for `sha256-r31-exploratory`.** A RAM slot clones the vendored repo, writes a clearly labeled harness *draft* (the organizer's own `draft_claim()` template, no attack claimed), and runs HashSmash's real `local_tracks.py check` and `hashsmash_pipeline.py intake`. Result: `check` → `mechanically_valid`, `intake` → `draft_not_submitted` with a real `package_sha256` and evidence file. Opt-in with `RAMHERD_PIPELINE=local`. **Not done:** no research content yet (the LLM doesn't write real candidates), no judge run (paid, gated off), no live submission (not implemented on purpose). The real accepted r31 candidate can't pass local intake here because its experiment needs Docker, which isn't installed. See "Real HashSmash pipeline" below |
+| Live VM view per RAM: E2B desktop sandbox (`server/lib/sandbox.js`) | **backend lifecycle plumbing done, proven once for real, nothing runs inside yet.** A slot can be given one E2B Desktop sandbox (Ubuntu + Xfce, VNC via noVNC) through admin routes; `/api/slots` shows its session id and status, and an admin route returns the embeddable stream URL. Opt-in with `RAMHERD_SANDBOX=e2b` + `E2B_API_KEY`; off by default. One real run on 2026-10-05: created, noVNC page answered HTTP 200, killed after ~8 s, E2B confirmed it gone, cost about $0.001. **Not done:** frontend embedding, running the RAM's real work inside the sandbox, a smaller template (the stock `desktop` one runs at 8 vCPU / 8 GiB, about $0.53/hour each), and server-side view-only. See "E2B desktop sandboxes" below |
 | Real pump.fun token / real fee claiming / real compute spend | **blocked**, same as every real-money action this workspace runs into — needs the operator to do those parts directly |
 | GitHub | currently **no remote** — local-only; pushed to HashSmashLord and deleted twice so far; will get a fresh repo when ready |
 
@@ -45,6 +46,37 @@ Known environment gap: the real accepted r31 package declares a `python-message-
 experiment, which HashSmash only runs in its pinned Docker sandbox, with no host fallback.
 Docker isn't installed on this machine, so intake on that package exits `3`. The runner reports
 this as `environment-blocked` (a setup problem, not a verdict on the candidate).
+
+## E2B desktop sandboxes (what's proven, what isn't)
+
+`server/lib/sandbox.js` wraps `@e2b/desktop` (the API shape was read from the installed SDK source, not guessed):
+`Sandbox.create('desktop', { apiKey, timeoutMs, metadata, lifecycle: { onTimeout: 'kill' } })` →
+`stream.start({ requireAuth: true })` → `stream.getUrl({ viewOnly: true, authKey })` → `kill()`.
+
+- **Proven (once, by hand, 2026-10-05):** one real sandbox (`desktop` template, 8 vCPU / 8 GiB as
+  E2B reported it) was created and streaming in 7.5 s. Its `https://6080-<id>.e2b.app/vnc.html` page
+  returned HTTP 200 (noVNC). It was killed after 8.1 s, and E2B then reported "not found", with 0
+  sandboxes left running on the account. Estimated cost was about $0.0012.
+- **Mocked:** the whole test suite (`tests/sandbox.test.js`) uses a fake SDK, so no test run ever
+  creates a real sandbox.
+- **Cost rails:** nothing is created unless an admin calls start. Every sandbox has an E2B-side hard
+  timeout (it gets killed even if this server dies), there's a concurrency cap, retiring a slot kills
+  its sandbox, and server shutdown kills them all.
+- **Not built yet:** frontend VNC embedding, and running the RAM's real work inside the sandbox
+  (the intended content is written up at the top of `sandbox.js`).
+- **Before showing it to the public:** noVNC's `view_only` is client-side only, so anyone who holds
+  the URL (it includes the VNC password) can take control. That's why the URL is admin-only. To
+  enforce view-only on the server, start x11vnc with `-viewonly`, or put a proxy in front.
+
+| Env var | Default | Effect |
+|---|---|---|
+| `RAMHERD_SANDBOX=e2b` | off | enables sandboxes (also needs `E2B_API_KEY`); without it the SDK is never even imported |
+| `RAMHERD_SANDBOX_TEMPLATE` | `desktop` | template name/id (a smaller custom template is the next cost step) |
+| `RAMHERD_SANDBOX_TIMEOUT_MIN` | 15 | E2B-side hard kill timeout per sandbox (1 to 1440) |
+| `RAMHERD_SANDBOX_MAX` | 6 | max concurrent sandboxes from this server (1 to 100) |
+
+Admin routes (`x-admin-token`): `POST /api/admin/slots/:id/sandbox/start`, `POST /api/admin/slots/:id/sandbox/stop`,
+`GET /api/admin/slots/:id/sandbox` (stream URL).
 
 ## Build convention for the real coding work (not the scaffolding/docs)
 
