@@ -334,6 +334,7 @@ select.ctl option { background: var(--bg); color: var(--ink); }
 .now-line { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; color: var(--ink); }
 .now-word { color: var(--ink); }
 .now-clock { color: var(--ink-3); }
+.tile-live { color: var(--ink-3); font-size: 0.85rem; margin-top: 0.3rem; }
 .tile-round, .tile-model { color: var(--ink-2); font-size: 0.85rem; line-height: 1.45; margin-top: 0.35rem; display: flex; flex-wrap: wrap; column-gap: 0.7rem; }
 .tile-round { margin-top: 0.6rem; }
 .round-id { color: var(--ink); }

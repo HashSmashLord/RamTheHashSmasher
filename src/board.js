@@ -48,6 +48,7 @@ function buildTile(agent, feed) {
     </div>
     <div class="tile-lines">
       <p class="tile-head"><a class="tile-id" href="${href}"></a><span class="now-line"><span class="now-glyph"></span><span class="now-word"></span><span class="now-clock"></span></span></p>
+      <p class="tile-live"></p>
       <p class="tile-round"><span class="round-id"></span><span class="round-path"></span></p>
       <p class="tile-model"><span class="entrant-model"></span><span class="entrant-approach"></span></p>
       <p class="tile-activity"></p>
@@ -63,6 +64,7 @@ function buildTile(agent, feed) {
     judgeKey: null,
     id: art.querySelector(".tile-id"),
     now: { glyph: art.querySelector(".now-glyph"), word: art.querySelector(".now-word"), clock: art.querySelector(".now-clock"), line: art.querySelector(".now-line") },
+    live: art.querySelector(".tile-live"),
     round: art.querySelector(".round-id"),
     path: art.querySelector(".round-path"),
     model: art.querySelector(".entrant-model"),
@@ -74,6 +76,7 @@ function buildTile(agent, feed) {
 
 function updateTile(t, agent, first) {
   write(t.id, agent.id);
+  write(t.live, `Live for ${agent.liveLabel}`);
   write(t.round, roundShort(agent));
   writePath(t.path, agent.lanePath);
   writePath(t.model, agent.model || "");

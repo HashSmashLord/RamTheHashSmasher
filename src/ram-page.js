@@ -48,6 +48,7 @@ export function mountRamPage({ feed }) {
   function renderFacts(detail) {
     const judge = detail.judge !== undefined ? detail.judge : JUDGE_WORD[detail.status] || null;
     const rows = [
+      ["Live for", detail.liveLabel],
       ["Model", detail.model, true],
       ["Approach", detail.approach],
       ["Round", `${roundShort(detail)} (${detail.trackLabel})`],

@@ -218,6 +218,13 @@ const state = {
   herder: { updatedSecondsAgo: 6 },
 };
 
+// How long each RAM has been live: derived from its own oldest history line (its earliest
+// known activity), never a separate hardcoded number that could drift out of sync with it.
+// Real backend: the slot's own `createdAt` (already on every /api/slots row) replaces this.
+for (const a of state.agents) {
+  a.liveSeconds = Math.max(...a.history.map((h) => h.secondsAgo));
+}
+
 // The exact words the board writes in the Now column, one per status.
 const STATUS_LABEL = { running: "Running an experiment", thinking: "Thinking", idle: "Idle", submitted: "Submitted" };
 
@@ -227,6 +234,17 @@ function relativeTime(seconds) {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   return `${h}h ${m % 60}m ago`;
+}
+
+// Same ladder as relativeTime, no "ago": for a span of time, not a point in the past.
+function duration(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
 }
 
 function cents(n) {
@@ -278,6 +296,7 @@ function tickMockState() {
   );
   for (const agent of state.agents) {
     agent.updatedSecondsAgo += 4;
+    agent.liveSeconds += 4;
     for (const line of agent.history) line.secondsAgo += 4;
   }
   state.herder.updatedSecondsAgo += 4;
@@ -342,6 +361,7 @@ export const RAMherdAPI = {
       lanePath: TRACKS[a.trackId].path,
       statusLabel: STATUS_LABEL[a.status] || a.status,
       updatedLabel: relativeTime(a.updatedSecondsAgo),
+      liveLabel: duration(a.liveSeconds),
       judge: a.judge ?? null,
       log2T: a.log2T ?? null,
     }));
@@ -363,6 +383,7 @@ export const RAMherdAPI = {
       lanePath: TRACKS[a.trackId].path,
       statusLabel: STATUS_LABEL[a.status] || a.status,
       updatedLabel: relativeTime(a.updatedSecondsAgo),
+      liveLabel: duration(a.liveSeconds),
       judge: a.judge ?? null,
       log2T: a.log2T ?? null,
       history: a.history.map((line) => ({ ...line, label: relativeTime(line.secondsAgo) })),
