@@ -54,7 +54,7 @@ function trackLabel(trackId) {
 
 const state = {
   stats: {
-    feesCollectedLifetime: 2384.17, // USD, pump.fun creator fees claimed to date
+    feesCollectedLifetime: 0, // USD, pump.fun creator fees claimed to date — 0 until $RAM's real mint is wired in (see server/lib/ledger.js)
     computeBudgetEpoch: 400.0, // USD allocated this 24h epoch
     computeSpentEpoch: 268.42,
     epochLabel: "this 24h epoch",
@@ -269,7 +269,9 @@ function coordinatorReply(question) {
 // ---------------------------------------------------------------------------
 
 function tickMockState() {
-  state.stats.feesCollectedLifetime += Math.random() * 0.4 + 0.02;
+  // feesCollectedLifetime deliberately does NOT drift here: it stays 0 until
+  // $RAM's real mint is wired in, not a fake number that looks like it's
+  // growing when no real token exists yet.
   state.stats.computeSpentEpoch = Math.min(
     state.stats.computeBudgetEpoch,
     state.stats.computeSpentEpoch + Math.random() * 0.15
