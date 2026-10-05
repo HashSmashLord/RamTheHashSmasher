@@ -47,14 +47,17 @@ function isSignature(value) {
  *   createFeeLamports?: number,
  *   now?: () => string,
  *   idPrefix?: string,
+ *   pinata?: ReturnType<typeof import('./pinata.js').createPinataClient>|null,
  * }} opts
  */
-export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram' }) {
+export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram', pinata = null }) {
   if (typeof publicBaseUrl !== 'string' || !/^https?:\/\//.test(publicBaseUrl)) throw new TypeError('publicBaseUrl must be an http(s) URL');
   const base = publicBaseUrl.replace(/\/+$/, '');
   /** @type {Map<string, any>} */
   const rams = new Map();
   const mintsInUse = new Map();
+  /** @type {Map<string, Promise<void>>} test-awaitable: see waitForMetadataPin() */
+  const pinPromises = new Map();
   let seq = 0;
 
   const copy = (r) => JSON.parse(JSON.stringify(r));
@@ -97,7 +100,40 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
       updatedAt: now(),
     };
     rams.set(id, ram);
+    // Pinata, if configured: pin the real metadata JSON to IPFS and swap the
+    // token's uri from this server's own endpoint to the pinned gateway URL.
+    // Fire-and-forget on purpose -- createDraft stays synchronous (callers
+    // and every existing test are unaffected), and a Pinata hiccup (rate
+    // limit, network) never blocks or fails a draft: the self-hosted URI it
+    // already has keeps working. waitForMetadataPin(id) lets a test or an
+    // operator await the real outcome deterministically instead of racing it.
+    if (pinata) {
+      const pinned = pinata
+        .pinJson(metadata(id), { name: `${ram.token.symbol}-${id}-metadata` })
+        .then(({ cid, uri }) => {
+          if (uri.length <= MAX_URI_LENGTH) {
+            ram.token.uri = uri;
+            ram.token.metadataCid = cid;
+            ram.updatedAt = now();
+          }
+          // A pinned URI over the limit is silently skipped (self-hosted URI
+          // keeps serving); that should never actually happen at this
+          // payload size, but create_v2 would reject it outright if it did.
+        })
+        .catch(() => {
+          // Pinata failed: the self-hosted metadata.json URI this draft
+          // already has keeps working. Nothing here is user-facing yet
+          // (LAUNCHPAD_LIVE is false), so there is no feed to report it to.
+        });
+      pinPromises.set(id, pinned);
+    }
     return copy(ram);
+  }
+
+  /** Test/operator hook: resolves once this RAM's Pinata pin attempt has finished (success or
+   * failure), or immediately if Pinata isn't configured or this RAM was never drafted with it. */
+  async function waitForMetadataPin(id) {
+    await (pinPromises.get(id) || Promise.resolve());
   }
 
   /**
@@ -200,5 +236,5 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     return [...rams.values()].filter((r) => !owner || r.owner === owner).map(copy);
   }
 
-  return { createDraft, prepareLaunch, confirmLaunch, cancel, recordCreatorFees, recordWin, metadata, get, list };
+  return { createDraft, prepareLaunch, confirmLaunch, cancel, recordCreatorFees, recordWin, metadata, waitForMetadataPin, get, list };
 }

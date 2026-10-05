@@ -15,6 +15,7 @@ import { createCostLedger } from './lib/cost.js';
 import { createRamFunds } from './lib/ramfunds.js';
 import { createPayoutBook } from './lib/payouts.js';
 import { createRamRegistry } from './lib/rams.js';
+import { createPinataClient, pinataPolicy } from './lib/pinata.js';
 
 /**
  * @param {{
@@ -82,7 +83,13 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   // model on all of them. Mock vs live is still only llm.js's decision.
   const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, costLedger, modelOverride: modelOverride(env) });
   const ideaQueue = createIdeaQueue();
-  const rams = createRamRegistry({ slotManager, funds: ramFunds, payouts, publicBaseUrl: launchpad.publicBaseUrl, treasury: launchpad.treasury });
+  // Pinata, opt-in with PINATA_JWT: a launchpad RAM's token metadata gets
+  // pinned to IPFS instead of only living at this server's own endpoint.
+  // Unset -> rams.js keeps the self-hosted metadata.json URI exactly as
+  // before; nothing else changes either way.
+  const pinata = pinataPolicy(env);
+  const pinataClient = pinata.configured ? createPinataClient({ jwt: pinata.jwt }) : null;
+  const rams = createRamRegistry({ slotManager, funds: ramFunds, payouts, publicBaseUrl: launchpad.publicBaseUrl, treasury: launchpad.treasury, pinata: pinataClient });
 
   function getAllocation() {
     const { totalUsd } = ledger.getSnapshot();
@@ -110,6 +117,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
     slotManager,
     ideaQueue,
     costLedger,
+    pinata,
     ramFunds,
     payouts,
     rams,

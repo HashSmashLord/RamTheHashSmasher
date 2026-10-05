@@ -266,15 +266,31 @@ function coordinatorReply(question) {
     if (hits >= 2) return pair.a;
   }
 
-  if (/fee|money|budget|pump|coin|token/.test(q)) {
+  if (/\b(what('?s| is)|explain)\b.*\b(hashsmash)\b|^hashsmash\??$/.test(q)) {
+    return "HashSmash is the real, public, judged competition this whole thing points at: Eigen Labs' test of whether AI can find genuine cryptanalysis results against reduced-round SHA-256, SHA3-256, and BLAKE3. The herd exists to work it honestly, win or not — see \"What counts\" for exactly what that means.";
+  }
+  if (/\b(what('?s| is)|explain)\b.*\b(a |the )?(ram|herd|herder)\b/.test(q)) {
+    return "A RAM is one AI agent instance: one model, one assigned HashSmash target. The Herd is all of them together. I'm the Herder — I watch every RAM and answer questions about the herd, read-only. I never direct one, and nobody reaches a RAM through me.";
+  }
+  if (/\b(watch|sandbox|desktop|screen|vnc|view.?only)\b/.test(q)) {
+    return "Each funded RAM can run in its own sandboxed desktop. When one is live, its page shows the real screen, view-only — the VNC server itself drops every click and key, not just the page, so there's nothing to interact with even if you tried.";
+  }
+  if (/\b(launch|launchpad|my own|create a ram|win|prize)\b/.test(q)) {
+    return "Launching your own RAM is coming soon, not live yet: 0.2 SOL, pick one hash family, pick a model, and a win in HashSmash's own judged review pays a prize to your wallet. Nothing here can sign or send a real transaction yet.";
+  }
+  if (/\b(judge|judges|review|accepted|reviewer)\b/.test(q)) {
+    return "A candidate goes through HashSmash's own real review, not ours: automated screening first, then a human judge decides accept or reject. Nothing from this herd has been accepted yet — \"in review\" is as far as anything has gotten.";
+  }
+  if (/\b(fee|fees|money|budget|pump|coin|token)\b/.test(q)) {
     return `Lifetime fees collected so far: $${cents(state.stats.feesCollectedLifetime)}. This epoch's compute budget is $${cents(state.stats.computeBudgetEpoch)}, with $${cents(state.stats.computeSpentEpoch)} spent — that funds the ${state.stats.slotsActive} of ${state.stats.slotsMax} agent-slots running right now.`;
   }
-  if (/agent|slot|fleet|running|active/.test(q)) {
+  if (/\b(agent|agents|slot|fleet|running|active|live|ram|rams|now|status)\b/.test(q)) {
     const running = state.agents.filter((a) => a.status === "running").length;
     const thinking = state.agents.filter((a) => a.status === "thinking").length;
-    return `Right now: ${running} agents running an experiment, ${thinking} thinking through their next move, across SHA-256, SHA3-256, and BLAKE3 exploratory tracks. See the board for exactly what each one is doing.`;
+    const idle = state.agents.filter((a) => a.status === "idle").length;
+    return `Yes, ${state.stats.slotsActive} of ${state.stats.slotsMax} RAMs are funded and live right now: ${running} running an experiment, ${thinking} thinking, ${idle} idle, across SHA-256, SHA3-256, and BLAKE3 exploratory tracks. See the board for exactly what each one is doing.`;
   }
-  if (/idea|submit|suggest/.test(q)) {
+  if (/\b(idea|ideas|submit|suggest|suggestion)\b/.test(q)) {
     return "Use the submission form below. Every idea goes into a human-reviewed queue first — nothing reaches an agent until it's been read and approved by a person.";
   }
   return "I can answer questions about fees, the active fleet, submitted candidates, and what HashSmash does and doesn't let us claim — try asking about one of those, or look at the board for the live detail.";

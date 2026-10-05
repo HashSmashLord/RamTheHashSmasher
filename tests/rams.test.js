@@ -12,13 +12,32 @@ import { CREATE_FEE_LAMPORTS, DEFAULT_TREASURY } from '../server/lib/launchtx.js
 const wallet = () => Keypair.generate().publicKey.toBase58();
 const sig = () => bs58.encode(Buffer.alloc(64, Math.floor(Math.random() * 255) + 1).map((b, i) => (b + i) % 256));
 
-function setup({ llmCalls = [] } = {}) {
+function setup({ llmCalls = [], pinata = null } = {}) {
   const llmProvider = { complete: async (args) => (llmCalls.push(args), { text: 'next step' }) };
   const slotManager = createSlotManager({ llmProvider });
   const funds = createRamFunds();
   const payouts = createPayoutBook();
-  const rams = createRamRegistry({ slotManager, funds, payouts, publicBaseUrl: 'https://ramherd.example' });
+  const rams = createRamRegistry({ slotManager, funds, payouts, publicBaseUrl: 'https://ramherd.example', pinata });
   return { slotManager, funds, payouts, rams, llmCalls };
+}
+
+/** A fake pinata client: resolves/rejects on command, records what it was asked to pin. */
+function fakePinata({ fails = false } = {}) {
+  const calls = [];
+  let resolvePin;
+  const gate = new Promise((r) => { resolvePin = r; });
+  return {
+    calls,
+    release: () => resolvePin(),
+    client: {
+      async pinJson(content, opts) {
+        calls.push({ content, opts });
+        await gate;
+        if (fails) throw new Error('pinata down');
+        return { cid: 'bafyTestCid', uri: 'https://gateway.pinata.cloud/ipfs/bafyTestCid' };
+      },
+    },
+  };
 }
 
 function draftValue(over = {}) {
@@ -57,6 +76,40 @@ test('a draft carries owner, one family/track, approach, brief, model, and its o
   assert.equal(ram.token.uri, `https://ramherd.example/api/launchpad/rams/${ram.id}/metadata.json`);
   assert.equal(ram.token.mint, null);
   assert.equal(ram.slotId, null);
+});
+
+test('with no pinata client, the draft keeps the self-hosted metadata URI forever (unchanged behaviour)', async () => {
+  const { rams } = setup();
+  const ram = rams.createDraft(draftValue());
+  await rams.waitForMetadataPin(ram.id); // no-op when nothing was ever pinning
+  assert.equal(rams.get(ram.id).token.uri, `https://ramherd.example/api/launchpad/rams/${ram.id}/metadata.json`);
+});
+
+test('with pinata configured, a draft starts on the self-hosted URI and swaps to the pinned one once the pin resolves', async () => {
+  const pin = fakePinata();
+  const { rams } = setup({ pinata: pin.client });
+  const ram = rams.createDraft(draftValue({ tokenSymbol: 'TEST' }));
+  // Synchronously, right after createDraft returns, pinning hasn't resolved yet.
+  assert.equal(ram.token.uri, `https://ramherd.example/api/launchpad/rams/${ram.id}/metadata.json`);
+  assert.equal(pin.calls.length, 1);
+  assert.equal(pin.calls[0].content.symbol, 'TEST'); // the real metadata() JSON, not a placeholder
+  assert.match(pin.calls[0].opts.name, new RegExp(`TEST-${ram.id}-metadata`));
+
+  pin.release();
+  await rams.waitForMetadataPin(ram.id);
+  const after = rams.get(ram.id);
+  assert.equal(after.token.uri, 'https://gateway.pinata.cloud/ipfs/bafyTestCid');
+  assert.equal(after.token.metadataCid, 'bafyTestCid');
+});
+
+test('a failed pin leaves the self-hosted URI working; it never blocks or breaks the draft', async () => {
+  const pin = fakePinata({ fails: true });
+  const { rams } = setup({ pinata: pin.client });
+  const ram = rams.createDraft(draftValue());
+  const selfHosted = ram.token.uri;
+  pin.release();
+  await rams.waitForMetadataPin(ram.id); // resolves even though the pin itself rejected
+  assert.equal(rams.get(ram.id).token.uri, selfHosted);
 });
 
 test('prepareLaunch records the browser-made mint; a mint cannot serve two RAMs', () => {
