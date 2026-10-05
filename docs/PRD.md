@@ -124,7 +124,9 @@ dev/test mode (operator's call on using real key spend, default is mocked) — i
 - **Launchpad (later feature) — refined.** 0.2 SOL to create a RAM; a pump.fun token for it
   is created on the *user's own connected wallet* in one atomic Phantom-signed transaction
   (same non-custodial shape as the AGENCY reference), with the token's creator fees routed to
-  the operator's treasury wallet (address to be supplied), funding that RAM's compute. A
+  the operator's treasury wallet (`5M6Pc7ossZ8cuQAjnexH9vv2axEJoncgZ3C6uD2PJqHm` — public
+  address only; its private key is never handled by this project, by design), funding that
+  RAM's compute. A
   win in HashSmash's own judged review sends a prize to the user's wallet. During creation,
   the user must **pick exactly one** of the three hash families (SHA-256, SHA3-256, BLAKE3) —
   a RAM cracks one, not all three — and answer a short follow-up on what approach the RAM
