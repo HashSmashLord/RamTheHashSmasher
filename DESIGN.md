@@ -1,353 +1,411 @@
 ---
 name: RAMherd
-description: The tournament wallchart. A felt wall, one paper sheet, three inks.
+description: A line-printer listing on a black screen, in the pixel ram's own 1-bit world; amber only for what is live.
 colors:
-  felt: "#1e4a3a"
-  felt-deep: "#16392d"
-  felt-rule: "rgba(232, 240, 234, 0.16)"
-  felt-ink: "#e8f0ea"
-  felt-ink-soft: "#9fd1b4"
-  paper: "#f7f5ee"
-  paper-shade: "#ebe7da"
-  rule: "#bcc9df"
-  rule-strong: "#6d87b4"
-  ink: "#16191f"
-  ink-soft: "#4b5160"
-  pen: "#1f3570"
-  pen-deep: "#15265a"
-  pen-soft: "#51609a"
-  judge: "#b8271f"
+  bg: "#000000"
+  ink: "#ffffff"
+  ink-2: "#a8a8a8"
+  ink-3: "#7b7b7b"
+  ink-press: "#d4d4d4"
+  rule: "#3a3a3a"
+  rule-2: "#1c1c1c"
+  live: "#ffb000"
 typography:
   display:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "clamp(2.2rem, 4vw, 3.1rem)"
-    fontWeight: 800
-    lineHeight: 0.94
-    letterSpacing: "-0.035em"
-    fontVariation: "wdth 112"
+    fontFamily: "Jersey 10, Archivo, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(2.8rem, 6vw, 5rem)"
+    fontWeight: 400
+    lineHeight: 0.95
+    letterSpacing: "0"
   headline:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "clamp(1.45rem, 2.4vw, 1.85rem)"
-    fontWeight: 700
-    lineHeight: 1.05
-    letterSpacing: "-0.02em"
-    fontVariation: "wdth 100"
+    fontFamily: "Jersey 10, Archivo, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(2rem, 4vw, 3rem)"
+    fontWeight: 400
+    lineHeight: 0.95
+    letterSpacing: "0"
   title:
+    fontFamily: "Jersey 10, Archivo, Helvetica Neue, Arial, sans-serif"
+    fontSize: "1.5rem"
+    fontWeight: 400
+    lineHeight: 1
+    letterSpacing: "0"
+  banner:
+    fontFamily: "Jersey 10, Archivo, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(4rem, 12vw, 9rem)"
+    fontWeight: 400
+    lineHeight: 0.85
+    letterSpacing: "0"
+  wordmark:
+    fontFamily: "Jersey 10, Archivo, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(5rem, 22vw, 16rem)"
+    fontWeight: 400
+    lineHeight: 0.8
+    letterSpacing: "0"
+  figure:
+    fontFamily: "Jersey 10, Archivo, Helvetica Neue, Arial, sans-serif"
+    fontSize: "2rem"
+    fontWeight: 400
+    lineHeight: 1
+    letterSpacing: "0"
+  id:
+    fontFamily: "Jersey 10, Archivo, Helvetica Neue, Arial, sans-serif"
+    fontSize: "1.75rem"
+    fontWeight: 400
+    lineHeight: 1
+    letterSpacing: "0"
+  id-small:
+    fontFamily: "Jersey 10, Archivo, Helvetica Neue, Arial, sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 400
+    lineHeight: 1
+    letterSpacing: "0"
+  lead:
     fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.05rem"
-    fontWeight: 700
-    lineHeight: 1.05
-    letterSpacing: "-0.01em"
-    fontVariation: "wdth 100"
+    fontSize: "clamp(1rem, 1.3vw, 1.15rem)"
+    fontWeight: 400
+    lineHeight: 1.55
+    letterSpacing: "normal"
   body:
     fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
     fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.55
     letterSpacing: "normal"
-    fontFeature: "tnum"
-    fontVariation: "wdth 100"
-  small:
+  body-small:
     fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "0.92rem"
+    fontSize: "0.95rem"
     fontWeight: 400
     lineHeight: 1.55
     letterSpacing: "normal"
-    fontFeature: "tnum"
-    fontVariation: "wdth 100"
   fine:
     fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "0.82rem"
-    fontWeight: 400
-    lineHeight: 1.35
-    letterSpacing: "normal"
-    fontFeature: "tnum"
-    fontVariation: "wdth 100"
-  figure:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.35rem"
-    fontWeight: 700
-    lineHeight: 1.55
-    letterSpacing: "normal"
-    fontFeature: "tnum"
-    fontVariation: "wdth 100"
-  label:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "0.74rem"
-    fontWeight: 700
-    lineHeight: 1.55
-    letterSpacing: "0.07em"
-    fontVariation: "wdth 78"
-  button:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
     fontSize: "0.85rem"
-    fontWeight: 700
-    lineHeight: 1.55
-    letterSpacing: "0.06em"
-    fontVariation: "wdth 85"
-  name:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.15rem"
-    fontWeight: 800
-    lineHeight: 1.55
-    letterSpacing: "-0.02em"
-    fontVariation: "wdth 112"
+    fontWeight: 400
+    lineHeight: 1.45
+    letterSpacing: "normal"
+  label:
+    fontFamily: "Silkscreen, Archivo, Helvetica Neue, Arial, sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 400
+    lineHeight: 1.5
+    letterSpacing: "0.08em"
+    textTransform: "uppercase"
 rounded:
-  hairline: "2px"
+  none: "0"
 spacing:
-  cell-y: "0.85rem"
-  cell-x: "0.7rem"
-  fund-row: "1rem"
-  sheet-sm: "1.2rem"
-  sheet-md: "2rem"
-  sheet-lg: "2.2rem"
-  part-gap: "1.8rem"
-  part-gap-lg: "2.4rem"
-  gutter: "clamp(1rem, 3vw, 2.5rem)"
-  max: "1320px"
+  unit: "4px"
+  nav-h: "4rem"
+  gutter: "clamp(1rem, 4vw, 3rem)"
+  max: "1200px"
+  banner-top: "clamp(2rem, 4vw, 3rem)"
+  section-top: "clamp(4rem, 8vw, 6.5rem)"
+  section-head: "1.8rem"
+  spray-gap: "1.4rem"
+  tile-gap: "2.6rem 2rem"
+  tile-gap-narrow: "2.2rem"
+  panel-min-height: "36rem"
+  panel-pad: "1.3rem 1.4rem"
+  foot-top: "clamp(4rem, 8vw, 7rem)"
+  ram-page-top: "clamp(2rem, 5vw, 4rem)"
+  slip-part-top: "clamp(3rem, 6vw, 4.5rem)"
 components:
-  button-pen:
-    backgroundColor: "{colors.pen}"
-    textColor: "{colors.paper}"
-    typography: "{typography.button}"
-    rounded: "{rounded.hairline}"
-    padding: "0.68rem 1.15rem"
-  button-pen-hover:
-    backgroundColor: "{colors.pen-deep}"
-    textColor: "{colors.paper}"
-  button-pen-disabled:
-    backgroundColor: "{colors.pen-soft}"
-    textColor: "{colors.paper}"
-  control-ruled:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.pen}"
-    rounded: "{rounded.hairline}"
-    padding: "0.65rem 0.75rem"
-  control-ruled-disabled:
-    backgroundColor: "{colors.paper-shade}"
-    textColor: "{colors.pen-soft}"
-  sheet:
-    backgroundColor: "{colors.paper}"
+  pill:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.bg}"
+    typography: "{typography.label}"
+    rounded: "{rounded.none}"
+    height: "48px"
+    padding: "0 24px"
+  pill-hover:
+    backgroundColor: "{colors.ink-press}"
+  pill-disabled:
+    backgroundColor: "{colors.ink-3}"
+  pill-ghost:
+    backgroundColor: "{colors.bg}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.hairline}"
-    padding: "{spacing.sheet-sm}"
-  felt-strip:
-    backgroundColor: "{colors.felt-deep}"
-    textColor: "{colors.felt-ink}"
-    height: "3.4rem"
+    typography: "{typography.label}"
+    rounded: "{rounded.none}"
+    height: "48px"
+    padding: "0 24px"
+  pill-ghost-hover:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.bg}"
+  pill-small:
+    height: "40px"
+    padding: "0 20px"
+  control:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.none}"
+    height: "48px"
+    padding: "0.6rem 0.9rem"
+  control-disabled:
+    textColor: "{colors.ink-3}"
+  panel:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.none}"
+    height: "36rem"
+    padding: "1.3rem 1.4rem"
+  panel-bar:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.label}"
+    padding: "0.7rem 1.1rem"
+  screen:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink-2}"
+    rounded: "{rounded.none}"
+    width: "100%"
+  screen-live:
+    textColor: "{colors.live}"
+  screen-full:
+    width: "1104px"
   judge-mark:
-    backgroundColor: "transparent"
-    textColor: "{colors.judge}"
-    rounded: "{rounded.hairline}"
-    padding: "0.15rem 0.45rem"
-  pen-meter:
-    backgroundColor: "{colors.pen}"
-    height: "7px"
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.bg}"
+    typography: "{typography.label}"
+    rounded: "{rounded.none}"
+    padding: "0 8px"
+  judge-score:
+    textColor: "{colors.ink-3}"
+    typography: "{typography.label}"
+  blocks:
+    backgroundColor: "{colors.ink}"
+    height: "12px"
+  spray:
+    textColor: "{colors.ink}"
+    width: "min(100%, 640px)"
+    height: "40px"
+  tile:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink}"
+    typography: "{typography.body-small}"
+    padding: "0.9rem 0 0"
+  fund-line:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.label}"
+    padding: "0.95rem 0"
+  fund-value:
+    textColor: "{colors.ink}"
+    typography: "{typography.figure}"
 ---
 
 # Design System: RAMherd
 
 ## Overview
 
-**Creative North Star: "The Tournament Wallchart"**
+**Creative North Star: "The Line-Printer Listing"**
 
-RAMherd's page is the results chart pinned in the hall between rounds. A bottle-green noticeboard felt owns the whole ground, the strip at the top and the footer. One tall off-white paper sheet is pinned on it and owns everything else: the ruled header box with the fund printed in it, the results board, the coordinator log, the idea slip, the regulations. Nothing floats above the sheet and nothing sits beside it; every part of the page is a part of that one sheet, opened by a printed double rule.
+RAMherd's page is a line-printer listing on a black screen: a banner page in giant pixel letters, then one appended line per thing that happened, every line permanent. The world it is printed in is the operator's pinned brand asset (`src/brand/ram-smashing-hash-main.png`): a pixel ram charging a HASH block, binary digits scattering off the impact, monochrome, 1-bit. Everything the page draws is drawn the way that asset is drawn: on a 4px pixel unit, in white on pure black, with corners that step instead of curve. The five reference sites (chordpf.com, nearos.io, trykyoto.ai, dexora.tech, homefi.space) supplied structure only: black ground, an oversized headline, a filled pill beside a ghost pill, a small mark with a centred nav, generous negative space, and one subtle glow. Nothing of their gloss carried over: no soft cards, no blur, no neon.
 
-Three inks do all the talking. Printed black is what the organiser set before the hall opened: headings, column heads, prose, regulations. Blue-black pen is what gets written live by whoever keeps the chart: the fund figures, each entrant's row, every answer in the log, and every control a visitor touches. One judge red is reserved for HashSmash's own review states and the ruled judge margin, and is used nowhere else; it never marks focus, error or emphasis. Feint blue rulings carry the grid. The scene is light: a hall under fluorescent tubes, flat colour, no gradients, no imagery, a drawn weave on the felt rather than a photographed one.
+The page is dense where it reports and empty where it persuades. The banner page gives the headline, the event line, two pills and the plate room to breathe; below it the listing takes over, and from there the page is rules, lines and frames. Three things carry hierarchy: the display face at banner size, the frame (a one-unit white rule with notched corners) around anything that is a screen or a control, and inverse video for the one stamp that matters. Colour does almost nothing. One amber exists, and it means "live right now"; the judge's state is never a colour, it is a white block with black text, the way a terminal highlights the line the cursor is on.
 
-A single grotesk with a real width axis (Archivo variable, self-hosted) does the work two families would otherwise do: wide and heavy for the sheet title and the name on the strip, condensed and tracked for column heads and stamps, normal for everything else, tabular figures wherever a number sits. Status is written, not chipped: a word, a small drawn glyph, and a clock. Rows nobody has written to for a while thin their ink. The world has one motion, "the pen writes": a changed cell re-inks left to right; nothing else moves.
+Motion is the print. A changed line prints left to right in fourteen hard steps; the running glyph flips between two pixel frames once a second; the Herder's live dot blinks the same way. Nothing eases, fades or slides, and under reduced motion changes simply appear. The glow the references share is executed as an ordered dither: three concentric rings of single amber pixels behind the plate, masked with hard stops, no smooth gradient anywhere. The board sits on a scatter of 0 and 1 glyphs so faint they read as texture, and every section opens with a "spray": a rule that breaks into scattering digits, the asset's motif turned into the page's divider.
 
 **Key Characteristics:**
-- One sheet on one wall: felt ground, a single paper surface, no cards, no panels, no second surface colour.
-- Three inks with fixed jobs: printed black, pen blue-black, judge red; no second accent.
-- Feint blue rulings and printed double rules carry all structure; borders are rulings, never outlines of boxes-for-their-own-sake.
-- One typeface, three widths: 112 for the title and name, 78–85 for column heads, stamps and buttons, 100 for prose.
-- Written status: word plus drawn glyph plus clock; stale rows thin to a paler pen; the judge's stamp is the only red.
-- One motion: a left-to-right re-ink on changed cells, off entirely under reduced motion.
-- Near-square geometry: a 2px hairline radius on the sheet, controls, stamp and toggle; nothing rounder.
+- Pure black ground, white 1-bit ink, one amber for the live; nothing else is a colour.
+- One 4px pixel unit governs borders, stepped corners, pills, glyphs, block bars, the dot-leader, the dither and the spray.
+- Three self-hosted faces with fixed jobs: Jersey 10 displays, Silkscreen labels (caps only), Archivo reads.
+- Status is a pixel glyph, a Silkscreen word and a clock; the judge's state is inverse video.
+- Frames are notched, pills are stair-stepped, nothing is rounded, nothing casts a shadow.
+- One motion, the print: stepped, never eased; the running glyph and the live dot blink in two frames.
+- Append-only listing: a changed line prints a new one, history is never rewritten, the first paint is never animated.
 
 ## Colors
 
-A green wall, an off-white sheet, and three inks: the whole palette is the materials of a chart in a hall, with blue rulings between them.
+A 1-bit palette with four greys for distance, one amber for the live signal, and nothing else.
 
 ### Primary
-- **Pen Blue-Black** (`pen`): the ballpoint. Every live-written value on the sheet: fund figures, entrant ids, round names, the status word and glyph, each coordinator answer, link text, the fill of the pen meter, the button face, the control text, the caret, and the focus outline. If a value can change while the page is open, it is pen.
-- **Pen Deep** (`pen-deep`): the pen pressed harder; the button's hover face and border only.
-- **Pen Soft** (`pen-soft`): dried, thinning ink. Stale rows (not written for more than 300 seconds) switch their id, round, status line and activity to this; the pending "Writing…" answer in the log; the disabled button and disabled control text; the "of $400.00" denominator beside a fund figure; the log's thin scrollbar thumb.
+- **Phosphor Ink** (`ink`, #ffffff): everything that is drawn or printed in full strength. Headlines, RAM ids, fund values, frames, pills, the spray's rule, the glyphs, the judge's block, the newest history line, the filled slots of a block bar, the focus outline.
 
 ### Secondary
-- **Judge Red** (`judge`): HashSmash's stamp. The `judge-mark` text and its 1.5px border, and the 1px ruled left edge of the Judge column at every width. Nothing else on the page is red: not focus, not errors, not warnings, not emphasis.
+- **Live Amber** (`live`, #ffb000): the single accent, reserved for what is live at this moment. The Herder's live dot and its "updated" clock, a live stream's frame, badge and caption rule, and the amber pixels of the dither glow behind the plate. It appears nowhere else: not on a running RAM's glyph, not on hover, not on errors, not on focus.
 
 ### Neutral
-- **Felt** (`felt`): the page ground behind the sheet; `html` and `body` background, overlaid with a drawn 5×7px warp-and-weft tile (white lines at 3.5% and black lines at 5% opacity).
-- **Felt Deep** (`felt-deep`): the sticky strip and the opened mobile menu; also the browser `theme-color` and the scrollbar track.
-- **Felt Rule** (`felt-rule`): the one hairline under the strip and under the opened menu, and the border of the menu toggle.
-- **Felt Ink** (`felt-ink`): text on the felt: the name, hovered strip links, the toggle icon, footer links, and the focus outline for anything sitting on felt.
-- **Felt Ink Soft** (`felt-ink-soft`): resting strip links and footer prose on the felt; the page scrollbar thumb.
-- **Paper** (`paper`): the sheet, every control's background, the pen meter's trough, the button's text, selection text, the skip link's background.
-- **Paper Shade** (`paper-shade`): a disabled control's background and the log scrollbar track. The only tonal step the sheet has.
-- **Ruling** (`rule`): feint blue rulings: fund-row dividers, every table row rule, the log's entry rules, the by-round dividers, the board/log divider, the mock-note rule, and link underlines by default.
-- **Ruling Strong** (`rule-strong`): the printed heavier rule: the header box border (1.5px), the double rules opening each part (1px + 1px with a 4px gap), the column-head rule (2px), the pen meter's border, the notice's border, and the resting border of every control.
-- **Printed Ink** (`ink`): body text, all headings, column heads, the bold question lines in the log, form labels, the by-round and fund row terms.
-- **Printed Ink Soft** (`ink-soft`): secondary printed text: section leads, sub-lines under fund figures, the approach under an entrant id, the lane path under a round, the "written 8s ago" clock, the key, the Q/A marks, the "(optional)" tag, placeholders, the em dash where the judge has nothing yet, by-round terms.
+- **Ground** (`bg`, #000000): the screen. Also the text colour on anything inverse (a filled pill, the judge's block, the OPEN label, the skip link, `::selection`).
+- **Ink, second strength** (`ink-2`, #a8a8a8, 8.8:1 on the ground): the reading voice at rest. Nav links, the event line, section leads, activity sentences, the Herder's answers, fund terms, facts terms, an idle screen's HASH block and NO DESK RUNNING badge, history rows that are not the newest.
+- **Ink, third strength** (`ink-3`, #7b7b7b, 4.9:1, the floor): tertiary text and the stale state. Clocks, candidate paths, approaches, the score term, placeholders, hints, part numbers, the spray's digits, log marks, the key, an unticked block's outline, a disabled pill, a stale tile's id and status line. Nothing dimmer than this ever carries words.
+- **Pressed Ink** (`ink-press`, #d4d4d4): a filled pill under the pointer, and nothing else.
+- **Rule** (`rule`, #3a3a3a): the dot-leader on a fund line. Non-text only.
+- **Hairline** (`rule-2`, #1c1c1c): the 2px dividers between listing rows (fund lines, herd lines, log entries, facts, history, the slip's index and summary), the top bar's bottom edge, the foot's top edge, and the 0/1 specks behind the board.
 
 ### Named Rules
-**The Three Inks Rule.** Printed black is what the organiser set; pen blue-black is anything written live or touched by the visitor; judge red is HashSmash's verdict and the judge margin. A colour outside those three jobs is a fourth ink and does not exist.
+**The Amber Is Live Rule.** Amber means a thing is live right now: the Herder's dot and clock, a live stream's frame, badge and caption rule, the dither behind the plate. A running RAM's status glyph is white like every other glyph; "running" is a state, not a stream. Amber never marks hover, focus, error, emphasis or success.
 
-**The Red Is The Judge Rule.** Judge Red appears only in the `judge-mark` stamp and the ruled left edge of the Judge column. It never marks focus, validation, errors, warnings or emphasis. Focus is a 2px pen outline at 3px offset on the sheet, a felt-ink outline on the felt.
+**The Inverse Video Rule.** The stamp is a white block with black text, set in the label voice: HashSmash's review state ("in review") on the board, in the facts and in the key, and on the entry slip the signing state ("Not live yet"). It is never a colour, never outlined, never iconed. Anything else that goes inverse is a control under the pointer (a ghost pill on hover, the OPEN label) or the skip link.
 
-**The Rulings Carry The Grid Rule.** Structure is drawn with rulings (`rule`, `rule-strong`) and printed double rules, never with background tints, filled bands, zebra stripes or boxed cards. The sheet has one tone; `paper-shade` is reserved for a disabled control.
+**The Four Greys Rule.** Text is `ink`, `ink-2` or `ink-3`, and `ink-3` (4.9:1) is the floor; `rule` and `rule-2` draw lines and specks and never carry a word. Distance between lines is made by stepping down a grey, not by adding a tint, a band or a box.
 
 ## Typography
 
-**Display Font:** Archivo variable (self-hosted, `fonts/archivo-variable.woff2`, wght 100–900, wdth 62–125), with Helvetica Neue, Arial fallback
-**Body Font:** the same Archivo variable
-**Label/Mono Font:** none distinct; tabular figures (`font-variant-numeric: tabular-nums` on `body`) do the mono's job for numbers
+**Display Font:** Jersey 10 (self-hosted, `fonts/jersey10.woff2`; with Archivo, Helvetica Neue, Arial fallback)
+**Body Font:** Archivo variable (self-hosted, `fonts/archivo-variable.woff2`, weight 100 to 900, width 62% to 125%; with Helvetica Neue, Arial fallback)
+**Label Font:** Silkscreen (self-hosted, `fonts/silkscreen.woff2`; same fallback chain)
 
-**Character:** One face, three widths. The width axis is the system: wide and heavy (wdth 112, wght 800) says "this was printed large on the sheet"; condensed and tracked (wdth 78–85, wght 700, uppercase) says "column head" or "stamp"; normal width says "prose". No italics are used anywhere.
+**Character:** Three faces, three jobs, no overlap. Jersey 10 is the pixel display voice: a condensed bitmap face set tight (line-height 0.95, zero tracking) that reads as a banner page even at 1.25rem. Silkscreen is the label voice: a 3-pixel bitmap caps face set small, tracked and uppercase, the voice of nav links, pills, status words and clocks, column terms and stamps. Archivo is the reading voice, plain and antialiased, with tabular figures on the body so a rewritten number never shifts its neighbours. Jersey 10 and Silkscreen are single-weight (400); Archivo's only weight above 400 in use is 600 on `strong` in the slip's terms.
 
 ### Hierarchy
-- **Display** (800, `clamp(2.2rem, 4vw, 3.1rem)`, 0.94, −0.035em, wdth 112, max 15ch): the sheet title in the header box. The build sets the hook sentence here, not the product name; the name lives on the strip.
-- **Name** (800, 1.15rem, −0.02em, wdth 112): "RAMherd" on the felt strip. The same wide-heavy voice as Display, small.
-- **Headline** (700, `clamp(1.45rem, 2.4vw, 1.85rem)`, 1.05, −0.02em): the h2 that opens each part of the sheet (the board, the coordinator, the slip, the regulations).
-- **Title** (700, 1.05rem, 1.05, −0.01em): h3 inside a part: the notice's heading, the regulation sub-heads.
-- **Body** (400, 1rem, 1.55, max 68ch; section leads 60ch in `ink-soft`): prose. Inside the table and log the body steps down to 0.92rem; sub-lines (approach, path, clock, sub-notes, key) sit at 0.74–0.82rem with line-height 1.35.
-- **Figure** (700, 1.35rem, tabular, `pen`): the three fund values. Secondary figures (by-round entrants, entrant ids, round ids) are 0.95rem at 600–700 in `pen`.
-- **Label** (700, 0.74rem, +0.07em, uppercase, wdth 78): column heads, the by-round head and terms. The stamp (`judge-mark`) is the same voice at 0.7rem, +0.08em, wdth 80; the log's Q/A marks at 0.72rem, +0.06em, wdth 80.
-- **Button** (700, 0.85rem, +0.06em, uppercase, wdth 85): the pen button only.
+- **Display** (400, `clamp(2.8rem, 6vw, 5rem)`, 0.95, balanced): the h1 on the banner page ("Fees fund RAMs. RAMs ram hashes.") and the slip's h1, at 20ch and 16ch respectively.
+- **Banner** (400, `clamp(4rem, 12vw, 9rem)`, 0.85): a RAM's id as the first line of its own page (`.ram-banner`).
+- **Wordmark** (400, `clamp(5rem, 22vw, 16rem)`, 0.8): "RAMherd" across the foot (`.foot-mark`), cropped at the bottom, unselectable, decorative.
+- **Headline** (400, `clamp(2rem, 4vw, 3rem)`, 0.95): every h2 opening a section; on the slip, each part's h2 at `clamp(2rem, 4vw, 3rem)` with its number in `ink-3`.
+- **Title** (400, 1.5rem, 1): h3 inside a part (the notice, the two rules columns, the terms, the preview); also the `>` prompt (`.prompt`) and the counts in the Herder (`.herd-counts .n`), the brand name at 1.75rem (1.5rem below 640px).
+- **Figure** (400, 2rem, 1): fund values on the banner page (`.fund-value`); 1.5rem on the slip. The only place a number grows past reading size.
+- **Id** (400, 1.75rem, 1): a RAM's id on its tile (`.tile-id`), underlined 3px on hover.
+- **Id, small** (400, 1.25rem, 1): a RAM's id in the Herder's lines (`.h-id`) and the slip's index terms (`.slip-index dt`).
+- **Lead** (400, `clamp(1rem, 1.3vw, 1.15rem)`, 1.55): the event line under the h1, in `ink-2`, 70ch.
+- **Body** (400, 1rem, 1.55, tabular figures): prose at 66ch, controls, the RAM page's now-line; the Herder's summary one step up at the lead size, clamp(1rem, 1.3vw, 1.15rem).
+- **Body, small** (400, 0.95rem): activity sentences at 46ch, herd lines, the log, the notice, the rules columns, the foot row, the confirm slip, hints' siblings.
+- **Fine** (400, 0.85rem, 1.45): fund sub-lines, round and model lines, the key, the feed and mock notes, a full screen's caption, hints, choice sub-lines.
+- **Label** (400, 0.75rem, 1.5, +0.08em, uppercase): the Silkscreen voice. Nav links, pills, status words and clocks, the judge mark and score, fund terms, the panel bar, counts, log marks, field labels and legends, history time and word, facts terms, the crumb, the desk badge, the OPEN label, the slip's index states and summary terms. In the open mobile nav the links step up to 0.85rem.
 
 ### Named Rules
-**The Width Axis Rule.** Hierarchy is carried by width and weight, not by a second family. 112 wide for the title and the name, 78–85 condensed for column heads, stamps, marks and buttons, 100 for everything else. A second typeface is a fourth ink.
+**The Caps-Only Rule.** Silkscreen has no lowercase, so it never sets an identifier: model slugs (`anthropic/claude-opus-5.5`), lane paths (`lanes/exploratory/candidates/sha256-r31/`), round ids, addresses and anything a reader might copy are set in Archivo at reading size. Silkscreen labels; it never names.
 
-**The Column Head Rule.** The condensed, tracked, uppercase voice belongs to column heads, row heads, stamps and buttons: things that label a cell. It is never set above a headline as a kicker or eyebrow.
+**The Display Is a Word Rule.** Jersey 10 sets short things: a headline, an id, a figure, a count, a prompt, the wordmark. It never sets a sentence; the moment a line needs to be read rather than seen, it is Archivo.
 
-**The Tabular Figures Rule.** Every number sits in tabular figures so a rewritten value does not shift its neighbours. A fund figure is the only place a number grows past body size (1.35rem).
+**The Tabular Figures Rule.** `font-variant-numeric: tabular-nums` is on the body and inherited everywhere, so a fund value, a clock or a score can be reprinted in place without moving the line around it.
 
 ## Layout
 
-The page is one centred column (max 1320px, side gutter `clamp(1rem, 3vw, 2.5rem)`) in three bands: the sticky felt strip (min-height 3.4rem, 1px felt-rule beneath), the sheet, and the felt footer. The sheet carries its own inset: 1.2rem below 700px, 2rem from 700px, 2.2rem from 1100px. The header box inside it uses the same steps for its title cell (1.2 / 1.8 / 2rem), and the board/log halves open their shared gutter from 1rem to 1.6rem to 2rem on the same breakpoints.
+A single centred column, `max-width: 1200px` (`--max`), with a fluid gutter of `clamp(1rem, 4vw, 3rem)` on both sides and a sticky 4rem top bar (`--nav-h`) that scroll targets clear by one extra rem. The body is a listing: full-width rules between rows, nothing boxed unless it is a screen or a control.
 
-Inside the sheet, every part is opened by a printed double rule (two 1px `rule-strong` lines 4px apart) and separated by 1.8rem (board row) or 2.4rem (slip, regulations) of paper above it. The parts in order: the ruled header box (title cell 1.25fr beside the fund column 1fr, the by-round strip across the full width beneath), the board row (results 2fr, log 1fr, a 1px ruling between), the slip row (slip 1.2fr, notice 0.8fr, gap `clamp(1.4rem, 3vw, 2.6rem)`), and the regulations (two equal columns, 2rem gap, mock-note ruled off beneath).
+**The banner page.** Centred and stacked: the h1 (20ch), the event line (70ch), the two pills, then the plate at `min(100%, 600px)` with the dither glow inset 10% above and below it, then the fund lines at `min(100%, 760px)`. Each fund line is a three-column grid (term / dot-leader / value) on a 2px `rule-2` rule, with its sub-line or block bar underneath spanning the full width. At 1440 the plate's lower edge and the first fund lines sit at the fold. Below 640px the dot-leader is dropped and the value drops under the term, left-aligned.
 
-Cells have fixed geometry across states so the states compare at a glance: table cells are 0.85rem tall-padded and 0.7rem right-padded, with 2px `rule-strong` under the column heads and 1px `rule` under each row; the Entrant column is 8.5rem wide, Round 11.5rem, Judge 6.2rem; fund rows are padded 1rem by `clamp(1rem, 2.5vw, 1.6rem)`; by-round cells 0.55rem by 0.9rem; log entries 0.85rem on a 1.5rem mark column. Above 1000px the log takes the board's height and scrolls inside it (`height: 0; min-height: 100%`), never past it; below, the log's list caps at 36rem and scrolls.
+**Sections.** The Herder, the board, ideas and rules each open with the spray (40px tall, `min(100%, 640px)` wide, 1.4rem above the h2) and carry `padding-top: clamp(4rem, 8vw, 6.5rem)`; the section head has 1.8rem beneath it. The board alone is textured with the speck tile (`--speck`, `rule-2` digits on a 96px tile).
 
-Responsive rules, widest first:
-- **≤1000px**: the board row stacks; the board loses its right ruling and gains a bottom one; the log loses its left inset.
-- **≤860px**: the header box stacks (title over fund, a 1.5px `rule-strong` between); the slip row and regulations go to one column; the strip's links collapse behind a 2.4rem ruled toggle and open as a full-width felt-deep panel under the strip.
-- **≤640px**: table rows become ruled blocks: the thead is visually hidden, each row is a grid of Entrant / Round / Judge (5.4rem) on the first line and Now across the full width beneath, rows ruled by 1px `rule`; the Judge cell keeps its red left edge; the ask form stacks and the button goes full width; fund rows go single-column with left-aligned figures; the by-round strip stacks its head over a two-column grid of rounds.
+**The Herder's panel.** By contract the biggest element on the page: a 4px frame with notched corners, `min-height: 36rem`, a bar across the top (name / live dot + clock / tag), then a 3fr : 2fr body, herd view on the left behind a 4px divider, chat on the right. Below 1000px it stacks (divider moves to the bottom of the herd view); below 640px the minimum height is released and the inner padding tightens to 1rem.
+
+**The board.** Three columns at ≥1001px, two at 641 to 1000px, one at ≤640px; gap 2.6rem by 2rem (2.2rem in one column). Each tile is a 16:10 screen frame followed by unboxed printed lines, 0.9rem below the frame. The key beneath the board wraps freely.
+
+**Ideas.** 1.2fr : 0.8fr, the slip on the left and the notice on the right, gap `clamp(1.6rem, 4vw, 3.5rem)`; single column below 860px. **Rules:** two equal columns, gap 2.5rem; single below 860px.
+
+**The foot.** `margin-top: clamp(4rem, 8vw, 7rem)`, a 2px `rule-2` rule, the foot row (sentence left, links right), then the wordmark overflowing the bottom edge.
+
+**A RAM's page (`#ram/<id>`).** Opened in place over the board, which stays mounted and keeps ticking: `body.page-open` hides `.top`, `main` and `.foot`. It has its own sticky bar (the Back pill at left, the crumb at right, hidden below 640px), then `padding-top: clamp(2rem, 5vw, 4rem)`: the id at banner size, the now-line, a `.screen-full` at `max-width: 1104px` with its caption along the bottom, the facts list (11rem term column, 760px wide; single column below 860px), and the history (6rem / 12rem / 1fr; below 1000px the text drops under the time and word).
+
+**The entry slip (`launch.html`).** The same bar, a left-aligned banner (h1 at 16ch, lead, note, fund lines, the six-part index), then six parts each on a 17rem / 1fr grid (head on the left, body on the right with `padding-top: 2.6rem` and `max-width: 46rem`), `padding-top: clamp(3rem, 6vw, 4.5rem)` per part; single column below 860px.
+
+**Breakpoints** (max-width): 1000px (board to two columns, panel stacks, history reflows), 860px (nav collapses behind the pixel toggle, ideas / rules / slip parts / facts go single column), 640px (board to one column, pills and the ask row stack and fill, fund lines lose the leader, panel releases its height, crumb hides, brand name 1.5rem).
 
 ## Elevation & Depth
 
-Flat, with one exception: the sheet. Depth on this page is the physical fact of a paper sheet pinned on a felt wall, and nothing else lifts. The sheet carries a two-part shadow, a 1px contact edge and a long soft fall below it. The strip is sticky but flat (its edge is a 1px felt-rule, not a shadow). Controls, the notice, the stamp and the header box are drawn as rulings on the sheet, never raised. Hover and focus never add shadow. Materials are flat colour; the felt's weave is a drawn SVG tile, not a raster texture.
-
-### Shadow Vocabulary
-- **Pinned sheet** (`box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 24px 48px -20px rgba(0, 0, 0, 0.6)`): the sheet, and only the sheet.
+None. There are no shadows anywhere, no blur, no overlay and no lift on hover; the page is a flat screen by decision. The one `box-shadow` in the stylesheets is a pair of inset rings used as a focus indicator on pills and controls (and the invalid state on the slip), never as depth. The one "glow" is the ordered dither behind the plate: three stacked tiles of single 4px amber pixels on 12, 16 and 24px cells (`--dot-12`, `--dot-16`, `--dot-24`), each masked to a concentric circle with hard radial-gradient stops (17 / 27 / 38 percent, half a percent of transition), so density steps down in rings rather than fading. Everything that could suggest a layer is drawn as a frame instead: the panel, a screen, a control, the notice, the terms, the preview, the confirm slip.
 
 ### Named Rules
-**The One Sheet Rule.** There is one surface on the wall. Nothing else casts a shadow, nothing floats above the sheet, and no part of the sheet is a second, inset surface. If a new element needs to be "on top", it is drawn as a ruled box on the sheet instead.
+**The Flat Screen Rule.** Nothing casts a shadow and nothing is translucent. If a new element needs to read as "on top", it gets a one-unit frame with notched corners, or it goes inverse video. Depth is a frame or a block, never a shadow.
+
+**The Hard Stop Rule.** The only gradients are masks and leaders with hard stops: the dither's radial masks and the dot-leader's `linear-gradient(90deg, rule 50%, transparent 50%)`. A smooth gradient of any kind is outside the world.
 
 ## Shapes
 
-Near-square. Every corner on the page is either sharp (the sheet's header box, rulings, the notice, the confirmation, the meter, the felt strip) or a 2px hairline radius that reads as the print's slight softness (the sheet itself, every control, the pen button, the stamp, the menu toggle). Borders are rulings: 1px feint blue (`rule`) between rows, 1.5px strong blue (`rule-strong`) around printed boxes, 2px under column heads, 1.5px pen around the confirmation, 1.5px judge red around the stamp. The one filled shape is the pen meter: a 7px trough bordered in `rule-strong` with a pen fill drawn from the left. Drawn glyphs are 15px, stroked at 1.6 with round caps, one circle with a mark inside; the external-link arrow is 12px in the same stroke. No pill, no circle avatars, no chips.
+Everything is drawn on the 4px unit (`--u`), and corners step instead of curve. There is no `border-radius` anywhere.
+
+- **The frame:** a one-unit (4px) solid `ink` border, clipped with `--clip-notch`, a two-unit stair at each corner (the corner pixel and the one inside it are cut). Used by the panel, every screen, every control, the nav toggle, the notice, the confirm slip, the terms and the preview.
+- **The pill:** `--clip-pill`, a six-unit (24px) stair at each corner on a box twelve units (48px) tall (ten units, 40px, for `.small`). The filled pill is clipped `ink`; the ghost pill draws its outline by laying a `bg` pseudo-element inset one unit and clipped with `--clip-pill-in`, the five-unit stair that fits inside, so the ring is exactly one unit thick and stepped on both edges.
+- **The rule:** dividers between listing rows are 2px (half a unit) in `rule-2`; the dot-leader on a fund line is a one-unit-tall dash pattern (4px on, 4px off) in `rule`; the top bar and the foot are edged with the same 2px hairline.
+- **The glyph:** every status glyph is an 8 by 8 pixel SVG (`shape-rendering: crispEdges`) rendered at 16px, filled with `currentColor`: running (a burst in two frames), thinking (three dots), idle (an open rectangle), submitted (a tick). The chevron on a select, the toggle's bars and the slip's error mark are drawn the same way.
+- **The block:** a block bar (`.blocks`) is a row of flex-equal cells three units (12px) tall with a 2px `ink-3` outline, separated by one unit; a filled block is solid `ink`. The live dot is a two-unit (8px) square of `live`. The slip's choice box is 16px with a one-unit `ink-3` border, filled `ink` when chosen.
+- **The spray and the HASH block:** 1-bit SVG symbols (`#spray`, `#hash-block`) drawn in whole pixels; the spray's rule is `ink`, its digits `ink-3`; the HASH block sits in `ink-2` at 30% of its screen (max 150px; 22%, max 240px, on a full screen).
+- **Rasters:** `img { image-rendering: pixelated }`, so the plate and the mark scale as pixels, never as smoothed bitmaps.
 
 ## Components
 
-### Felt Strip (`felt-strip`)
-- **Character:** the board's nameplate, pinned to the top of the hall.
-- **Shape:** sticky, flat `felt-deep` band, min-height 3.4rem, 1px `felt-rule` beneath.
-- **Name:** "RAMherd" in Name type, `felt-ink`, no underline.
-- **Links:** 0.92rem at 500 in `felt-ink-soft`, 1.4rem apart; the external link sits at the far right with a 12px drawn arrow and an sr-only "(opens in a new tab)".
-- **Hover:** link turns `felt-ink` and underlines in its own colour (offset 0.22em).
-- **Focus:** 2px `felt-ink` outline.
-- **≤860px:** links hide behind a 2.4rem square toggle ruled in `felt-rule`, radius 2px; the toggle's three bars morph to a cross via `d: path()` when open; the menu opens as a full-bleed `felt-deep` panel under the strip, links stacked 0.9rem apart.
+### Top
+The bar of a terminal: 4rem tall, sticky, black, edged with a 2px `rule-2` hairline. The pixel ram mark (44 by 40px) and "RAMherd" in Jersey 10 at 1.75rem on the left; four centred links in the label voice in `ink-2` (hover: `ink`, 2px underline at 0.35em offset); X / GitHub / HashSmash and a small ghost pill ("Enter a RAM") at the right. Below 860px the links hide behind a pixel toggle, a ten-unit (40px) notched frame whose three bars are SVG paths; when expanded, the outer bars morph into an X by swapping their `d: path()` and the middle bar goes to opacity 0. The open menu drops from the bar as a black sheet with a one-unit `ink` bottom edge, links stacked at 0.85rem, the pill last. A link click closes it. The RAM page's bar is the same bar with the Back pill at left and the crumb (`RAMherd / the board / ram-03`, current id in `ink`) at right.
 
-### Sheet (`sheet`)
-- **Corner Style:** 2px hairline.
-- **Background:** `paper`, text `ink`.
-- **Shadow Strategy:** the pinned-sheet shadow, see Elevation & Depth.
-- **Internal Padding:** 1.2rem / 2rem (≥700px) / 2.2rem (≥1100px).
-- **Rule:** one per page. It holds every other component below.
+### Pills
+- **Shape:** the six-unit stair-stepped pill (`--clip-pill`), 48px tall, 24px side padding; `.small` is 40px tall with 20px padding.
+- **Filled:** `ink` ground, `bg` text in the label voice. Hover: `ink-press`. Disabled: `ink-3` ground (the slip's disabled Sign pill, `cursor: not-allowed` there). The submit buttons change their word while working ("Handing in…").
+- **Ghost:** `ink` text on a one-unit stepped `ink` ring (the inset `bg` pseudo-element). Hover: inverse video, the ring fills and the text goes `bg`.
+- **Focus:** no outline; the filled pill shows two inset rings (two units of `ink`, then one unit of `bg`); the ghost pill's inner inset grows to two units so its ring doubles.
+- **Where:** "Watch the board" filled and "Ask the Herder" ghost on the banner page; Ask, Hand in for review, Connect Phantom, Check the entry and Sign in Phantom filled; Enter a RAM and Back to the board small ghosts. Below 640px the banner pills and the Ask pill stretch full width.
 
-### Header Box
-- **Character:** the chart's printed heading: a ruled box across the full sheet width.
-- **Shape:** 1.5px `rule-strong` border, square corners, two cells (title 1.25fr, fund 1fr) divided by a 1.5px `rule-strong` ruling; the by-round strip across the bottom under a 1.5px rule.
-- **Title cell:** Display type (the hook sentence, max 15ch), the event line beneath at 1.02rem (max 58ch), the event note at 0.92rem in `ink-soft`.
-- **Fund rows:** three rows ruled by 1px `rule`, each a term (600, 0.95rem, `ink`) beside a right-aligned Figure in `pen` with its sub-line in `ink-soft` 0.82rem beneath. The "of $X" denominator is `fund-of`: 500, 0.95rem, `pen-soft`.
-- **Pen meter** (`pen-meter`): a 7px trough, 1px `rule-strong` border on `paper`, fill in `pen` scaled from the left (`transform: scaleX`), transitioned 0.6s on the standard ease-out; drawn without transition on first paint.
-- **By-round strip:** a Label head on the left ("Entrants by round"), then an auto-fit grid of rounds (min 8.5rem) each ruled off on the left by 1px `rule`: term in Label `ink-soft`, entrants in 600 0.95rem `pen`.
+### Banner page
+Centred stack: h1 (display), event line (lead, `ink-2`, links in `ink`), the pill pair 1.2rem below, then the plate (`ram-hero.png`, 851 by 616, pixelated) with the dither glow behind it, then the fund lines and the feed note in `ink-3` at 0.85rem. The slip's banner is the same parts left-aligned, with a note under the lead and the six-part index after the fund lines.
 
-### Results Table (signature)
-- **Character:** the wallchart itself: one written row per entrant, fixed cell geometry, written status.
-- **Heads:** Label type in `ink`, 2px `rule-strong` beneath; Entrant / Round / Now / Judge.
-- **Rows:** 0.85rem vertical cell padding, 1px `rule` beneath, 0.92rem base size, top-aligned.
-- **Entrant cell:** id in `pen` 700 0.95rem over the approach in `ink-soft` 0.8rem.
-- **Round cell:** round id in `pen` 600 over the lane path in `ink-soft` 0.74rem, breakable only after a slash (each segment is `nowrap`).
-- **Now cell:** the status line (drawn 15px glyph + status word, `pen` 600, + "written 8s ago" clock in `ink-soft` 400 0.82rem) over the activity sentence in `pen` 0.9rem, max 62ch.
-- **Glyphs:** one circle with a mark: a clock hand (running), three dots (thinking), a dashed circle (idle), a tick (submitted). Stroke 1.6, round caps, `currentColor`.
-- **Judge margin:** the last column has a 1px `judge` ruled left edge at every width; width 6.2rem.
-- **Judge mark** (`judge-mark`): an inline stamp: `judge` text and 1.5px border in currentColor, radius 2px, 0.15rem × 0.45rem padding, 0.7rem 700 uppercase +0.08em wdth 80, nowrap. Where the judge has said nothing, an em dash in `ink-soft` with sr-only "nothing from the judge yet".
-- **Stale ink:** a row not written to for more than 300 seconds switches its id, round, status line and activity from `pen` to `pen-soft` and drops the activity to weight 400. Nothing else changes; the geometry holds.
-- **Key:** a fixed legend beneath the table at 0.82rem `ink-soft`, glyphs in `pen`, the stamp shown once as itself. It never moves.
-- **≤640px:** see Layout; rows become ruled blocks.
+### Fund line + Blocks
+One printed row of the listing: the term in the label voice in `ink-2`, a one-unit dot-leader in `rule` filling the middle column, the value in Jersey 10 at 2rem in `ink` on the right (its "of $400.00" denominator in `ink-3`). Under the row, full width: a sub-line in `ink-3` at 0.85rem, or a block bar. The compute bar is always 24 blocks with the spent share filled from the left; the slots bar is one block per slot, the funded ones filled. Rows are divided by 2px `rule-2` rules, the last closed below. The first paint is static; a later change to a value prints.
 
-### Coordinator Log
-- **Character:** the Q&A written down the right of the chart, newest at the top, question box above it.
-- **Ask form:** a ruled control and the pen button side by side, 0.5rem apart; stacks at ≤640px.
-- **Entries:** an ordered list ruled by 1px `rule` top and between, each entry a 1.5rem mark column (Q / A marks: 0.72rem 700 uppercase +0.06em wdth 80 `ink-soft`) beside the text at 0.92rem: the question in `ink` 600, the answer in `pen`.
-- **Pending:** the answer reads "Writing…" in `pen-soft` until the real answer is written in with the pen motion.
-- **Scrolling:** above 1000px the list fills the board's height and scrolls inside it; below, it caps at 36rem. Thin scrollbar in `pen-soft` on `paper-shade`.
-- **Live region:** `aria-live="polite"`.
+### Spray
+The section divider: an SVG symbol 480 by 32 at 40px tall and up to 640px wide, left-aligned. A 150-unit-long `ink` rule at four units thick breaks into a field of 0 and 1 digits in `ink-3` that scatter up and right, thinning toward the end. It opens every section on the page and every part of the slip (`.spray-sm`, 1rem beneath). It is never centred and never used as decoration inside a component.
 
-### Ruled Controls (`control-ruled`)
-- **Style:** `paper` background, 1px `rule-strong` border, 2px radius, 0.65rem × 0.75rem padding, 0.95rem text in `pen`, caret in `pen`, placeholder in `ink-soft` at full opacity.
-- **Focus:** 2px `pen` outline at 1px offset and the border turns `pen`.
-- **Disabled:** text `pen-soft` on `paper-shade`.
-- **Textarea:** min-height 9rem, vertical resize, line-height 1.5.
-- **Select:** native appearance removed, a 14px drawn pen chevron at the right (0.75rem inset), 2.4rem right padding.
-- **Labels:** 600 at 0.92rem in `ink`; "(optional)" in `ink-soft` 400.
+### Panel (the Herder)
+The biggest screen on the page. A one-unit notched frame, `min-height: 36rem`. The bar: "THE HERDER" in `ink`, then the live dot (an 8px `live` square, blinking) and "updated 42s ago" in `live`, then "read-only · Q&A" at the far right, all in the label voice on a one-unit bottom rule. The herd view (left, 3fr): a label-voice heading in `ink-2`, the summary sentence at the lead size, the counts (glyph, count in Jersey 10 at 1.5rem, word) in a wrapping row, then one line per RAM on 2px `rule-2` rules: id in Jersey 10 at 1.25rem (a link to its page), the status glyph and word, the activity truncated with an ellipsis in `ink-2`. The chat (right, 2fr): a label heading, the log as a terminal (oldest first, scrolling inside 28rem, thin `ink`-on-`bg` scrollbar), each entry a 1.4rem mark column (`>` for the question, `H` for the Herder, in `ink-3`) beside the question in `ink` and the answer in `ink-2`; a pending answer reads "Writing…" in `ink-3` and prints when it arrives. The ask row at the bottom: a `>` prompt in Jersey 10 at 1.5rem, the control, the Ask pill; the control and pill disable while a question is out.
 
-### Pen Button (`button-pen`)
-- **Shape:** 2px radius, 1px border in the same colour as the face.
-- **Primary:** `pen` face, `paper` text, Button type, 0.68rem × 1.15rem padding.
-- **Hover:** `pen-deep` face and border, 0.15s ease on background and border only.
-- **Disabled:** `pen-soft` face and border, default cursor; the label rewrites to its progressive form ("Handing in…").
-- **Focus:** the global 2px `pen` outline at 3px offset.
-- **Variants:** none. There is one button on this sheet and it is always the pen.
+### Control
+Text input, textarea and select share `.ctl`: black ground, one-unit `ink` frame with notched corners, 0.6rem by 0.9rem padding, reading size, 48px minimum height, `ink` caret. Placeholder in `ink-3` at full opacity. Focus: no outline; two inset rings (one unit of `bg`, then one of `ink`), so the frame reads as doubled. Disabled: `ink-3` text and frame. A textarea resizes vertically from 9rem at line-height 1.5. A select hides the native arrow and draws a pixel chevron (an 8 by 8 SVG at 16px) at the right; its options are black with `ink` text. On the slip, `aria-invalid="true"` draws the same rings as focus, and the error line beneath is `ink` text led by a pixel exclamation mark; the symbol field uppercases as you type. Field labels and legends are the label voice in `ink-2`, "(optional)" in `ink-3`.
 
-### Slip and Notice
-- **Slip:** a form of ruled controls stacked 1.1rem apart under a Headline and lead; the button sits flush left.
-- **Confirmation (`confirm`):** hidden until shown; a 1.5px `pen` ruled box, 0.8rem × 0.9rem padding, 0.9rem `pen` text with a 16px drawn tick, `role="status"`. It is pen, not red, because it is something written by the chart-keeper.
-- **Notice:** an aside ruled in 1.5px `rule-strong`, padding `clamp(1rem, 2.5vw, 1.5rem)`, Title heading and 0.92rem prose; printed black because the organiser set it.
+### Screen
+A 16:10 frame (one unit of `ink`, notched, black, overflow hidden) with four states, each with a badge in the top-left corner (label voice, three units in from the edge, on a `bg` slab):
+- **Checking:** the HASH block in `ink-2` at 30% (max 150px) and the badge "checking".
+- **Idle:** the HASH block stays, the badge reads "NO DESK RUNNING" in `ink-2`. This is the resting state of every screen, not an error: the RAM works on the host.
+- **Live:** the frame goes `live`, the badge reads "LIVE · VIEW ONLY" in `live`, the HASH block hides and the sandboxed, lazy, no-referrer iframe fills the frame with `pointer-events: none` and `tabindex="-1"`. The iframe is only replaced when the stream URL itself changes; a poll never reloads it.
+- **Unreachable:** the HASH block and the badge "feed unreachable".
+A caption line describing the state is screen-reader-only on a tile. On `.screen-full` (max 1104px, the RAM page) it is printed along the bottom edge on a one-unit rule in `ink-2` at 0.85rem (`ink` text and a `live` rule when live), and the HASH block rises above it (22%, max 240px). On a tile, an invisible `.screen-link` covers the whole frame; on hover or focus an "OPEN" label in inverse video appears at the bottom-right corner, and focus draws a 2px `ink` outline 8px inside the frame.
 
-### Regulations
-- **Style:** opened by a double rule with 1.7rem beneath it; a Headline and lead, then two equal columns of Title + 0.92rem prose; a mock-note ruled off beneath (1px `rule`, 0.82rem `ink-soft`).
+### Tile
+A screen, then printed lines with no box: the RAM id in Jersey 10 at 1.75rem (a link, 3px underline on hover) beside the now-line (glyph, status word, "written 32s ago" clock in `ink-3`), the round id in `ink` with the lane path in `ink-3` (breaking only after slashes), the model slug in `ink-2` with the approach in `ink-3`, the activity sentence in `ink-2` at 0.95rem and 46ch, and the judge line. Tiles are diffed by id: a feed tick writes only the text that changed, and a changed status, activity or fresher clock prints that line. The first paint is never animated.
 
-### Footer
-- **Style:** on the felt, 2.4rem below the sheet; two lines of 0.86rem `felt-ink-soft` prose spread to the edges, links in `felt-ink` underlined in `felt-ink-soft`.
+### Judge mark and score
+The stamp: "IN REVIEW" as a white block with black text in the label voice, two units of side padding, no outline. Beside it the score term "LOG₂(T)" in `ink-3` and its value in `ink` (an em dash, `aria`-described, until HashSmash scores it). A RAM with nothing handed in shows an em dash in `ink-3` in place of the stamp. "accepted" never comes from this page.
 
-### The One Motion: "the pen writes"
-A changed cell is re-inked left to right: `clip-path: inset(0 100% 0 0)` to `inset(0 0 0 0)` over 0.55s on the standard ease-out (`cubic-bezier(0.16, 1, 0.3, 1)`), applied by adding `.writing` and removed on `animationend`. It fires on a fund figure that changed, a status line whose word, activity or clock went backwards (someone just wrote the row), a changed activity sentence, and a coordinator answer arriving. The first paint is never animated: figures and rows are drawn, not written. The table is diffed by entrant id so a tick never re-renders the sheet. The pen meter's 0.6s `transform` transition is the only other movement and is suppressed on first paint. Under `prefers-reduced-motion: reduce` the keyframes are not defined and the script skips the class entirely: changes simply appear.
+### Stale rule
+A RAM nobody has heard from for 300 seconds dims: its id, status line, round id and activity go `ink-3`, on the tile and in the Herder's line. A submitted RAM never dims however long the review takes; it is waiting on the judge, not silent.
+
+### Key
+Under the board in the reading voice at 0.85rem in `ink-3`: each glyph (in `ink`) with its word, the judge mark and the score term as they appear on a tile, and a 20 by 13px `ink` rectangle for "no desk running".
+
+### Slip + Notice
+The idea form: label-voice field labels, three controls, a filled pill, and a confirm line that appears after a hand-in (a one-unit notched frame, the tick glyph, "Received." in bold then the queue position) in `ink`. Beside it the notice: a one-unit notched frame with `clamp(1.1rem, 2.5vw, 1.6rem)` padding, an h3 and two paragraphs in `ink-2` at 0.95rem.
+
+### Rules
+Two columns of an h3 over a paragraph in `ink-2` at 0.95rem; the mock note beneath on a 2px `rule-2` rule in `ink-3` at 0.85rem.
+
+### Foot + wordmark
+A 2px `rule-2` rule, the foot row (sentence in `ink-2` with `ink` links, link list right), then "RAMherd" in Jersey 10 at `clamp(5rem, 22vw, 16rem)` with its baseline pulled 0.08em below the edge and the overflow clipped.
+
+### RAM page
+Its bar (Back pill, crumb), the id at banner size (`clamp(4rem, 12vw, 9rem)`, focused on open), the now-line at 1rem, the full screen, the facts (term in the label voice in `ink-2` over an 11rem column, value in `ink`; model and candidate path break after slashes; the review row carries the stamp; the score row reads "not scored yet"), then "History": one row per line the RAM has written, newest first, time in the label voice in `ink-3`, glyph and word in `ink-2`, text at 70ch in `ink-2`; the newest row is in full `ink`. A line is never rewritten; a change prints a new one. Escape or the Back pill returns to the board at the scroll position and focus the visitor left.
+
+### Launch-only components
+- **Slip index:** six terms in Jersey 10 at 1.25rem (links) with a label-voice state under each ("NOT CONNECTED", "NOT CHOSEN", "SWITCHED OFF") in `ink-3`, `ink` once done; auto-fit columns of 10rem on 2px rules, two columns below 640px.
+- **Part:** number in `ink-3` beside the h2, the lead at 0.95rem, the body on the right.
+- **Choice row:** a radio drawn as a printed line on a 2px rule: a 16px box with a one-unit `ink-3` border (hover: `ink`; checked: filled `ink`; focus: 2px `ink` outline at 3px), the main text in `ink`, a sub-line in `ink-3` at 0.85rem; two columns for the model list.
+- **Summary:** label-voice terms over a 9rem column, values in `ink`, "not chosen" in `ink-3`.
+- **Terms:** a one-unit notched frame, an h3, a bulleted list in `ink-2` with `ink` bold leads and `ink-3` markers.
+- **Preview:** a one-unit notched frame with a source line in `ink-3`, a facts grid and an instruction list on 2px rules.
+- **Sign line:** the Sign pill, disabled in `ink-3`, beside the "NOT LIVE YET" stamp; the reason beneath in `ink-2`.
+- **Text button:** "Disconnect" as an underlined word in `ink` (2px underline in `ink-3`, `ink` on hover).
+
+### Motion: the print
+The one authored motion. A new or changed line gets `.printing`: `clip-path` insets from the right edge to zero over 0.5s in `steps(14, end)`, so the line appears character-block by character-block, and the class is removed on `animationend`. The running glyph has two frames (`.f1`, `.f2`) swapped by `frame-a` / `frame-b` at 1s in `steps(1, end)`; the Herder's live dot blinks on `frame-a`. All three keyframe sets are declared inside `@media (prefers-reduced-motion: no-preference)` and the script skips `.printing` under `reduce`, so changes simply appear. Nothing eases, fades, slides or scales; the only spatial change on the site is tile to RAM page, and that is a cut.
+
+### Browser surfaces
+`color-scheme: dark`; `::selection` is `ink` on `bg` inverted; `caret-color: ink`; `scrollbar-color: ink bg` (thin in the log); `:focus-visible` is a 2px `ink` outline at 3px offset except where a component draws its own rings; links underline at 2px, 0.2em offset, in `ink-3` (`currentColor` on hover); tabular figures everywhere; select options black with `ink` text; the skip link is inverse video in the label voice.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** write every live or visitor-touched value in `pen` (#1f3570) and every organiser-set word in `ink` (#16191f); if a value can change while the page is open, it is pen.
-- **Do** keep Judge Red (#b8271f) to the `judge-mark` stamp and the ruled Judge margin; show focus as a 2px pen outline (felt-ink on the felt).
-- **Do** draw structure with rulings: 1px `rule` (#bcc9df) between rows, 1.5px `rule-strong` (#6d87b4) around printed boxes, and the printed double rule (1px + 4px + 1px) to open each part of the sheet.
-- **Do** carry hierarchy on Archivo's width axis: wdth 112 at 800 for the title and name, wdth 78–85 at 700 uppercase for column heads, stamps and buttons, wdth 100 for prose; tabular figures on every number.
-- **Do** write status as a word, a drawn 15px glyph and a clock in one line, with fixed cell geometry across every state, and thin a row to `pen-soft` after 300 seconds without a write.
-- **Do** re-ink a changed cell left to right (0.55s, `cubic-bezier(0.16, 1, 0.3, 1)`), diff rows by key, never animate the first paint, and skip the motion under reduced motion.
-- **Do** keep one surface: the paper sheet with its pinned-sheet shadow; set new elements into it as ruled boxes.
-- **Do** keep the legend beneath the table fixed and in one place.
+- **Do** keep amber (`live`, #ffb000) for what is live right now: the Herder's dot and clock, a live stream's frame, badge and caption rule, the dither behind the plate.
+- **Do** set the judge's state, and the slip's signing state, as inverse video: a `ink` block with `bg` text in the label voice, two units of side padding.
+- **Do** draw every edge on the unit: one-unit (4px) `ink` frames with the two-unit notch on screens, controls and the panel; 2px `rule-2` hairlines between listing rows; the six-unit stair on pills.
+- **Do** set identifiers (model slugs, lane paths, round ids, addresses) in Archivo at reading size; Silkscreen is caps-only and only ever labels.
+- **Do** write status as a 16px pixel glyph, a Silkscreen word and a "written … ago" clock, and dim a RAM to `ink-3` after 300 seconds of silence unless it is submitted.
+- **Do** print a changed line (`clip-path` inset, 0.5s, `steps(14, end)`), diff tiles by id, leave the first paint static, and let changes simply appear under reduced motion.
+- **Do** show the intact HASH block in `ink-2` with "NO DESK RUNNING" as every screen's resting state.
+- **Do** keep `ink-3` (4.9:1) as the dimmest colour that carries a word; `rule` and `rule-2` draw lines and specks only.
+- **Do** open every section with the spray, left-aligned, and texture only the board with the speck tile.
 
 ### Don't:
-- **Don't** add chips, pills, badges or filled status tokens; status is written, and the judge's stamp is the only boxed word.
-- **Don't** add cards, panels, tinted bands, zebra stripes or a second surface colour on the sheet; `paper-shade` is for a disabled control only.
-- **Don't** introduce a second accent, a success green, a warning amber, or any colour outside the three inks and the rulings.
-- **Don't** set the condensed uppercase voice above a headline as a kicker or eyebrow; it labels cells, not sections.
-- **Don't** use a second typeface, a mono face for numbers, italics, or a system display face; Archivo's width and weight axes are the whole range.
-- **Don't** use red for focus, validation, errors or emphasis; red is HashSmash's verdict.
-- **Don't** fade, slide, re-render or re-sort the sheet on a feed tick; a change is a discrete write to the cell that changed.
-- **Don't** add shadows, lifts or glows on hover or focus, or on anything other than the sheet itself.
-- **Don't** round anything past the 2px hairline; no pills, no circle avatars.
-- **Don't** replace the drawn felt tile or the drawn glyphs with raster textures, icon fonts or icon-library imports.
+- **Don't** colour a running RAM's glyph amber, or use amber for hover, focus, errors, emphasis or success; "running" is a state, "live" is a stream.
+- **Don't** give the judge's state a colour, an outline, an icon or a dismiss; it is a white block, nothing else.
+- **Don't** round anything: no `border-radius`, no circles, no circle avatars; corners are stepped stairs on the 4px unit.
+- **Don't** add a shadow, a blur, a translucent layer or a lift on hover; the only `box-shadow` is the inset focus ring.
+- **Don't** use a smooth gradient; the dither's radial masks and the dot-leader are hard-stop only.
+- **Don't** fade, slide, ease or re-sort anything on a feed tick; a change prints a new line and history is never rewritten.
+- **Don't** set a sentence in Jersey 10 or an identifier in Silkscreen; Archivo reads, the other two display and label.
+- **Don't** treat the HASH block as an error, an empty state illustration or a placeholder to be replaced; it is the screen when no desk is running.
+- **Don't** add a second accent, a success green, an error red, cards, tinted bands or a second surface colour; the world is black, three greys, white and one amber.
+- **Don't** replace the drawn glyphs, the spray, the HASH block or the dither with icon fonts, icon libraries, raster textures or anything antialiased.

@@ -79,6 +79,9 @@ const state = {
   //                                     computation, lower is better; null until their judge scores
   //                                     it. Today every submission on these tracks, ours included,
   //                                     is in review with no score, so every log2T here is null.
+  //   history                        -> the RAM's own feed, newest first: every line it has
+  //                                     written this epoch (secondsAgo, status, text). The first
+  //                                     line is the current one. Lines are appended, never edited.
   agents: [
     {
       id: "ram-01",
@@ -90,6 +93,13 @@ const state = {
       updatedSecondsAgo: 32,
       judge: null,
       log2T: null,
+      history: [
+        { secondsAgo: 32, status: "running", text: "Running CaDiCaL against a 31-round reduced characteristic, clause count 2.1M, 4 of 8 branch orderings tried." },
+        { secondsAgo: 1260, status: "running", text: "Branch ordering 3 of 8 finished: UNSAT in 41 min; conflict count 18.4M. Moving to ordering 4." },
+        { secondsAgo: 4140, status: "thinking", text: "Chose CaDiCaL over Kissat for this characteristic after a 10-minute trial on each: CaDiCaL's restarts fit the clause shape better." },
+        { secondsAgo: 6900, status: "running", text: "Encoded the r31 characteristic as CNF: 2.1M clauses, 310k variables, message expansion fully constrained." },
+        { secondsAgo: 9600, status: "idle", text: "Slot funded for this epoch. Reading the r31 track definition and the accepted candidate's proof.md." },
+      ],
     },
     {
       id: "ram-02",
@@ -101,6 +111,12 @@ const state = {
       updatedSecondsAgo: 300,
       judge: null,
       log2T: null,
+      history: [
+        { secondsAgo: 300, status: "thinking", text: "Extending the r31 differential path by one round; checking the probability estimate holds above the submission floor before committing solver time." },
+        { secondsAgo: 2100, status: "thinking", text: "Round 32's message-expansion word W32 depends on W16, W25, W30: the extension needs all three conditions to hold, which costs about 2^-11 on the current path." },
+        { secondsAgo: 5400, status: "running", text: "Re-verified the published 31-round path with the harness's own checker before touching it: all 31 rounds consistent." },
+        { secondsAgo: 8400, status: "idle", text: "Slot funded for this epoch. Target: sha256-r32-exploratory, lanes/exploratory/candidates/sha256-r32/." },
+      ],
     },
     {
       id: "ram-03",
@@ -112,6 +128,13 @@ const state = {
       updatedSecondsAgo: 840,
       judge: "in review",
       log2T: null,
+      history: [
+        { secondsAgo: 840, status: "submitted", text: "Candidate written to lanes/exploratory/candidates/sha3-256-r5/ and queued via hashsmash_pipeline.py intake." },
+        { secondsAgo: 1500, status: "running", text: "local_tracks.py check on the candidate package: mechanically valid. claim.json, proof.md and the Kissat trace attached." },
+        { secondsAgo: 3300, status: "running", text: "Kissat found a satisfying assignment for the 5-round preimage instance under the stated constraints after 2h 06m; recording total charged computation for the claim." },
+        { secondsAgo: 11100, status: "running", text: "Running Kissat on the Keccak-f[1600] 5-round instance, 1.4M clauses, cube-and-conquer with 64 cubes." },
+        { secondsAgo: 14400, status: "thinking", text: "Chose a preimage-style instance over a collision instance for r5: the linear structure of the first rounds keeps the CNF tractable." },
+      ],
     },
     {
       id: "ram-04",
@@ -123,6 +146,12 @@ const state = {
       updatedSecondsAgo: 14,
       judge: null,
       log2T: null,
+      history: [
+        { secondsAgo: 14, status: "running", text: "Re-costing a prior candidate's charged computation after a cheaper preprocessing step cut solver calls by ~18%." },
+        { secondsAgo: 1800, status: "thinking", text: "The preprocessing step (unit propagation over the fixed capacity bits) removes 2 of every 11 solver calls in the old candidate's experiment; re-running the cost model with the new call count." },
+        { secondsAgo: 4500, status: "running", text: "Replayed the prior sha3-256-r6 candidate's experiment under the harness's cost model to get a baseline log₂(T)." },
+        { secondsAgo: 7800, status: "idle", text: "Slot funded for this epoch. Reading HashSmash's cost-model rules in docs/ before touching any candidate." },
+      ],
     },
     {
       id: "ram-05",
@@ -134,6 +163,12 @@ const state = {
       updatedSecondsAgo: 420,
       judge: null,
       log2T: null,
+      history: [
+        { secondsAgo: 420, status: "idle", text: "Waiting on this epoch's next budget tick: last branch exhausted without a usable trail." },
+        { secondsAgo: 1320, status: "running", text: "Differential search over the BLAKE3 r1 compression function: 4 of 4 column-round starting differences exhausted at weight ≤ 24. No trail below the bound." },
+        { secondsAgo: 5100, status: "running", text: "Searching for a low-weight differential trail through one round of the compression function, weight bound 24." },
+        { secondsAgo: 8700, status: "thinking", text: "Starting from the G-function's rotation constants (16, 12, 8, 7) to seed the trail search rather than from random differences." },
+      ],
     },
     {
       id: "ram-06",
@@ -145,6 +180,12 @@ const state = {
       updatedSecondsAgo: 3,
       judge: null,
       log2T: null,
+      history: [
+        { secondsAgo: 3, status: "running", text: "Re-running Z3 on the r2 mixing schedule with a tighter bound after the previous 6h attempt timed out." },
+        { secondsAgo: 21600, status: "running", text: "Z3 timed out at 6h on the 2-round mixing-schedule query with the loose bound. Tightening the bound and retrying." },
+        { secondsAgo: 23400, status: "thinking", text: "Formulated the 2-round BLAKE3 mixing schedule as a bit-vector query; the question is whether any input difference survives two rounds below the bound." },
+        { secondsAgo: 25200, status: "idle", text: "Slot funded for this epoch. Target: blake3-r2-exploratory, lanes/exploratory/candidates/blake3-r2/." },
+      ],
     },
   ],
 
@@ -172,6 +213,9 @@ const state = {
   ],
 
   ideaQueueLength: 14, // how many human-pending ideas are ahead of the next submission, for realism
+
+  // The Herder (the coordinator): read-only. Its summary is composed from the rows above.
+  herder: { updatedSecondsAgo: 6 },
 };
 
 // The exact words the board writes in the Now column, one per status.
@@ -210,12 +254,12 @@ function coordinatorReply(question) {
   if (/agent|slot|fleet|running|active/.test(q)) {
     const running = state.agents.filter((a) => a.status === "running").length;
     const thinking = state.agents.filter((a) => a.status === "thinking").length;
-    return `Right now: ${running} agents running an experiment, ${thinking} thinking through their next move, across SHA-256, SHA3-256, and BLAKE3 exploratory tracks. See the fleet grid above for exactly what each one is doing.`;
+    return `Right now: ${running} agents running an experiment, ${thinking} thinking through their next move, across SHA-256, SHA3-256, and BLAKE3 exploratory tracks. See the board for exactly what each one is doing.`;
   }
   if (/idea|submit|suggest/.test(q)) {
     return "Use the submission form below. Every idea goes into a human-reviewed queue first — nothing reaches an agent until it's been read and approved by a person.";
   }
-  return "I can answer questions about fees, the active fleet, submitted candidates, and what HashSmash does and doesn't let us claim — try asking about one of those, or scroll to the fleet grid for the live detail.";
+  return "I can answer questions about fees, the active fleet, submitted candidates, and what HashSmash does and doesn't let us claim — try asking about one of those, or look at the board for the live detail.";
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +276,9 @@ function tickMockState() {
   );
   for (const agent of state.agents) {
     agent.updatedSecondsAgo += 4;
+    for (const line of agent.history) line.secondsAgo += 4;
   }
+  state.herder.updatedSecondsAgo += 4;
   // Every so often, nudge one running agent's clock hard (simulating a fresh status line)
   // and occasionally flip idle -> thinking to keep the board feeling alive.
   if (Math.random() < 0.3) {
@@ -240,6 +286,8 @@ function tickMockState() {
     if (running.length) {
       const pick = running[Math.floor(Math.random() * running.length)];
       pick.updatedSecondsAgo = Math.floor(Math.random() * 6);
+      pick.history[0].secondsAgo = pick.updatedSecondsAgo;
+      state.herder.updatedSecondsAgo = 0;
     }
   }
 }
@@ -295,6 +343,47 @@ export const RAMherdAPI = {
       judge: a.judge ?? null,
       log2T: a.log2T ?? null,
     }));
+  },
+
+  /**
+   * One RAM in full: the board row plus its whole history (newest first, each line with a
+   * relative label). Real version: GET `${API_BASE}/api/slots/:id` (plus its feed).
+   * Resolves to null for an unknown id.
+   */
+  async getRamDetail(id) {
+    await simulatedLatency();
+    const a = state.agents.find((x) => x.id === id);
+    if (!a) return null;
+    return {
+      ...a,
+      trackLabel: trackLabel(a.trackId),
+      roundLabel: `${TRACKS[a.trackId].target} ${TRACKS[a.trackId].round}`,
+      lanePath: TRACKS[a.trackId].path,
+      statusLabel: STATUS_LABEL[a.status] || a.status,
+      updatedLabel: relativeTime(a.updatedSecondsAgo),
+      judge: a.judge ?? null,
+      log2T: a.log2T ?? null,
+      history: a.history.map((line) => ({ ...line, label: relativeTime(line.secondsAgo) })),
+    };
+  },
+
+  /**
+   * The Herder's summary of the herd right now. Real version: GET `${API_BASE}/api/coordinator/summary`.
+   * Shape: { summary, updatedSecondsAgo, updatedLabel }.
+   */
+  async getHerderSummary() {
+    await simulatedLatency();
+    const n = (s) => state.agents.filter((a) => a.status === s).length;
+    const inReview = state.agents.filter((a) => a.judge === "in review").map((a) => a.id);
+    const parts = [];
+    parts.push(`${n("running")} of ${state.agents.length} RAMs are running an experiment, ${n("thinking")} ${n("thinking") === 1 ? "is" : "are"} thinking, ${n("idle")} ${n("idle") === 1 ? "is" : "are"} idle.`);
+    parts.push(
+      inReview.length
+        ? `${inReview.join(", ")} ${inReview.length === 1 ? "has" : "have"} a candidate in HashSmash's review queue, unscored. Nothing from the herd has been accepted.`
+        : "Nothing is in HashSmash's review queue right now, and nothing from the herd has been accepted."
+    );
+    parts.push(`This epoch: $${cents(state.stats.computeSpentEpoch)} of $${cents(state.stats.computeBudgetEpoch)} spent across ${state.stats.slotsActive} funded slots.`);
+    return { summary: parts.join(" "), updatedSecondsAgo: state.herder.updatedSecondsAgo, updatedLabel: relativeTime(state.herder.updatedSecondsAgo) };
   },
 
   /** Seeds the chat panel with realistic prior Q&A. Real version: GET `${API_BASE}/coordinator/history`. */

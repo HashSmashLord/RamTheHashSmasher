@@ -2,75 +2,99 @@
 version: 1
 slug: "src-index-html"
 primary_target: "src/index.html"
-related_targets: ["src/styles.css","src/app.js"]
+related_targets: ["src/styles.css","src/app.js","src/sandbox-viewer.js","src/mock-data.js"]
 ---
 
 # Surface brief: src/index.html (the public RAMherd page)
 
-Scope: the single public page. Visitor mode: **Persuade** (a first-time visitor must know
-what this is, why it is real, and what to do within seconds); the board, the coordinator log
-and the idea slip inside it are operate-register parts of that one surface.
+Scope: the single public page, plus the RAM full-page view it opens as an in-page route
+(`#ram/<id>`). Visitor mode: **Persuade** (a first-time visitor must know what this is, why it
+is real, and what to do within seconds); the board, the Herder panel and the idea slip inside
+it are operate-register parts of that one surface.
 
 Audience and job: people arriving from the memecoin side asking "is this real?"; a smaller
-group of cryptanalysis-curious viewers who will ask a question or hand in an idea.
-Action: ask the coordinator a question (working input in the first viewport); hand in an
-idea on the slip. Proof: the live board itself — fees collected, compute this epoch, RAMs
-funded, and one written row per RAM with its real HashSmash track and what it is doing now.
-Constraints: every figure is a mock feed until the backend is wired and the page says so;
-no token, price, holders or chart may be invented; the coordinator is Q&A only; no idea
-reaches a RAM before a human approves it; nothing claims a hash is broken.
+group of cryptanalysis-curious viewers who will ask the Herder a question or hand in an idea.
+Action: ask the Herder (working input in the first scroll); hand in an idea. Proof: the live
+board: fees collected, compute this epoch, RAMs funded, one tile per RAM with its real
+HashSmash track, what it is doing now, and its screen (a view-only desk stream when one runs).
+Constraints: every figure is a mock feed until the backend is wired and the page says so; no
+token, price, holders or chart may be invented; the Herder is Q&A only; no idea reaches a RAM
+before a human approves it; nothing claims a hash is broken; the desk stream is only ever the
+server's `viewOnly: "server"` E2B noVNC page, never anything looser.
+
+Pinned by the operator (2026-10-05, directly): the whole site reads as pixel-art, monochrome
+black/white with at most one accent, in the exact style of the supplied brand asset
+(`src/brand/ram-smashing-hash-main.png`: a pixel ram charging a HASH block, binary digits
+scattering off it); the scattering-digits motif recurs throughout. Five reference sites
+(chordpf.com, nearos.io, trykyoto.ai, dexora.tech, homefi.space) supply structure only: black
+ground, oversized bold headline type, generous negative space, pill buttons (one filled, one
+ghost), a small mark plus a minimal centred nav, a subtle accent glow. Three new requirements:
+a live screen-preview thumbnail on every RAM tile with a calm "no desk running" idle state; a
+full-page view per RAM (preview larger plus its full status history); a Herder panel on the
+main page visibly bigger than any RAM tile.
 
 Unresolved: final product name; whether an approved idea attaches to a RAM or spins one up.
-Decision round: run unattended (background job, no question tool, nobody to open the
-decision page); the assigned direction was built as dealt, no re-roll, telemetry ping not
-sent because the round was not attended.
+Decision round: run unattended (background job, no structured question tool, nobody to open
+the decision page); the roll was acknowledged and the assigned direction built as dealt with
+the pinned materials winning field by field; telemetry ping not sent because the round was
+not attended.
 
 ## Direction contract
 
-THESIS: RAMherd's page is the tournament wallchart pinned in the hall between rounds: one
-ruled results sheet, entrants down the side, HashSmash's rounds across, the fund printed in
-its header, written in live by whoever keeps the chart. It refuses the dark status-card
-dashboard with neon chips and the centred-headline-over-cards landing page alike.
+THESIS: RAMherd's page is a line-printer listing on a black screen: a banner page in giant
+pixel letters, then one appended line per thing that happened, every line permanent. It
+refuses the glossy dark-SaaS template (centred headline over a row of soft cards with a neon
+glow) and the paper wallchart it replaces alike. Pixel-art monochrome is pinned; the listing
+is what the pixels are organised into.
 
-OWN-WORLD: A bottle-green noticeboard felt owns the page ground, header strip and footer;
-one tall off-white paper sheet pinned on it owns everything else, with an offset soft shadow.
-Three inks on the paper: printed black for what the organiser set (rulings headings, column
-heads, regulations), blue-black ballpoint for what is written live (fund figures, each RAM's
-row, the Q&A log), and one red reserved for HashSmash's own judge states (in review,
-accepted, rejected) and the ruled judge margin, used nowhere else. Feint blue rulings carry
-the grid. One grotesk family with a real width axis (Archivo variable, self-hosted) set
-condensed for column heads, wide and heavy for the sheet title, normal for prose; tabular
-figures everywhere a number sits. Status is written, not chipped: a word plus a drawn
-clock glyph for a running entrant; stale rows thin their ink. Controls are set into the
-sheet as ruled boxes with a pen-ink caret and a pen-ink focus rule; red never marks focus. Light scene: a hall under
-fluorescent tubes.
+OWN-WORLD: Pure black ground (#000, the asset's own black, so the plate sits on it with no
+seam). White 1-bit pixel ink for everything drawn: a 4px pixel unit governs borders, stepped
+corners, glyphs, the dither and the spray. One accent, amber, reserved for what is live right
+now (a live stream's frame and badge, the Herder's live dot and clock) and nothing else;
+the judge's state is inverse video (white block, black text), never a colour. The glow the
+references share is executed as an ordered dither: three concentric density rings of amber
+pixels behind the hero burst, no smooth gradient anywhere. Three faces with fixed jobs: Jersey
+10 (self-hosted) is the display voice (the banner headline, section heads, RAM ids, fund
+figures), Silkscreen (self-hosted) is the label voice (nav, pills, column heads, status words,
+stamps, uppercase, tracked), Archivo (already self-hosted) is the reading voice (prose,
+activity sentences, the log). Pills are pixel pills: stair-stepped 24px corners cut with
+clip-path polygons on the unit, one filled white, one ghost outline; ghost hover is inverse video. Frames
+are 1-unit white rules with stepped 2-unit corners. Status is a pixel glyph plus a Silkscreen
+word plus a clock. Section openings are a "spray": a rule that bursts into scattering 0/1
+digits, the asset's motif as the page's divider. A RAM's screen with no desk shows the intact
+HASH block in pixels and the words NO DESK RUNNING; when a stream arrives the block gives way
+to the live frame and digits fly.
 
-STORY: The visitor reads the fund lines, sees nine entrants each on a named HashSmash
-round doing a specific thing, understands that fees buy entrants and entrants buy attempts,
-reads that nothing counts until HashSmash's judge says so, asks the coordinator something,
-and hands in an idea knowing a person reads it first.
+STORY: The visitor reads the banner (fees fund RAMs, RAMs ram hashes), sees the ram hit the
+block, reads three printed fund lines and a block bar of funded slots, meets the Herder's
+panel (what the whole herd is doing, and a prompt to ask it), scrolls to six screens each
+named for a real HashSmash track, opens one to its full page and history, reads that nothing
+counts until HashSmash's judge says so, and hands in an idea knowing a person reads it first.
 
-FIRST VIEWPORT (desktop 1440): felt strip with name and four links. The sheet starts at
-once: a ruled header box across the full sheet width — sheet title "RAMherd" wide and heavy
-on the left with the event line beneath it, and on the right three ruled fund rows (fees
-collected, compute this epoch with a drawn pen-rule meter, entrants funded 9 of 12) plus the
-entries-by-round strip. Directly below, still on the same sheet, two columns divided by a
-rule: the results table (left, two thirds) with column heads Entrant / Round / Now / Judge
-and its first rows visible, and the coordinator log (right, one third) opening with the
-working "Ask" input, the primary action, live in the first viewport, newest Q&A written at
-the top beneath it. Mobile 390: the header box stacks, the table rows become ruled blocks,
-the log and its input follow.
+FIRST VIEWPORT (desktop 1440): a thin black nav: pixel ram mark and RAMherd at left, four
+centred links, X / GitHub / HashSmash and a ghost pill "Enter a RAM" at right. Below, centred:
+the headline in Jersey 10 at 5rem on two lines, the event line beneath at reading size,
+two pixel pills ("Watch the board" filled, "Ask the Herder" ghost), and the brand plate (ram,
+HASH block, digit spray) 600px wide with the dithered amber glow behind the burst (built smaller
+than first written so the plate's bottom edge and the first fund line meet the 900px fold). The
+plate's bottom edge and the first printed fund lines sit at the fold. Mobile 390: the nav
+collapses behind a pixel toggle; headline at about 2.8rem; pills stack; the plate fills the
+width; fund lines follow.
 
-FORM: the tournament wallchart, candidate 6 of 7 on my ordered list, assigned by the roll;
-seed key 4c815091 (scope direction, mode persuade). Raises taken from the declined hand,
-by donor: committed stock colour as the ground (soundsystem poster); fixed cell geometry
-across every state so states compare at a glance (botanical folio); every live change is a
-discrete write, never a fade or a re-render, and stale ink thins (depot blind); one fixed legend
-that never moves (gravity-rain garden); one stamp colour reserved for the external judge
-(akari). Competitive alternate: particle-detector event display (holds identification,
-loses clarity). Signature interaction: "the pen writes" — a changed cell re-inks
-left-to-right with an exponential ease-out from a visible default; nothing else animates,
-and the table is diffed by key so an update never re-renders the sheet.
+FORM: the dot-matrix tournament printout, candidate 7 of 7 on my ordered list, assigned by
+the roll; seed key cbda8d1b (scope direction, mode persuade); its materials translated into
+the pinned pixel-monochrome world, its topology kept (banner then listing; append-only lines;
+dot-leader label/value lines; every RAM page opens with its own banner). Raises taken from the
+dealt hand, by donor: a fixed grid where every unit means something, one 4px pixel unit for
+all geometry (oscilloscope, competitive); append-only permanence, a change prints a new line
+and never rewrites history (ebru, declined); every pixel load-bearing, no decorative pixel
+art (Tanaka, declined); the budget meter is a block bar in RAM-slot units, a bold graphic
+argument not a thin progress line (Du Bois, declined); one named transformation, tile to full
+page, and no other spatial motion (drawcord cape, declined); the single accent marks only
+what is live (neon circuit, declined). Signature interaction: "the print": a new or changed
+line appears left to right in character steps (`steps()`, never eased), the running glyph
+blinks between two pixel frames, nothing fades or slides; under reduced motion changes simply
+appear. Tiles are diffed by id so a feed tick never re-renders the board.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
 the verdict, DESIGN.md, and every shipping raster carrying its provenance.

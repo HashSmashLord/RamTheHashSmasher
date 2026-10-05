@@ -59,18 +59,89 @@ export async function loadDesk(slotId, { base = "", fetchImpl = globalThis.fetch
   return { state: "live", url, expiresAt: body.stream.expiresAt ?? null, sessionId: String(body.stream.sessionId ?? "") };
 }
 
+/**
+ * Whether this page is served by the RAMherd API server, which answers
+ * GET /api/slots/:id/stream, rather than by a bare static file server (the
+ * README's `python3 -m http.server`), which has no desk feed at all. The API
+ * server marks every page it serves with a frame-src CSP naming E2B hosts; a
+ * static server sends no such header. A HEAD of the page itself succeeds on
+ * both, so the answer costs no failed request and no console error.
+ * @param {{ fetchImpl?: typeof fetch, href?: string }} [opts]
+ */
+export async function deskFeedAvailable({ fetchImpl = globalThis.fetch, href = globalThis.location?.href } = {}) {
+  try {
+    const res = await fetchImpl(href, { method: "HEAD", cache: "no-store", credentials: "omit" });
+    const csp = res.headers?.get?.("content-security-policy") || "";
+    return /frame-src[^;]*e2b\.app/.test(csp);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One listing for every screen on the page. GET /api/slots answers 200 whether or not
+ * any slot or sandbox exists, so polling it costs no failed request; a slot's stream is
+ * asked for only when the listing says that slot exists and its sandbox is running.
+ * Everything else reads as "no desk" without a request. `refresh()` once per poll, then
+ * hand `load` to each viewer in place of loadDesk.
+ * @param {{ base?: string, fetchImpl?: typeof fetch, load?: typeof loadDesk }} [opts]
+ */
+export function createDeskDirectory({ base = "", fetchImpl = globalThis.fetch, load = loadDesk } = {}) {
+  let slots = new Map();
+  let enabled = false;
+  let reachable = true;
+
+  async function refresh() {
+    try {
+      const res = await fetchImpl(`${base}/api/slots`, { headers: { Accept: "application/json" }, cache: "no-store", credentials: "omit" });
+      if (!res.ok) {
+        reachable = false;
+        return;
+      }
+      const body = await res.json();
+      slots = new Map((Array.isArray(body?.slots) ? body.slots : []).map((s) => [String(s.id), s]));
+      enabled = Boolean(body?.sandboxes?.enabled);
+      reachable = true;
+    } catch {
+      reachable = false;
+    }
+  }
+
+  /** @param {string} slotId */
+  async function loadSlot(slotId) {
+    if (!reachable) return { state: "unreachable" };
+    const slot = slots.get(slotId);
+    if (!slot || slot.sandbox?.status !== "running") return { state: "idle", enabled };
+    return load(slotId, { base, fetchImpl });
+  }
+
+  return { refresh, load: loadSlot, get reachable() { return reachable; }, get enabled() { return enabled; }, get size() { return slots.size; } };
+}
+
 const clockTime = (iso) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
+// The words a desk shows in each state. A page may pass its own `copy` (shorter for a tile,
+// fuller for a RAM's page); the state logic and the embed rules never change with it.
+const DEFAULT_COPY = {
+  checking: (label) => `Checking ${label}'s desk…`,
+  idle: (label) => `No desktop running for ${label}. Its work runs on the host right now; when a sandbox is started for it, its screen shows here, watch-only.`,
+  unreachable: (label) => `${label}'s desk feed could not be reached just now.`,
+  live: (label, until) => `Watching ${label}'s desk. View only: the desktop's VNC server ignores every click and key${until ? `. Hard stop at ${until}` : ""}.`,
+};
+// The short badge drawn on the screen itself, one per state.
+const BADGE = { checking: "checking", idle: "No desk running", unreachable: "feed unreachable", live: "Live · view only" };
+
 /**
  * Builds the desk viewer for one RAM. Call `refresh()` to (re)load; it only
  * touches the iframe when the stream itself changes, so a poll never reloads it.
  *
- * @param {{ ramLabel: string, slotId: string, doc?: Document, load?: typeof loadDesk }} opts
+ * @param {{ ramLabel: string, slotId: string, doc?: Document, load?: typeof loadDesk, copy?: Partial<typeof DEFAULT_COPY> }} opts
  */
-export function createDeskViewer({ ramLabel, slotId, doc = document, load = loadDesk }) {
+export function createDeskViewer({ ramLabel, slotId, doc = document, load = loadDesk, copy = {} }) {
+  const words = { ...DEFAULT_COPY, ...copy };
   const el = doc.createElement("div");
   el.className = "desk";
   el.setAttribute("aria-live", "polite");
@@ -80,28 +151,32 @@ export function createDeskViewer({ ramLabel, slotId, doc = document, load = load
   const frameWrap = doc.createElement("div");
   frameWrap.className = "desk-frame";
   frameWrap.hidden = true;
-  el.append(line, frameWrap);
+  const badge = doc.createElement("span");
+  badge.className = "desk-badge";
+  badge.setAttribute("aria-hidden", "true");
+  el.append(line, frameWrap, badge);
 
   let shownUrl = null;
   let destroyed = false;
 
-  function setLine(text, live) {
+  function setLine(text, state) {
     line.textContent = text;
-    el.classList.toggle("is-live", live);
+    badge.textContent = BADGE[state];
+    el.classList.toggle("is-live", state === "live");
   }
 
-  function showIdle(text) {
+  function showIdle(text, state = "idle") {
     if (shownUrl !== null) {
       frameWrap.replaceChildren();
       frameWrap.hidden = true;
       shownUrl = null;
     }
-    setLine(text, false);
+    setLine(text, state);
   }
 
   function showLive(desk) {
     const until = desk.expiresAt ? clockTime(desk.expiresAt) : null;
-    setLine(`Watching ${ramLabel}'s desk. View only: the desktop's VNC server ignores every click and key${until ? `. Hard stop at ${until}` : ""}.`, true);
+    setLine(words.live(ramLabel, until), "live");
     if (shownUrl === desk.url) return;
     const iframe = doc.createElement("iframe");
     iframe.className = "desk-iframe";
@@ -123,8 +198,8 @@ export function createDeskViewer({ ramLabel, slotId, doc = document, load = load
     const desk = await load(slotId);
     if (destroyed) return;
     if (desk.state === "live") showLive(desk);
-    else if (desk.state === "unreachable") showIdle(`${ramLabel}'s desk feed could not be reached just now.`);
-    else showIdle(`No desktop running for ${ramLabel}. Its work runs on the host right now; when a sandbox is started for it, its screen shows here, watch-only.`);
+    else if (desk.state === "unreachable") showIdle(words.unreachable(ramLabel), "unreachable");
+    else showIdle(words.idle(ramLabel), "idle");
   }
 
   function destroy() {
@@ -133,6 +208,6 @@ export function createDeskViewer({ ramLabel, slotId, doc = document, load = load
     el.remove();
   }
 
-  showIdle(`Checking ${ramLabel}'s desk…`);
+  showIdle(words.checking(ramLabel), "checking");
   return { el, refresh, destroy, get url() { return shownUrl; } };
 }

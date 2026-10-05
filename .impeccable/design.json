@@ -1,498 +1,277 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-05T15:23:54Z",
+  "generatedAt": "2026-10-05T17:33:06Z",
   "title": "Design System: RAMherd",
   "extensions": {
     "colorMeta": {
-      "pen": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Ground",
+        "canonical": "oklch(0% 0 0)",
+        "tonalRamp": ["#171717", "#303030", "#4d4d4d", "#6a6a6a", "#8a8a8a", "#a9a9a9", "#c9c9c9", "#f1f1f1"]
+      },
+      "ink": {
         "role": "primary",
-        "displayName": "Pen Blue-Black",
-        "canonical": "oklch(34.7% 0.106 265.7)",
-        "tonalRamp": [
-          "#010037",
-          "#0c1e57",
-          "#273e7a",
-          "#445e9d",
-          "#6480c2",
-          "#85a3e8",
-          "#a8c8ff",
-          "#cdeeff"
-        ]
+        "displayName": "Phosphor Ink",
+        "canonical": "oklch(100% 0 0)",
+        "tonalRamp": ["#171717", "#303030", "#4d4d4d", "#6a6a6a", "#8a8a8a", "#a9a9a9", "#c9c9c9", "#f1f1f1"]
       },
-      "pen-deep": {
-        "role": "primary",
-        "displayName": "Pen Deep",
-        "canonical": "oklch(28.9% 0.096 266.6)",
-        "tonalRamp": [
-          "#010133",
-          "#101f53",
-          "#2a3e75",
-          "#485f98",
-          "#6880bc",
-          "#89a3e2",
-          "#adc8ff",
-          "#d1eeff"
-        ]
-      },
-      "pen-soft": {
-        "role": "primary",
-        "displayName": "Pen Soft",
-        "canonical": "oklch(50.3% 0.094 271.7)",
-        "tonalRamp": [
-          "#040132",
-          "#161e52",
-          "#313d74",
-          "#4e5d97",
-          "#6e7fbb",
-          "#90a2e1",
-          "#b3c6ff",
-          "#d8ecff"
-        ]
-      },
-      "judge": {
-        "role": "secondary",
-        "displayName": "Judge Red",
-        "canonical": "oklch(51.1% 0.182 28.7)",
-        "tonalRamp": [
-          "#2d0000",
-          "#510000",
-          "#752019",
-          "#9a4238",
-          "#c06458",
-          "#e68779",
-          "#ffab9c",
-          "#ffd0c1"
-        ]
-      },
-      "felt": {
+      "ink-2": {
         "role": "neutral",
-        "displayName": "Felt",
-        "canonical": "oklch(37.3% 0.057 166.9)",
-        "tonalRamp": [
-          "#001206",
-          "#002d1f",
-          "#204c3c",
-          "#406c5a",
-          "#618e7b",
-          "#83b19d",
-          "#a7d5c1",
-          "#cbfbe6"
-        ]
+        "displayName": "Ink, second strength",
+        "canonical": "oklch(72.3% 0 0)",
+        "contrastOnGround": "8.8:1",
+        "tonalRamp": ["#171717", "#303030", "#4d4d4d", "#6a6a6a", "#8a8a8a", "#a9a9a9", "#c9c9c9", "#f1f1f1"]
       },
-      "felt-deep": {
+      "ink-3": {
         "role": "neutral",
-        "displayName": "Felt Deep",
-        "canonical": "oklch(31.4% 0.046 168.3)",
-        "tonalRamp": [
-          "#001108",
-          "#082c21",
-          "#274a3d",
-          "#476a5c",
-          "#678c7d",
-          "#89afa0",
-          "#add3c4",
-          "#d2f9e9"
-        ]
+        "displayName": "Ink, third strength",
+        "canonical": "oklch(56.9% 0 0)",
+        "contrastOnGround": "4.9:1 (the floor for text)",
+        "tonalRamp": ["#171717", "#303030", "#4d4d4d", "#6a6a6a", "#8a8a8a", "#a9a9a9", "#c9c9c9", "#f1f1f1"]
       },
-      "felt-rule": {
+      "ink-press": {
         "role": "neutral",
-        "displayName": "Felt Rule",
-        "canonical": "rgba(232, 240, 234, 0.16)",
-        "tonalRamp": [
-          "#080d09",
-          "#212722",
-          "#3d443f",
-          "#5c635e",
-          "#7d847f",
-          "#a0a7a2",
-          "#c4cbc6",
-          "#e9f1eb"
-        ]
-      },
-      "felt-ink": {
-        "role": "neutral",
-        "displayName": "Felt Ink",
-        "canonical": "oklch(94.7% 0.012 153.7)",
-        "tonalRamp": [
-          "#080d09",
-          "#212722",
-          "#3d443f",
-          "#5c635e",
-          "#7d847f",
-          "#a0a7a2",
-          "#c4cbc6",
-          "#e9f1eb"
-        ]
-      },
-      "felt-ink-soft": {
-        "role": "neutral",
-        "displayName": "Felt Ink Soft",
-        "canonical": "oklch(81.8% 0.066 159.1)",
-        "tonalRamp": [
-          "#001202",
-          "#002e19",
-          "#1d4d35",
-          "#3e6d54",
-          "#5f8f74",
-          "#81b296",
-          "#a5d7ba",
-          "#c9fddf"
-        ]
-      },
-      "paper": {
-        "role": "neutral",
-        "displayName": "Paper",
-        "canonical": "oklch(97.0% 0.010 93.6)",
-        "tonalRamp": [
-          "#0c0b07",
-          "#262520",
-          "#44423c",
-          "#63615b",
-          "#84827c",
-          "#a7a59e",
-          "#cbc9c2",
-          "#f0eee7"
-        ]
-      },
-      "paper-shade": {
-        "role": "neutral",
-        "displayName": "Paper Shade",
-        "canonical": "oklch(92.8% 0.018 92.7)",
-        "tonalRamp": [
-          "#0e0b04",
-          "#28251b",
-          "#454237",
-          "#656156",
-          "#868277",
-          "#a9a599",
-          "#cdc9bc",
-          "#f2eee1"
-        ]
+        "displayName": "Pressed Ink",
+        "canonical": "oklch(86.5% 0 0)",
+        "tonalRamp": ["#171717", "#303030", "#4d4d4d", "#6a6a6a", "#8a8a8a", "#a9a9a9", "#c9c9c9", "#f1f1f1"]
       },
       "rule": {
         "role": "neutral",
-        "displayName": "Ruling",
-        "canonical": "oklch(83.3% 0.034 261.0)",
-        "tonalRamp": [
-          "#040b19",
-          "#1c2536",
-          "#384254",
-          "#566275",
-          "#778397",
-          "#99a6bb",
-          "#bdcae0",
-          "#e2efff"
-        ]
+        "displayName": "Rule",
+        "canonical": "oklch(32.6% 0 0)",
+        "tonalRamp": ["#171717", "#303030", "#4d4d4d", "#6a6a6a", "#8a8a8a", "#a9a9a9", "#c9c9c9", "#f1f1f1"]
       },
-      "rule-strong": {
+      "rule-2": {
         "role": "neutral",
-        "displayName": "Ruling Strong",
-        "canonical": "oklch(62.1% 0.075 261.2)",
-        "tonalRamp": [
-          "#00072a",
-          "#0f2349",
-          "#2b416a",
-          "#49618c",
-          "#6983b0",
-          "#8ba6d5",
-          "#aecafb",
-          "#d3f0ff"
-        ]
+        "displayName": "Hairline",
+        "canonical": "oklch(20.3% 0 0)",
+        "tonalRamp": ["#171717", "#303030", "#4d4d4d", "#6a6a6a", "#8a8a8a", "#a9a9a9", "#c9c9c9", "#f1f1f1"]
       },
-      "ink": {
-        "role": "neutral",
-        "displayName": "Printed Ink",
-        "canonical": "oklch(21.3% 0.013 264.3)",
-        "tonalRamp": [
-          "#080b11",
-          "#22252b",
-          "#3f4249",
-          "#5e6169",
-          "#7e828a",
-          "#a1a5ad",
-          "#c5c9d2",
-          "#eaeff7"
-        ]
-      },
-      "ink-soft": {
-        "role": "neutral",
-        "displayName": "Printed Ink Soft",
-        "canonical": "oklch(43.5% 0.026 268.1)",
-        "tonalRamp": [
-          "#070b16",
-          "#202532",
-          "#3c4250",
-          "#5b6170",
-          "#7c8292",
-          "#9ea5b6",
-          "#c2c9db",
-          "#e7eeff"
-        ]
+      "live": {
+        "role": "secondary",
+        "displayName": "Live Amber",
+        "canonical": "oklch(80.6% 0.171 77.6)",
+        "tonalRamp": ["#2b1c00", "#4a3000", "#6b4600", "#8e5e00", "#b37800", "#d99300", "#ffb000", "#ffe0a3"]
       }
     },
     "typographyMeta": {
-      "display": {
-        "displayName": "Display",
-        "purpose": "The sheet title in the header box: wide and heavy, max 15ch. The build sets the hook sentence here; the product name lives on the strip."
-      },
-      "name": {
-        "displayName": "Name",
-        "purpose": "\"RAMherd\" on the felt strip: the Display voice at 1.15rem."
-      },
-      "headline": {
-        "displayName": "Headline",
-        "purpose": "The h2 opening each part of the sheet: the board, the coordinator, the slip, the regulations."
-      },
-      "title": {
-        "displayName": "Title",
-        "purpose": "h3 inside a part: the notice's heading, the regulation sub-heads."
-      },
-      "body": {
-        "displayName": "Body",
-        "purpose": "Prose at 1rem/1.55, max 68ch, including the event line, fund labels, entrant ids and controls. Tabular figures throughout."
-      },
-      "small": {
-        "displayName": "Small",
-        "purpose": "Secondary prose at 0.92rem: the table and log text, section leads' siblings, the notice, the regulations, field labels, the strip and footer lines."
-      },
-      "fine": {
-        "displayName": "Fine",
-        "purpose": "Sub-lines at 0.82rem with line-height 1.35: fund sub-lines, the key, the entrant's approach, hints, the mock-feed note."
-      },
-      "figure": {
-        "displayName": "Figure",
-        "purpose": "The three fund values in pen at 1.35rem; the only place a number grows past body size."
-      },
-      "label": {
-        "displayName": "Label",
-        "purpose": "Column heads, row heads, by-round terms, the stamp and the Q/A marks: condensed (wdth 78-80), tracked, uppercase, 0.74rem. Never a kicker above a headline."
-      },
-      "button": {
-        "displayName": "Button",
-        "purpose": "The pen button's label: condensed (wdth 85), tracked, uppercase."
-      }
+      "display": { "displayName": "Display", "purpose": "The h1 on the banner page (20ch) and the slip's h1 (16ch)." },
+      "headline": { "displayName": "Headline", "purpose": "Every h2 opening a section; a slip part's h2 at clamp(2rem, 3vw, 2.5rem) with its number in ink-3." },
+      "title": { "displayName": "Title", "purpose": "h3 inside a part; also the > prompt, the Herder's counts; the brand name at 1.75rem (1.5rem below 640px)." },
+      "banner": { "displayName": "Banner", "purpose": "A RAM's id as the first line of its own page (.ram-banner)." },
+      "wordmark": { "displayName": "Wordmark", "purpose": "RAMherd across the foot (.foot-mark), cropped at the bottom edge, decorative." },
+      "figure": { "displayName": "Figure", "purpose": "Fund values on the banner page (.fund-value); 1.5rem on the slip. The only place a number grows past reading size." },
+      "id": { "displayName": "Id", "purpose": "A RAM's id on its tile (.tile-id); 3px underline on hover." },
+      "id-small": { "displayName": "Id, small", "purpose": "A RAM's id in the Herder's lines (.h-id) and the slip's index terms (.slip-index dt)." },
+      "lead": { "displayName": "Lead", "purpose": "The event line under the h1, in ink-2 at 70ch." },
+      "body": { "displayName": "Body", "purpose": "Prose at 66ch, controls, the RAM page's now-line; the Herder's summary at 1.1rem. Tabular figures throughout." },
+      "body-small": { "displayName": "Body, small", "purpose": "Activity sentences at 46ch, herd lines, the log, the notice, the rules columns, the foot row, the confirm slip." },
+      "fine": { "displayName": "Fine", "purpose": "Fund sub-lines, round and model lines, the key, the feed and mock notes, a full screen's caption, hints, choice sub-lines." },
+      "label": { "displayName": "Label", "purpose": "The Silkscreen voice: nav links, pills, status words and clocks, the judge mark and score, fund terms, the panel bar, counts, log marks, field labels, history time and word, facts terms, the crumb, the desk badge, the OPEN label. Caps-only: never an identifier." }
     },
-    "shadows": [
-      {
-        "name": "pinned-sheet",
-        "value": "0 1px 2px rgba(0, 0, 0, 0.25), 0 24px 48px -20px rgba(0, 0, 0, 0.6)",
-        "purpose": "The sheet pinned on the felt, and nothing else. A 1px contact edge plus a long soft fall."
-      }
+    "fonts": [
+      { "family": "Jersey 10", "source": "src/fonts/jersey10.woff2 (self-hosted)", "weight": "400", "job": "display" },
+      { "family": "Silkscreen", "source": "src/fonts/silkscreen.woff2 (self-hosted)", "weight": "400", "job": "label (caps only)" },
+      { "family": "Archivo", "source": "src/fonts/archivo-variable.woff2 (self-hosted)", "weight": "100-900", "width": "62%-125%", "job": "reading; only weight above 400 in use is 600 on strong in the slip's terms" }
+    ],
+    "shadows": [],
+    "corners": [
+      { "name": "clip-notch", "value": "polygon(0 calc(2 * var(--u)), 0 calc(1 * var(--u)), calc(1 * var(--u)) calc(1 * var(--u)), calc(1 * var(--u)) 0, calc(100% - 1 * var(--u)) 0, calc(100% - 1 * var(--u)) calc(1 * var(--u)), 100% calc(1 * var(--u)), 100% calc(2 * var(--u)), 100% calc(100% - 2 * var(--u)), 100% calc(100% - 1 * var(--u)), calc(100% - 1 * var(--u)) calc(100% - 1 * var(--u)), calc(100% - 1 * var(--u)) 100%, calc(1 * var(--u)) 100%, calc(1 * var(--u)) calc(100% - 1 * var(--u)), 0 calc(100% - 1 * var(--u)), 0 calc(100% - 2 * var(--u)))", "purpose": "The two-unit stair on every frame: panel, screens, controls, the nav toggle, the notice, the confirm slip, the terms, the preview." },
+      { "name": "clip-pill", "value": "a 6-unit (24px) stair-stepped pill on a 12-unit (48px) box; see --clip-pill in src/styles.css", "purpose": "Every pill. The filled pill is clipped ink; the ghost pill's ring is a bg pseudo-element inset one unit and clipped with --clip-pill-in (the 5-unit stair that fits inside)." },
+      { "name": "border-radius", "value": "none", "purpose": "No border-radius anywhere in styles.css or launch.css." }
+    ],
+    "textures": [
+      { "name": "dot-12", "value": "one 4px amber pixel (fill-opacity 0.5) per 12px cell", "purpose": "Innermost dither ring behind the plate, masked to a 17% circle at 64% 46% with a hard stop." },
+      { "name": "dot-16", "value": "one 4px amber pixel (fill-opacity 0.6) per 16px cell", "purpose": "Middle dither ring, masked to 27%." },
+      { "name": "dot-24", "value": "one 4px amber pixel (fill-opacity 0.6) per 24px cell", "purpose": "Outer dither ring, masked to 38%." },
+      { "name": "speck", "value": "0 and 1 glyphs in rule-2 (#1c1c1c) on a 96px tile", "purpose": "The board's background only." },
+      { "name": "dot-leader", "value": "linear-gradient(90deg, var(--rule) 50%, transparent 50%) at 8px by 4px", "purpose": "The one-unit dashed leader between a fund line's term and value." }
     ],
     "motion": [
-      {
-        "name": "ease-out",
-        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
-        "purpose": "The one easing. Exponential ease-out from a visible default, used by the pen write and the meter."
-      },
-      {
-        "name": "ink-write",
-        "value": "clip-path: inset(0 100% 0 0) -> inset(0 0 0 0); 0.55s var(--ease-out) both",
-        "purpose": "\"The pen writes\": a changed cell is re-inked left to right. Added as .writing, removed on animationend. Never on first paint. Keyframes are defined only under prefers-reduced-motion: no-preference, and the script skips the class under reduce."
-      },
-      {
-        "name": "pen-meter-fill",
-        "value": "transform 0.6s var(--ease-out)",
-        "purpose": "The pen meter's fill (scaleX from the left) on a budget change; suppressed with .no-transition on first paint."
-      },
-      {
-        "name": "button-face",
-        "value": "background-color 0.15s ease, border-color 0.15s ease",
-        "purpose": "The pen button's hover; the only hover transition on the sheet."
-      }
+      { "name": "print", "value": "clip-path: inset(0 100% 0 0) -> inset(0 0 0 0); 0.5s steps(14, end) both", "purpose": "The one authored motion: a new or changed line prints left to right in fourteen hard steps. Added as .printing, removed on animationend. Never on first paint; the script skips it under prefers-reduced-motion: reduce; keyframes are declared only under no-preference." },
+      { "name": "frame-a / frame-b", "value": "opacity 1 -> 0 at 50% (and the inverse); 1s steps(1, end) infinite", "purpose": "The running glyph flips between its two 8x8 frames (.f1 / .f2); the Herder's live dot blinks on frame-a. Under reduced motion both hold frame one." },
+      { "name": "easing", "value": "none", "purpose": "Nothing on the site eases, fades, slides or scales. No transition property is declared anywhere; hover changes are cuts." }
     ],
     "breakpoints": [
-      {
-        "name": "rows-to-blocks",
-        "value": "640px",
-        "purpose": "max-width: table rows become ruled blocks; ask form and fund rows stack; by-round strip stacks."
-      },
-      {
-        "name": "sheet-inset-md",
-        "value": "700px",
-        "purpose": "min-width: sheet inset 2rem, title cell 1.8rem, board/log gutter 1.6rem."
-      },
-      {
-        "name": "header-stacks",
-        "value": "860px",
-        "purpose": "max-width: header box, slip row and regulations go single-column; strip links collapse behind the ruled toggle."
-      },
-      {
-        "name": "board-stacks",
-        "value": "1000px",
-        "purpose": "max-width: the board row stacks and the log scrolls in a 36rem cap; above it the log takes the board's height."
-      },
-      {
-        "name": "sheet-inset-lg",
-        "value": "1100px",
-        "purpose": "min-width: sheet inset 2.2rem, title cell 2rem, board/log gutter 2rem."
-      },
-      {
-        "name": "max",
-        "value": "1320px",
-        "purpose": "The centred column's maximum width."
-      }
+      { "name": "board-two-columns", "value": "1000px", "purpose": "max-width: the board goes to two columns; the Herder's panel stacks (divider moves below the herd view); the log caps at 22rem; history rows drop the text under the time and word." },
+      { "name": "nav-collapses", "value": "860px", "purpose": "max-width: the nav hides behind the pixel toggle; ideas, rules, slip parts and the facts list go single column." },
+      { "name": "one-column", "value": "640px", "purpose": "max-width: the board goes to one column (gap 2.2rem); pills and the ask row stack and fill; fund lines drop the leader; the panel releases its min-height; the crumb hides; the brand name drops to 1.5rem." },
+      { "name": "max", "value": "1200px", "purpose": "The centred column's maximum width (--max)." }
     ],
-    "font": {
-      "family": "Archivo",
-      "source": "src/fonts/archivo-variable.woff2 (self-hosted, the only face)",
-      "axes": {
-        "wght": "100\u2013900",
-        "wdth": "62%\u2013125%"
-      },
-      "widthsUsed": {
-        "title-and-name": 112,
-        "prose": 100,
-        "button": 85,
-        "stamp-and-marks": 80,
-        "column-heads": 78
-      }
-    }
+    "rules": [
+      { "name": "stale", "value": "300 seconds without a write", "purpose": "A RAM dims to ink-3 (id, status line, round id, activity) on its tile and in the Herder's line. A submitted RAM never dims." },
+      { "name": "desk-poll", "value": "10000 ms", "purpose": "Every screen re-checks its stream; the iframe is replaced only when the stream URL itself changes." },
+      { "name": "feed-tick", "value": "4000 ms", "purpose": "The mock feed's tick; tiles are diffed by id so a tick never re-renders the board." },
+      { "name": "route", "value": "#ram/<id>", "purpose": "Opens a RAM's page over the board (body.page-open hides .top, main and .foot). Escape or the Back pill returns to the board at the scroll position and focus the visitor left." }
+    ]
   },
   "components": [
     {
-      "name": "Pen Button",
+      "name": "Filled Pill",
       "kind": "button",
-      "refersTo": "button-pen",
-      "description": "The one button on the sheet: a pen-ink face with a condensed uppercase label. Hover presses harder (pen-deep); disabled dries to pen-soft and rewrites its label (\"Handing in\u2026\").",
-      "html": "<button class=\"ds-btn-pen\" type=\"button\">Hand in for review</button>",
-      "css": ".ds-btn-pen { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; background: var(--pen, #1f3570); color: var(--paper, #f7f5ee); border: 1px solid var(--pen, #1f3570); border-radius: 2px; padding: 0.68rem 1.15rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); font-weight: 700; font-stretch: 85%; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.85rem; cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease; } .ds-btn-pen:hover { background: var(--pen-deep, #15265a); border-color: var(--pen-deep, #15265a); } .ds-btn-pen:focus-visible { outline: 2px solid var(--pen, #1f3570); outline-offset: 3px; } .ds-btn-pen:disabled { background: var(--pen-soft, #51609a); border-color: var(--pen-soft, #51609a); cursor: default; }"
+      "refersTo": "pill",
+      "description": "The filled pixel pill: ink ground, bg text in the label voice, a six-unit stair at every corner. Hover presses to ink-press; focus draws two inset rings; disabled dries to ink-3.",
+      "html": "<button class=\"ds-pill\" type=\"button\">Watch the board</button>",
+      "css": ".ds-pill { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; height: 48px; padding: 0 24px; clip-path: polygon(0 24px, 0 16px, 4px 16px, 4px 8px, 8px 8px, 8px 4px, 16px 4px, 16px 0, calc(100% - 16px) 0, calc(100% - 16px) 4px, calc(100% - 8px) 4px, calc(100% - 8px) 8px, calc(100% - 4px) 8px, calc(100% - 4px) 16px, 100% 16px, 100% 24px, 100% calc(100% - 24px), 100% calc(100% - 16px), calc(100% - 4px) calc(100% - 16px), calc(100% - 4px) calc(100% - 8px), calc(100% - 8px) calc(100% - 8px), calc(100% - 8px) calc(100% - 4px), calc(100% - 16px) calc(100% - 4px), calc(100% - 16px) 100%, 16px 100%, 16px calc(100% - 4px), 8px calc(100% - 4px), 8px calc(100% - 8px), 4px calc(100% - 8px), 4px calc(100% - 16px), 0 calc(100% - 16px), 0 calc(100% - 24px)); background: var(--ink, #ffffff); color: var(--bg, #000000); border: 0; cursor: pointer; text-decoration: none; white-space: nowrap; font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; } .ds-pill:hover { background: var(--ink-press, #d4d4d4); } .ds-pill:focus-visible { outline: none; box-shadow: inset 0 0 0 8px var(--ink, #ffffff), inset 0 0 0 12px var(--bg, #000000); } .ds-pill:disabled { background: var(--ink-3, #7b7b7b); cursor: default; }"
     },
     {
-      "name": "Ruled Control",
+      "name": "Ghost Pill",
+      "kind": "button",
+      "refersTo": "pill-ghost",
+      "description": "The ghost pixel pill: ink text on a one-unit stepped ink ring, drawn by a bg pseudo-element inset one unit and clipped with the five-unit stair. Hover is inverse video (the ring fills, the text goes bg); focus doubles the ring. The .small variant is 40px tall with 20px side padding.",
+      "html": "<a class=\"ds-pill-ghost\" href=\"#\">Ask the Herder</a> <a class=\"ds-pill-ghost ds-small\" href=\"#\">Enter a RAM</a>",
+      "css": ".ds-pill-ghost { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; height: 48px; padding: 0 24px; clip-path: polygon(0 24px, 0 16px, 4px 16px, 4px 8px, 8px 8px, 8px 4px, 16px 4px, 16px 0, calc(100% - 16px) 0, calc(100% - 16px) 4px, calc(100% - 8px) 4px, calc(100% - 8px) 8px, calc(100% - 4px) 8px, calc(100% - 4px) 16px, 100% 16px, 100% 24px, 100% calc(100% - 24px), 100% calc(100% - 16px), calc(100% - 4px) calc(100% - 16px), calc(100% - 4px) calc(100% - 8px), calc(100% - 8px) calc(100% - 8px), calc(100% - 8px) calc(100% - 4px), calc(100% - 16px) calc(100% - 4px), calc(100% - 16px) 100%, 16px 100%, 16px calc(100% - 4px), 8px calc(100% - 4px), 8px calc(100% - 8px), 4px calc(100% - 8px), 4px calc(100% - 16px), 0 calc(100% - 16px), 0 calc(100% - 24px)); background: var(--ink, #ffffff); color: var(--ink, #ffffff); border: 0; cursor: pointer; text-decoration: none; white-space: nowrap; font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; } .ds-pill-ghost::before { content: ''; position: absolute; inset: 4px; z-index: -1; background: var(--bg, #000000); clip-path: polygon(0 20px, 0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% 20px, 100% calc(100% - 20px), 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px), 0 calc(100% - 20px)); } .ds-pill-ghost:hover { color: var(--bg, #000000); } .ds-pill-ghost:hover::before { display: none; } .ds-pill-ghost:focus-visible { outline: none; } .ds-pill-ghost:focus-visible::before { inset: 8px; } .ds-pill-ghost.ds-small { height: 40px; padding: 0 20px; }"
+    },
+    {
+      "name": "Control",
       "kind": "input",
-      "refersTo": "control-ruled",
-      "description": "A text field set into the sheet as a ruled box: paper ground, strong-ruling border, pen text and caret, pen focus rule. Red never marks focus.",
-      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Contact <span class=\"ds-optional\">(optional)</span></span><input class=\"ds-ctl\" type=\"text\" placeholder=\"Email or @handle, if you want credit or a reply\"></label>",
-      "css": ".ds-field { display: flex; flex-direction: column; gap: 0.35rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); color: var(--ink, #16191f); } .ds-field-label { font-weight: 600; font-size: 0.92rem; } .ds-optional { color: var(--ink-soft, #4b5160); font-weight: 400; } .ds-ctl { width: 100%; background: var(--paper, #f7f5ee); border: 1px solid var(--rule-strong, #6d87b4); border-radius: 2px; padding: 0.65rem 0.75rem; color: var(--pen, #1f3570); caret-color: var(--pen, #1f3570); font: inherit; font-size: 0.95rem; font-variant-numeric: tabular-nums; } .ds-ctl::placeholder { color: var(--ink-soft, #4b5160); opacity: 1; } .ds-ctl:focus-visible { outline: 2px solid var(--pen, #1f3570); outline-offset: 1px; border-color: var(--pen, #1f3570); } .ds-ctl:disabled { color: var(--pen-soft, #51609a); background: var(--paper-shade, #ebe7da); }"
+      "refersTo": "control",
+      "description": "A text field drawn in the unit: black ground, one-unit ink frame with notched corners, ink caret, placeholder in ink-3 at full opacity. Focus is two inset rings (bg then ink) so the frame reads as doubled; disabled dims text and frame to ink-3. A select hides its arrow and draws a pixel chevron.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Contact <span class=\"ds-optional\">(optional)</span></span><input class=\"ds-ctl\" type=\"text\" placeholder=\"Email or @handle, if you want credit or a reply\"></label><label class=\"ds-field\"><span class=\"ds-field-label\">Which round is it for?</span><select class=\"ds-ctl ds-select\"><option>Choose a round</option><option>SHA-256 (exploratory)</option></select></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 1.2rem; font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif; color: var(--ink, #ffffff); } .ds-field-label { font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-2, #a8a8a8); } .ds-optional { color: var(--ink-3, #7b7b7b); } .ds-ctl { width: 100%; box-sizing: border-box; background: var(--bg, #000000); color: var(--ink, #ffffff); caret-color: var(--ink, #ffffff); border: 4px solid var(--ink, #ffffff); clip-path: polygon(0 8px, 0 4px, 4px 4px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px, 100% 8px, 100% calc(100% - 8px), 100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px), 0 calc(100% - 8px)); padding: 0.6rem 0.9rem; font: inherit; font-size: 1rem; min-height: 48px; font-variant-numeric: tabular-nums; } .ds-ctl::placeholder { color: var(--ink-3, #7b7b7b); opacity: 1; } .ds-ctl:focus-visible { outline: none; box-shadow: inset 0 0 0 4px var(--bg, #000000), inset 0 0 0 8px var(--ink, #ffffff); } .ds-ctl:disabled { color: var(--ink-3, #7b7b7b); border-color: var(--ink-3, #7b7b7b); } .ds-select { appearance: none; padding-right: 2.6rem; background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges' fill='%23fff'%3E%3Cpath d='M0 2h1v1H0zM1 3h1v1H1zM2 4h1v1H2zM3 5h2v1H3zM5 4h1v1H5zM6 3h1v1H6zM7 2h1v1H7z'/%3E%3C/svg%3E\"); background-repeat: no-repeat; background-position: right 0.9rem center; background-size: 16px; } .ds-select option { background: var(--bg, #000000); color: var(--ink, #ffffff); }"
     },
     {
-      "name": "Felt Strip",
+      "name": "Top",
       "kind": "nav",
-      "refersTo": "felt-strip",
-      "description": "The board's nameplate: a flat felt-deep band with the name wide and heavy, in-page links in soft felt ink, and the external HashSmash link at the far right with a drawn arrow.",
-      "html": "<header class=\"ds-strip\"><a class=\"ds-strip-name\" href=\"#\">RAMherd</a><nav class=\"ds-strip-nav\"><a href=\"#\">The board</a><a href=\"#\">Coordinator</a><a href=\"#\">Hand in an idea</a><a href=\"#\">What counts</a><a class=\"ds-strip-ext\" href=\"#\">HashSmash <svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4.5 11.5l7-7M6 4.5h5.5V10\"/></svg></a></nav></header>",
-      "css": ".ds-strip { display: flex; align-items: center; gap: 1.6rem; min-height: 3.4rem; padding: 0 1.5rem; background: var(--felt-deep, #16392d); border-bottom: 1px solid var(--felt-rule, rgba(232, 240, 234, 0.16)); font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); } .ds-strip-name { font-weight: 800; font-stretch: 112%; font-size: 1.15rem; letter-spacing: -0.02em; color: var(--felt-ink, #e8f0ea); text-decoration: none; } .ds-strip-nav { display: flex; align-items: center; gap: 1.4rem; flex: 1; } .ds-strip-nav a { color: var(--felt-ink-soft, #9fd1b4); text-decoration: none; font-size: 0.92rem; font-weight: 500; display: inline-flex; align-items: center; gap: 0.3rem; } .ds-strip-nav a:hover { color: var(--felt-ink, #e8f0ea); text-decoration: underline; text-underline-offset: 0.22em; } .ds-strip-nav a:focus-visible { outline: 2px solid var(--felt-ink, #e8f0ea); outline-offset: 3px; } .ds-strip-ext { margin-left: auto; } .ds-strip-ext svg { width: 12px; height: 12px; }"
+      "refersTo": "pill-small",
+      "description": "The bar of a terminal: 4rem tall, black, a 2px hairline beneath. The brand name in Jersey 10 at left, four centred links in the label voice in ink-2 (hover: ink, 2px underline), the end links and a small ghost pill at right.",
+      "html": "<header class=\"ds-top\"><a class=\"ds-brand\" href=\"#\">RAMherd</a><nav class=\"ds-nav\"><div class=\"ds-nav-mid\"><a href=\"#\">The Herder</a><a href=\"#\">The board</a><a href=\"#\">Ideas</a><a href=\"#\">What counts</a></div><div class=\"ds-nav-end\"><a href=\"#\">X</a><a href=\"#\">GitHub</a><a href=\"#\">HashSmash</a><a class=\"ds-nav-pill\" href=\"#\">Enter a RAM</a></div></nav></header>",
+      "css": ".ds-top { display: flex; align-items: center; gap: 1.5rem; min-height: 4rem; padding: 0 1.5rem; background: var(--bg, #000000); border-bottom: 2px solid var(--rule-2, #1c1c1c); } .ds-brand { font-family: 'Jersey 10', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 1.75rem; line-height: 1; color: var(--ink, #ffffff); text-decoration: none; flex: none; } .ds-nav { display: flex; align-items: center; flex: 1; gap: 1.5rem; } .ds-nav-mid { display: flex; align-items: center; gap: 1.6rem; margin: 0 auto; } .ds-nav-end { display: flex; align-items: center; gap: 1.2rem; } .ds-nav a { font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-2, #a8a8a8); text-decoration: none; } .ds-nav a:hover { color: var(--ink, #ffffff); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.35em; } .ds-nav a:focus-visible { outline: 2px solid var(--ink, #ffffff); outline-offset: 3px; } .ds-nav-pill { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 20px; clip-path: polygon(0 24px, 0 16px, 4px 16px, 4px 8px, 8px 8px, 8px 4px, 16px 4px, 16px 0, calc(100% - 16px) 0, calc(100% - 16px) 4px, calc(100% - 8px) 4px, calc(100% - 8px) 8px, calc(100% - 4px) 8px, calc(100% - 4px) 16px, 100% 16px, 100% 24px, 100% calc(100% - 24px), 100% calc(100% - 16px), calc(100% - 4px) calc(100% - 16px), calc(100% - 4px) calc(100% - 8px), calc(100% - 8px) calc(100% - 8px), calc(100% - 8px) calc(100% - 4px), calc(100% - 16px) calc(100% - 4px), calc(100% - 16px) 100%, 16px 100%, 16px calc(100% - 4px), 8px calc(100% - 4px), 8px calc(100% - 8px), 4px calc(100% - 8px), 4px calc(100% - 16px), 0 calc(100% - 16px), 0 calc(100% - 24px)); background: var(--ink, #ffffff); } .ds-nav a.ds-nav-pill { color: var(--ink, #ffffff); text-decoration: none; } .ds-nav-pill::before { content: ''; position: absolute; inset: 4px; z-index: -1; background: var(--bg, #000000); clip-path: polygon(0 20px, 0 12px, 4px 12px, 4px 4px, 12px 4px, 12px 0, calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 12px, 100% 12px, 100% 20px, 100% calc(100% - 20px), 100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%, 12px 100%, 12px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 12px), 0 calc(100% - 12px), 0 calc(100% - 20px)); } .ds-nav a.ds-nav-pill:hover { color: var(--bg, #000000); text-decoration: none; } .ds-nav-pill:hover::before { display: none; }"
     },
     {
-      "name": "Judge Mark",
-      "kind": "custom",
+      "name": "Judge Mark and Score",
+      "kind": "chip",
       "refersTo": "judge-mark",
-      "description": "HashSmash's stamp: the only red on the sheet and the only boxed word. A ruled, unfilled, condensed uppercase mark for a review state (in review; accepted and rejected come only from their judge). Not a chip: it never carries a fill, an icon, or a dismiss.",
-      "html": "<span class=\"ds-judge-mark\">in review</span>",
-      "css": ".ds-judge-mark { display: inline-block; color: var(--judge, #b8271f); border: 1.5px solid currentColor; border-radius: 2px; padding: 0.15rem 0.45rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); font-size: 0.7rem; font-weight: 700; font-stretch: 80%; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }"
+      "description": "The stamp: HashSmash's review state as inverse video (an ink block with bg text in the label voice, two units of side padding), never a colour, never outlined. Beside it the score term in ink-3 and its value in ink, an em dash until scored.",
+      "html": "<p class=\"ds-judge\"><span class=\"ds-judge-mark\" title=\"In review — Awaiting manual review\">in review</span><span class=\"ds-judge-score\"><span>log₂(T)</span> <span class=\"ds-judge-score-value\">—</span></span></p>",
+      "css": ".ds-judge { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.9rem; font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; } .ds-judge-mark { display: inline-block; background: var(--ink, #ffffff); color: var(--bg, #000000); padding: 0 8px; white-space: nowrap; } .ds-judge-score { color: var(--ink-3, #7b7b7b); white-space: nowrap; } .ds-judge-score-value { color: var(--ink, #ffffff); }"
     },
     {
-      "name": "Results Row",
-      "kind": "custom",
-      "refersTo": "sheet",
-      "description": "One written row of the wallchart: entrant, round, written status (drawn glyph + word + clock) over the activity, and the red-ruled judge margin. The second row shows stale ink.",
-      "html": "<table class=\"ds-results\"><thead><tr><th>Entrant</th><th>Round</th><th>Now</th><th class=\"ds-c-judge\">Judge</th></tr></thead><tbody><tr><td><span class=\"ds-entrant-id\">ram-05</span><span class=\"ds-entrant-approach\">SAT solver \u2014 Kissat</span></td><td><span class=\"ds-round-id\">SHA3-256 r5</span><span class=\"ds-round-path\">lanes/exploratory/candidates/sha3-256-r5/</span></td><td><div class=\"ds-now-line\"><svg class=\"ds-glyph\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"6\"/><path d=\"M5.3 8.3l1.9 1.9 3.6-4\"/></svg><span>Submitted</span><span class=\"ds-now-clock\">written 10m ago</span></div><p class=\"ds-now-activity\">Candidate written to lanes/exploratory/candidates/sha3-256-r5/ and queued via hashsmash_pipeline.py intake.</p></td><td class=\"ds-c-judge\"><span class=\"ds-judge-mark\">in review</span></td></tr><tr class=\"ds-stale\"><td><span class=\"ds-entrant-id\">ram-07</span><span class=\"ds-entrant-approach\">Differential search</span></td><td><span class=\"ds-round-id\">BLAKE3 r1</span><span class=\"ds-round-path\">lanes/exploratory/candidates/blake3-r1/</span></td><td><div class=\"ds-now-line\"><svg class=\"ds-glyph\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"6\" stroke-dasharray=\"2.4 2.2\"/></svg><span>Idle</span><span class=\"ds-now-clock\">written 7m ago</span></div><p class=\"ds-now-activity\">Waiting on this epoch's next budget tick \u2014 last branch exhausted without a usable trail.</p></td><td class=\"ds-c-judge\"><span class=\"ds-judge-none\">\u2014</span></td></tr></tbody></table>",
-      "css": ".ds-results { width: 100%; border-collapse: collapse; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); font-size: 0.92rem; color: var(--ink, #16191f); background: var(--paper, #f7f5ee); font-variant-numeric: tabular-nums; } .ds-results th { text-align: left; font-size: 0.74rem; font-weight: 700; font-stretch: 78%; text-transform: uppercase; letter-spacing: 0.07em; padding: 0.5rem 0.7rem 0.5rem 0; border-bottom: 2px solid var(--rule-strong, #6d87b4); } .ds-results td { padding: 0.85rem 0.7rem 0.85rem 0; border-bottom: 1px solid var(--rule, #bcc9df); vertical-align: top; } .ds-results .ds-c-judge { border-left: 1px solid var(--judge, #b8271f); padding-left: 0.7rem; padding-right: 0; width: 6.2rem; } .ds-entrant-id { display: block; color: var(--pen, #1f3570); font-weight: 700; font-size: 0.95rem; } .ds-entrant-approach { display: block; color: var(--ink-soft, #4b5160); font-size: 0.8rem; line-height: 1.35; margin-top: 0.2rem; } .ds-round-id { display: block; color: var(--pen, #1f3570); font-weight: 600; } .ds-round-path { display: block; color: var(--ink-soft, #4b5160); font-size: 0.74rem; line-height: 1.35; margin-top: 0.2rem; } .ds-now-line { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; color: var(--pen, #1f3570); font-weight: 600; margin-bottom: 0.3rem; } .ds-glyph { width: 15px; height: 15px; flex: none; } .ds-now-clock { color: var(--ink-soft, #4b5160); font-weight: 400; font-size: 0.82rem; margin-left: 0.15rem; } .ds-now-activity { margin: 0; color: var(--pen, #1f3570); font-size: 0.9rem; line-height: 1.5; max-width: 62ch; } .ds-judge-mark { display: inline-block; color: var(--judge, #b8271f); border: 1.5px solid currentColor; border-radius: 2px; padding: 0.15rem 0.45rem; font-size: 0.7rem; font-weight: 700; font-stretch: 80%; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; } .ds-judge-none { color: var(--ink-soft, #4b5160); } .ds-stale .ds-entrant-id, .ds-stale .ds-round-id, .ds-stale .ds-now-line, .ds-stale .ds-now-activity { color: var(--pen-soft, #51609a); } .ds-stale .ds-now-activity { font-weight: 400; }"
+      "name": "Screen (idle)",
+      "kind": "card",
+      "refersTo": "screen",
+      "description": "A RAM's screen at rest: a 16:10 one-unit ink frame with notched corners, the intact HASH block in ink-2 at 30% (max 150px), the NO DESK RUNNING badge in the top-left on a bg slab, and the invisible link over the frame that shows OPEN in inverse video at the bottom-right on hover or focus. Live swaps the frame and badge to amber and fills the frame with the view-only iframe.",
+      "html": "<div class=\"ds-screen\"><svg class=\"ds-screen-idle\" viewBox=\"0 0 30 30\" shape-rendering=\"crispEdges\" aria-hidden=\"true\"><path d=\"M2 8h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM8 8h1v1h-1zM9 8h1v1h-1zM10 8h1v1h-1zM11 8h1v1h-1zM12 8h1v1h-1zM13 8h1v1h-1zM14 8h1v1h-1zM15 8h1v1h-1zM16 8h1v1h-1zM17 8h1v1h-1zM18 8h1v1h-1zM19 8h1v1h-1zM20 8h1v1h-1zM21 8h1v1h-1zM21 9h1v1h-1zM21 10h1v1h-1zM21 11h1v1h-1zM21 12h1v1h-1zM21 13h1v1h-1zM21 14h1v1h-1zM21 15h1v1h-1zM21 16h1v1h-1zM21 17h1v1h-1zM21 18h1v1h-1zM21 19h1v1h-1zM21 20h1v1h-1zM21 21h1v1h-1zM21 22h1v1h-1zM21 23h1v1h-1zM21 24h1v1h-1zM21 25h1v1h-1zM21 26h1v1h-1zM21 27h1v1h-1zM20 27h1v1h-1zM19 27h1v1h-1zM18 27h1v1h-1zM17 27h1v1h-1zM16 27h1v1h-1zM15 27h1v1h-1zM14 27h1v1h-1zM13 27h1v1h-1zM12 27h1v1h-1zM11 27h1v1h-1zM10 27h1v1h-1zM9 27h1v1h-1zM8 27h1v1h-1zM7 27h1v1h-1zM6 27h1v1h-1zM5 27h1v1h-1zM4 27h1v1h-1zM3 27h1v1h-1zM2 27h1v1h-1zM2 26h1v1h-1zM2 25h1v1h-1zM2 24h1v1h-1zM2 23h1v1h-1zM2 22h1v1h-1zM2 21h1v1h-1zM2 20h1v1h-1zM2 19h1v1h-1zM2 18h1v1h-1zM2 17h1v1h-1zM2 16h1v1h-1zM2 15h1v1h-1zM2 14h1v1h-1zM2 13h1v1h-1zM2 12h1v1h-1zM2 11h1v1h-1zM2 10h1v1h-1zM2 9h1v1h-1zM3 7h1v1h-1zM4 6h1v1h-1zM5 5h1v1h-1zM6 4h1v1h-1zM7 3h1v1h-1zM8 2h1v1h-1zM9 2h1v1h-1zM10 2h1v1h-1zM11 2h1v1h-1zM12 2h1v1h-1zM13 2h1v1h-1zM14 2h1v1h-1zM15 2h1v1h-1zM16 2h1v1h-1zM17 2h1v1h-1zM18 2h1v1h-1zM19 2h1v1h-1zM20 2h1v1h-1zM21 2h1v1h-1zM22 2h1v1h-1zM23 2h1v1h-1zM24 2h1v1h-1zM25 2h1v1h-1zM26 2h1v1h-1zM27 2h1v1h-1zM26 3h1v1h-1zM25 4h1v1h-1zM24 5h1v1h-1zM23 6h1v1h-1zM22 7h1v1h-1zM27 3h1v1h-1zM27 4h1v1h-1zM27 5h1v1h-1zM27 6h1v1h-1zM27 7h1v1h-1zM27 8h1v1h-1zM27 9h1v1h-1zM27 10h1v1h-1zM27 11h1v1h-1zM27 12h1v1h-1zM27 13h1v1h-1zM27 14h1v1h-1zM27 15h1v1h-1zM27 16h1v1h-1zM27 17h1v1h-1zM27 18h1v1h-1zM27 19h1v1h-1zM27 20h1v1h-1zM27 21h1v1h-1zM26 22h1v1h-1zM25 23h1v1h-1zM24 24h1v1h-1zM23 25h1v1h-1zM22 26h1v1h-1zM4 15h1v1h-1zM6 15h1v1h-1zM4 16h1v1h-1zM6 16h1v1h-1zM4 17h1v1h-1zM5 17h1v1h-1zM6 17h1v1h-1zM4 18h1v1h-1zM6 18h1v1h-1zM4 19h1v1h-1zM6 19h1v1h-1zM9 15h1v1h-1zM8 16h1v1h-1zM10 16h1v1h-1zM8 17h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM8 18h1v1h-1zM10 18h1v1h-1zM8 19h1v1h-1zM10 19h1v1h-1zM12 15h1v1h-1zM13 15h1v1h-1zM14 15h1v1h-1zM12 16h1v1h-1zM12 17h1v1h-1zM13 17h1v1h-1zM14 17h1v1h-1zM14 18h1v1h-1zM12 19h1v1h-1zM13 19h1v1h-1zM14 19h1v1h-1zM16 15h1v1h-1zM18 15h1v1h-1zM16 16h1v1h-1zM18 16h1v1h-1zM16 17h1v1h-1zM17 17h1v1h-1zM18 17h1v1h-1zM16 18h1v1h-1zM18 18h1v1h-1zM16 19h1v1h-1zM18 19h1v1h-1z\"/></svg><span class=\"ds-desk-badge\">No desk running</span><a class=\"ds-screen-link\" href=\"#\"><span class=\"ds-sr\">Open ram-01's page</span></a></div>",
+      "css": ".ds-screen { position: relative; aspect-ratio: 16 / 10; max-width: 360px; border: 4px solid var(--ink, #ffffff); clip-path: polygon(0 8px, 0 4px, 4px 4px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px, 100% 8px, 100% calc(100% - 8px), 100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px), 0 calc(100% - 8px)); background: var(--bg, #000000); overflow: hidden; } .ds-screen-idle { position: absolute; inset: 0; margin: auto; width: 30%; max-width: 150px; height: auto; aspect-ratio: 1; fill: var(--ink-2, #a8a8a8); } .ds-desk-badge { position: absolute; top: 12px; left: 12px; color: var(--ink-2, #a8a8a8); background: var(--bg, #000000); padding: 0 4px; z-index: 1; font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; } .ds-screen.ds-live { border-color: var(--live, #ffb000); } .ds-screen.ds-live .ds-desk-badge { color: var(--live, #ffb000); } .ds-screen-link { position: absolute; inset: 0; z-index: 2; text-decoration: none; } .ds-screen-link::after { content: 'Open'; position: absolute; right: 12px; bottom: 12px; color: var(--bg, #000000); background: var(--ink, #ffffff); padding: 0 8px; opacity: 0; font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; } .ds-screen-link:hover::after, .ds-screen-link:focus-visible::after { opacity: 1; } .ds-screen-link:focus-visible { outline: 2px solid var(--ink, #ffffff); outline-offset: -8px; } .ds-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }"
     },
     {
-      "name": "Fund Row with Pen Meter",
+      "name": "Tile Lines",
       "kind": "custom",
-      "refersTo": "pen-meter",
-      "description": "One ruled fund row from the header box: a printed term beside a pen figure with its \"of\" denominator, and the drawn pen-rule meter beneath.",
-      "html": "<dl class=\"ds-fund\"><div class=\"ds-fund-row\"><dt>Compute spent, this 24h epoch</dt><dd class=\"ds-fund-value\">$268.42 <span class=\"ds-fund-of\">of $400.00</span></dd><dd class=\"ds-fund-sub\"><span class=\"ds-pen-meter\" aria-hidden=\"true\"><span style=\"transform: scaleX(0.671)\"></span></span></dd></div><div class=\"ds-fund-row\"><dt>RAMs funded</dt><dd class=\"ds-fund-value\">9 of 12</dd><dd class=\"ds-fund-sub\">budget-limited; more fees raise the ceiling</dd></div></dl>",
-      "css": ".ds-fund { margin: 0; display: flex; flex-direction: column; background: var(--paper, #f7f5ee); border: 1.5px solid var(--rule-strong, #6d87b4); font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); color: var(--ink, #16191f); font-variant-numeric: tabular-nums; } .ds-fund-row { display: grid; grid-template-columns: 1fr auto; column-gap: 1rem; row-gap: 0.25rem; align-items: baseline; padding: 1rem 1.4rem; border-bottom: 1px solid var(--rule, #bcc9df); } .ds-fund-row:last-child { border-bottom: 0; } .ds-fund-row dt { font-weight: 600; font-size: 0.95rem; } .ds-fund-row dd { margin: 0; } .ds-fund-value { color: var(--pen, #1f3570); font-weight: 700; font-size: 1.35rem; text-align: right; white-space: nowrap; } .ds-fund-of { color: var(--pen-soft, #51609a); font-weight: 500; font-size: 0.95rem; } .ds-fund-sub { grid-column: 1 / -1; color: var(--ink-soft, #4b5160); font-size: 0.82rem; } .ds-pen-meter { display: block; height: 7px; margin-top: 0.3rem; border: 1px solid var(--rule-strong, #6d87b4); background: var(--paper, #f7f5ee); } .ds-pen-meter > span { display: block; height: 100%; width: 100%; background: var(--pen, #1f3570); transform-origin: left center; transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1); }"
+      "refersTo": "tile",
+      "description": "The printed lines under a screen, unboxed: the id in Jersey 10 beside the now-line (glyph, word, clock), the round and its lane path, the model and approach, the activity at 46ch, the judge line. The running glyph blinks between two frames; the second tile shows the stale state (ink-3 after 300s).",
+      "html": "<div class=\"ds-tiles\"><article class=\"ds-tile\"><p class=\"ds-tile-head\"><a class=\"ds-tile-id\" href=\"#\">ram-01</a><span class=\"ds-now-line\"><svg class=\"ds-glyph ds-glyph-run\" viewBox=\"0 0 8 8\" shape-rendering=\"crispEdges\" aria-hidden=\"true\"><path class=\"ds-f1\" d=\"M3 3h2v2h-2zM1 1h1v1h-1zM6 1h1v1h-1zM1 6h1v1h-1zM6 6h1v1h-1z\"/><path class=\"ds-f2\" d=\"M3 3h2v2h-2zM3 0h2v1h-2zM3 7h2v1h-2zM0 3h1v2h-1zM7 3h1v2h-1z\"/></svg><span class=\"ds-now-word\">Running an experiment</span><span class=\"ds-now-clock\">written 32s ago</span></span></p><p class=\"ds-tile-round\"><span class=\"ds-round-id\">SHA-256 r31</span><span class=\"ds-round-path\">lanes/exploratory/candidates/sha256-r31/</span></p><p class=\"ds-tile-model\"><span class=\"ds-entrant-model\">anthropic/claude-opus-5.5</span><span class=\"ds-entrant-approach\">SAT solver — CaDiCaL</span></p><p class=\"ds-tile-activity\">Running CaDiCaL against a 31-round reduced characteristic, clause count 2.1M, 4 of 8 branch orderings tried.</p><p class=\"ds-tile-judge\"><span class=\"ds-judge-none\">—</span></p></article><article class=\"ds-tile ds-stale\"><p class=\"ds-tile-head\"><a class=\"ds-tile-id\" href=\"#\">ram-05</a><span class=\"ds-now-line\"><svg class=\"ds-glyph\" viewBox=\"0 0 8 8\" shape-rendering=\"crispEdges\" aria-hidden=\"true\"><path d=\"M1 1h6v1h-6zM1 6h6v1h-6zM1 2h1v4h-1zM6 2h1v4h-1z\"/></svg><span class=\"ds-now-word\">Idle</span><span class=\"ds-now-clock\">written 7m ago</span></span></p><p class=\"ds-tile-round\"><span class=\"ds-round-id\">BLAKE3 r1</span><span class=\"ds-round-path\">lanes/exploratory/candidates/blake3-r1/</span></p><p class=\"ds-tile-model\"><span class=\"ds-entrant-model\">deepseek/deepseek-v4-pro</span><span class=\"ds-entrant-approach\">Differential search</span></p><p class=\"ds-tile-activity\">Waiting on this epoch's next budget tick — last branch exhausted without a usable trail.</p><p class=\"ds-tile-judge\"><span class=\"ds-judge-none\">—</span></p></article></div>",
+      "css": ".ds-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2.6rem 2rem; font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif; color: var(--ink, #ffffff); font-variant-numeric: tabular-nums; } .ds-tile { min-width: 0; padding-top: 0.9rem; } .ds-tile p { margin: 0; } .ds-tile-id { display: inline-block; font-family: 'Jersey 10', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 1.75rem; line-height: 1; color: var(--ink, #ffffff); text-decoration: none; margin-bottom: 0.45rem; margin-right: 0.6rem; } .ds-tile-id:hover { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 0.12em; } .ds-now-line { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink, #ffffff); } .ds-now-clock { color: var(--ink-3, #7b7b7b); } .ds-glyph { width: 16px; height: 16px; flex: none; fill: currentColor; } .ds-glyph-run .ds-f2 { opacity: 0; } @media (prefers-reduced-motion: no-preference) { @keyframes ds-frame-a { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } } @keyframes ds-frame-b { 0%, 49% { opacity: 0; } 50%, 100% { opacity: 1; } } .ds-glyph-run .ds-f1 { animation: ds-frame-a 1s steps(1, end) infinite; } .ds-glyph-run .ds-f2 { animation: ds-frame-b 1s steps(1, end) infinite; } } .ds-tile-round, .ds-tile-model { color: var(--ink-2, #a8a8a8); font-size: 0.85rem; line-height: 1.45; margin-top: 0.35rem; display: flex; flex-wrap: wrap; column-gap: 0.7rem; } .ds-tile-round { margin-top: 0.6rem; } .ds-round-id { color: var(--ink, #ffffff); } .ds-round-path, .ds-entrant-approach { color: var(--ink-3, #7b7b7b); } .ds-tile-activity { color: var(--ink-2, #a8a8a8); font-size: 0.95rem; line-height: 1.55; margin-top: 0.7rem; max-width: 46ch; } .ds-tile-judge { margin-top: 0.8rem; font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; letter-spacing: 0.08em; } .ds-judge-none { color: var(--ink-3, #7b7b7b); } .ds-stale .ds-tile-id, .ds-stale .ds-now-line, .ds-stale .ds-round-id, .ds-stale .ds-tile-activity { color: var(--ink-3, #7b7b7b); }"
     },
     {
-      "name": "Coordinator Log Entry",
+      "name": "Fund Line with Blocks",
       "kind": "custom",
-      "refersTo": "sheet",
-      "description": "One Q&A written in the log: Q and A marks in the condensed voice down a 1.5rem column, the question printed, the answer in pen. A pending answer reads \"Writing\u2026\" in pen-soft.",
-      "html": "<ol class=\"ds-log\"><li class=\"ds-log-pending\"><span class=\"ds-log-mark\">Q</span><p class=\"ds-log-q\">Has anything been submitted yet?</p><span class=\"ds-log-mark\">A</span><p class=\"ds-log-a\">Writing\u2026</p></li><li><span class=\"ds-log-mark\">Q</span><p class=\"ds-log-q\">Is SHA-256 broken?</p><span class=\"ds-log-mark\">A</span><p class=\"ds-log-a\">No. Nothing on this board is a claim that SHA-256, SHA3-256, or BLAKE3 is broken. We're working reduced-round and exploratory tracks inside HashSmash's own competition structure.</p></li></ol>",
-      "css": ".ds-log { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule, #bcc9df); background: var(--paper, #f7f5ee); font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); color: var(--ink, #16191f); } .ds-log li { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); row-gap: 0.4rem; padding: 0.85rem 0; border-bottom: 1px solid var(--rule, #bcc9df); } .ds-log-mark { font-size: 0.72rem; font-weight: 700; font-stretch: 80%; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft, #4b5160); padding-top: 0.25rem; } .ds-log-q, .ds-log-a { margin: 0; font-size: 0.92rem; line-height: 1.55; } .ds-log-q { font-weight: 600; } .ds-log-a { color: var(--pen, #1f3570); } .ds-log-pending .ds-log-a { color: var(--pen-soft, #51609a); }"
+      "refersTo": "fund-line",
+      "description": "One printed row of the listing: the term in the label voice, a one-unit dot-leader in rule, the value in Jersey 10 at 2rem, and beneath it a block bar of three-unit cells (the spent share filled from the left) or a sub-line in ink-3.",
+      "html": "<dl class=\"ds-fund\"><div class=\"ds-fund-line\"><dt>Compute spent, this 24h epoch</dt><dd class=\"ds-fund-value\">$268.42 <span class=\"ds-fund-of\">of $400.00</span></dd><dd class=\"ds-blocks\" aria-hidden=\"true\"><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></dd></div><div class=\"ds-fund-line\"><dt>RAMs funded</dt><dd class=\"ds-fund-value\">6 of 12</dd><dd class=\"ds-blocks\" aria-hidden=\"true\"><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i class=\"ds-on\"></i><i></i><i></i><i></i><i></i><i></i><i></i></dd><dd class=\"ds-fund-sub\">budget-limited; more fees raise the ceiling</dd></div></dl>",
+      "css": ".ds-fund { width: min(100%, 760px); margin: 0; font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif; color: var(--ink, #ffffff); font-variant-numeric: tabular-nums; } .ds-fund-line { display: grid; grid-template-columns: auto minmax(2rem, 1fr) auto; align-items: baseline; column-gap: 0.9rem; padding: 0.95rem 0; border-top: 2px solid var(--rule-2, #1c1c1c); } .ds-fund-line:last-child { border-bottom: 2px solid var(--rule-2, #1c1c1c); } .ds-fund dt { color: var(--ink-2, #a8a8a8); font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; } .ds-fund-line::before { content: ''; grid-column: 2; grid-row: 1; height: 4px; align-self: center; background-image: linear-gradient(90deg, var(--rule, #3a3a3a) 50%, transparent 50%); background-size: 8px 4px; } .ds-fund dd { margin: 0; } .ds-fund-value { grid-column: 3; grid-row: 1; font-family: 'Jersey 10', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 2rem; line-height: 1; text-align: right; white-space: nowrap; } .ds-fund-of { color: var(--ink-3, #7b7b7b); } .ds-fund-sub { grid-column: 1 / -1; color: var(--ink-3, #7b7b7b); font-size: 0.85rem; margin-top: 0.35rem; } .ds-blocks { grid-column: 1 / -1; display: flex; gap: 4px; margin-top: 0.6rem; } .ds-blocks i { display: block; flex: 1 1 0; height: 12px; border: 2px solid var(--ink-3, #7b7b7b); } .ds-blocks i.ds-on { background: var(--ink, #ffffff); border-color: var(--ink, #ffffff); }"
     },
     {
-      "name": "Part Opener",
+      "name": "Spray",
       "kind": "custom",
-      "refersTo": "sheet",
-      "description": "How a part of the sheet begins: the printed double rule (1px + 4px gap + 1px in strong ruling), then the Headline and its lead in soft printed ink. Nothing on the sheet is a card; parts are opened by rules.",
-      "html": "<section class=\"ds-part\"><h2 class=\"ds-part-h2\">The board, live</h2><p class=\"ds-part-lead\">One row per funded RAM: its round, its approach, what it is doing now, and when the row was last written.</p></section>",
-      "css": ".ds-part { background: var(--paper, #f7f5ee); padding: 0 0 1rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); color: var(--ink, #16191f); } .ds-part::before { content: ''; display: block; height: 4px; margin-bottom: 1.4rem; border-top: 1px solid var(--rule-strong, #6d87b4); border-bottom: 1px solid var(--rule-strong, #6d87b4); } .ds-part-h2 { margin: 0; font-size: clamp(1.45rem, 2.4vw, 1.85rem); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; text-wrap: balance; } .ds-part-lead { color: var(--ink-soft, #4b5160); max-width: 60ch; margin: 0.4rem 0 0; line-height: 1.55; }"
+      "refersTo": "spray",
+      "description": "The section divider: a four-unit ink rule that breaks into a field of scattering 0 and 1 digits in ink-3, the brand asset's motif. Opens every section and every slip part; always left-aligned, 40px tall, up to 640px wide.",
+      "html": "<svg class=\"ds-spray\" viewBox=\"0 0 480 32\" preserveAspectRatio=\"xMinYMid meet\" shape-rendering=\"crispEdges\" aria-hidden=\"true\"><path class=\"ds-spray-rule\" d=\"M0 14h150v4H0z\"/><path class=\"ds-spray-digits\" d=\"M154 14h6v3h-6zM164 15h4v3h-4zM172 13h3v3h-3zM160 10h3v3h-3zM163 10h3v3h-3zM166 10h3v3h-3zM160 13h3v3h-3zM166 13h3v3h-3zM160 16h3v3h-3zM166 16h3v3h-3zM160 19h3v3h-3zM166 19h3v3h-3zM160 22h3v3h-3zM163 22h3v3h-3zM166 22h3v3h-3zM187 4h3v3h-3zM184 7h3v3h-3zM187 7h3v3h-3zM187 10h3v3h-3zM187 13h3v3h-3zM184 16h3v3h-3zM187 16h3v3h-3zM190 16h3v3h-3zM204 16h3v3h-3zM207 16h3v3h-3zM210 16h3v3h-3zM204 19h3v3h-3zM210 19h3v3h-3zM204 22h3v3h-3zM210 22h3v3h-3zM204 25h3v3h-3zM210 25h3v3h-3zM204 28h3v3h-3zM207 28h3v3h-3zM210 28h3v3h-3zM233 2h3v3h-3zM230 5h3v3h-3zM233 5h3v3h-3zM233 8h3v3h-3zM233 11h3v3h-3zM230 14h3v3h-3zM233 14h3v3h-3zM236 14h3v3h-3zM252 20h3v3h-3zM255 20h3v3h-3zM258 20h3v3h-3zM252 23h3v3h-3zM258 23h3v3h-3zM252 26h3v3h-3zM258 26h3v3h-3zM252 29h3v3h-3zM258 29h3v3h-3zM252 32h3v3h-3zM255 32h3v3h-3zM258 32h3v3h-3zM279 8h3v3h-3zM276 11h3v3h-3zM279 11h3v3h-3zM279 14h3v3h-3zM279 17h3v3h-3zM276 20h3v3h-3zM279 20h3v3h-3zM282 20h3v3h-3zM304 0h3v3h-3zM307 0h3v3h-3zM310 0h3v3h-3zM304 3h3v3h-3zM310 3h3v3h-3zM304 6h3v3h-3zM310 6h3v3h-3zM304 9h3v3h-3zM310 9h3v3h-3zM304 12h3v3h-3zM307 12h3v3h-3zM310 12h3v3h-3zM333 14h3v3h-3zM330 17h3v3h-3zM333 17h3v3h-3zM333 20h3v3h-3zM333 23h3v3h-3zM330 26h3v3h-3zM333 26h3v3h-3zM336 26h3v3h-3zM360 6h3v3h-3zM363 6h3v3h-3zM366 6h3v3h-3zM360 9h3v3h-3zM366 9h3v3h-3zM360 12h3v3h-3zM366 12h3v3h-3zM360 15h3v3h-3zM366 15h3v3h-3zM360 18h3v3h-3zM363 18h3v3h-3zM366 18h3v3h-3zM399 18h3v3h-3zM396 21h3v3h-3zM399 21h3v3h-3zM399 24h3v3h-3zM399 27h3v3h-3zM396 30h3v3h-3zM399 30h3v3h-3zM402 30h3v3h-3zM428 2h3v3h-3zM431 2h3v3h-3zM434 2h3v3h-3zM428 5h3v3h-3zM434 5h3v3h-3zM428 8h3v3h-3zM434 8h3v3h-3zM428 11h3v3h-3zM434 11h3v3h-3zM428 14h3v3h-3zM431 14h3v3h-3zM434 14h3v3h-3zM459 12h3v3h-3zM456 15h3v3h-3zM459 15h3v3h-3zM459 18h3v3h-3zM459 21h3v3h-3zM456 24h3v3h-3zM459 24h3v3h-3zM462 24h3v3h-3zM230 13h2v2h-2zM243 23h2v2h-2zM314 7h2v2h-2zM166 28h2v2h-2zM288 16h2v2h-2zM206 29h2v2h-2zM176 27h3v3h-3zM305 7h2v2h-2zM165 12h2v2h-2zM313 13h2v2h-2zM402 25h3v3h-3zM267 6h2v2h-2zM393 8h2v2h-2zM268 17h2v2h-2zM158 4h2v2h-2zM176 0h3v3h-3zM167 8h2v2h-2zM150 18h2v2h-2zM185 14h2v2h-2zM399 13h2v2h-2zM289 3h2v2h-2zM314 27h2v2h-2zM314 21h3v3h-3zM329 29h3v3h-3zM295 2h2v2h-2zM365 11h3v3h-3zM315 13h3v3h-3zM167 11h3v3h-3zM367 4h2v2h-2zM216 15h2v2h-2zM278 5h2v2h-2zM394 9h2v2h-2zM263 12h2v2h-2zM178 4h2v2h-2zM159 1h2v2h-2zM160 3h3v3h-3zM159 16h2v2h-2z\"/></svg>",
+      "css": ".ds-spray { display: block; width: min(100%, 640px); height: 40px; margin-bottom: 1.4rem; } .ds-spray-rule { fill: var(--ink, #ffffff); } .ds-spray-digits { fill: var(--ink-3, #7b7b7b); }"
     },
     {
-      "name": "Confirmation Slip",
+      "name": "Herder Panel Bar and Log",
       "kind": "custom",
-      "refersTo": "control-ruled",
-      "description": "The chart-keeper's written receipt after a hand-in: a pen-ruled box with a drawn tick. It is pen, not red, because it is written by the chart, not stamped by the judge.",
-      "html": "<p class=\"ds-confirm\" role=\"status\"><svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"6\"/><path d=\"M5.3 8.3l1.9 1.9 3.6-4\"/></svg><span><strong>Received.</strong> Queued for human review, position 4. No RAM sees it until a reviewer approves it.</span></p>",
-      "css": ".ds-confirm { display: flex; gap: 0.6rem; align-items: flex-start; border: 1.5px solid var(--pen, #1f3570); background: var(--paper, #f7f5ee); padding: 0.8rem 0.9rem; font-family: var(--sans, Archivo, 'Helvetica Neue', Arial, sans-serif); font-size: 0.9rem; line-height: 1.55; color: var(--pen, #1f3570); margin: 0; } .ds-confirm svg { width: 16px; height: 16px; flex: none; margin-top: 0.15em; }"
+      "refersTo": "panel",
+      "description": "The top of the Herder's panel and its chat: a one-unit notched frame, the bar (name in ink, the blinking live dot and clock in amber, the tag at the right), then the log as a terminal (mark column in ink-3, question in ink, answer in ink-2, a pending answer in ink-3) and the ask row with the > prompt in Jersey 10. The only amber on the page outside a live screen.",
+      "html": "<div class=\"ds-panel\"><div class=\"ds-panel-bar\"><span class=\"ds-panel-name\">The Herder</span><span class=\"ds-panel-live\"><i class=\"ds-live-dot\" aria-hidden=\"true\"></i><span>updated 42s ago</span></span><span class=\"ds-panel-tag\">read-only · Q&amp;A</span></div><div class=\"ds-herd-chat\"><ol class=\"ds-log\"><li><span class=\"ds-log-mark\">&gt;</span><p class=\"ds-log-q\">Is SHA-256 broken?</p><span class=\"ds-log-mark\">H</span><p class=\"ds-log-a\">No. Nothing on this board is a claim that SHA-256, SHA3-256 or BLAKE3 is broken. We're working reduced-round and exploratory tracks inside HashSmash's own competition structure, real research, scored by their judge, not a headline.</p></li><li class=\"ds-log-pending\"><span class=\"ds-log-mark\">&gt;</span><p class=\"ds-log-q\">Has anything been submitted yet?</p><span class=\"ds-log-mark\">H</span><p class=\"ds-log-a\">Writing…</p></li></ol><form class=\"ds-ask\"><span class=\"ds-prompt\" aria-hidden=\"true\">&gt;</span><input class=\"ds-ctl\" type=\"text\" placeholder=\"Has anything been submitted yet?\" aria-label=\"Ask the Herder a question\"><button class=\"ds-pill\" type=\"button\">Ask</button></form></div></div>",
+      "css": ".ds-panel { border: 4px solid var(--ink, #ffffff); clip-path: polygon(0 8px, 0 4px, 4px 4px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px, 100% 8px, 100% calc(100% - 8px), 100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px), 0 calc(100% - 8px)); display: flex; flex-direction: column; background: var(--bg, #000000); color: var(--ink, #ffffff); font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; } .ds-panel-bar { display: flex; align-items: center; gap: 1.2rem; padding: 0.7rem 1.1rem; border-bottom: 4px solid var(--ink, #ffffff); color: var(--ink-2, #a8a8a8); font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; } .ds-panel-name { color: var(--ink, #ffffff); } .ds-panel-live { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--live, #ffb000); } .ds-live-dot { display: inline-block; width: 8px; height: 8px; background: var(--live, #ffb000); } @media (prefers-reduced-motion: no-preference) { @keyframes ds-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } } .ds-live-dot { animation: ds-blink 1s steps(1, end) infinite; } } .ds-panel-tag { margin-left: auto; } .ds-herd-chat { padding: 1.3rem 1.4rem 1.4rem; display: flex; flex-direction: column; } .ds-log { list-style: none; margin: 0 0 1rem; padding: 0; max-height: 28rem; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--ink, #ffffff) var(--bg, #000000); } .ds-log li { padding: 0.8rem 0; border-top: 2px solid var(--rule-2, #1c1c1c); display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); row-gap: 0.45rem; } .ds-log-mark { color: var(--ink-3, #7b7b7b); padding-top: 0.2rem; font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; } .ds-log-q, .ds-log-a { margin: 0; font-size: 0.95rem; line-height: 1.55; } .ds-log-q { color: var(--ink, #ffffff); } .ds-log-a { color: var(--ink-2, #a8a8a8); } .ds-log-pending .ds-log-a { color: var(--ink-3, #7b7b7b); } .ds-ask { display: flex; align-items: center; gap: 0.6rem; margin-top: auto; } .ds-prompt { font-family: 'Jersey 10', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 1.5rem; line-height: 1; color: var(--ink, #ffffff); flex: none; } .ds-ask .ds-ctl { flex: 1; min-width: 0; width: auto; background: var(--bg, #000000); color: var(--ink, #ffffff); caret-color: var(--ink, #ffffff); border: 4px solid var(--ink, #ffffff); clip-path: polygon(0 8px, 0 4px, 4px 4px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px, 100% 8px, 100% calc(100% - 8px), 100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px), 0 calc(100% - 8px)); padding: 0.6rem 0.9rem; font: inherit; font-size: 1rem; min-height: 48px; } .ds-ask .ds-ctl::placeholder { color: var(--ink-3, #7b7b7b); opacity: 1; } .ds-ask .ds-ctl:focus-visible { outline: none; box-shadow: inset 0 0 0 4px var(--bg, #000000), inset 0 0 0 8px var(--ink, #ffffff); } .ds-ask .ds-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; clip-path: polygon(0 24px, 0 16px, 4px 16px, 4px 8px, 8px 8px, 8px 4px, 16px 4px, 16px 0, calc(100% - 16px) 0, calc(100% - 16px) 4px, calc(100% - 8px) 4px, calc(100% - 8px) 8px, calc(100% - 4px) 8px, calc(100% - 4px) 16px, 100% 16px, 100% 24px, 100% calc(100% - 24px), 100% calc(100% - 16px), calc(100% - 4px) calc(100% - 16px), calc(100% - 4px) calc(100% - 8px), calc(100% - 8px) calc(100% - 8px), calc(100% - 8px) calc(100% - 4px), calc(100% - 16px) calc(100% - 4px), calc(100% - 16px) 100%, 16px 100%, 16px calc(100% - 4px), 8px calc(100% - 4px), 8px calc(100% - 8px), 4px calc(100% - 8px), 4px calc(100% - 16px), 0 calc(100% - 16px), 0 calc(100% - 24px)); background: var(--ink, #ffffff); color: var(--bg, #000000); border: 0; cursor: pointer; font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; } .ds-ask .ds-pill:hover { background: var(--ink-press, #d4d4d4); }"
+    },
+    {
+      "name": "History Row",
+      "kind": "custom",
+      "refersTo": "tile",
+      "description": "One line a RAM has written, on the RAM page: time in the label voice in ink-3, the glyph and word in ink-2, the text at 70ch. The newest row is in full ink. A line is never rewritten; a change prints a new one.",
+      "html": "<ol class=\"ds-history\"><li class=\"ds-is-now\"><span class=\"ds-hist-at\">14m ago</span><span class=\"ds-hist-word\"><svg class=\"ds-glyph\" viewBox=\"0 0 8 8\" shape-rendering=\"crispEdges\" aria-hidden=\"true\"><path d=\"M0 4h1v1h-1zM1 5h1v1h-1zM2 6h1v1h-1zM3 5h1v1h-1zM4 4h1v1h-1zM5 3h1v1h-1zM6 2h1v1h-1zM7 1h1v1h-1z\"/></svg><span>Submitted</span></span><p class=\"ds-hist-text\">Candidate written to lanes/exploratory/candidates/sha3-256-r5/ and queued via hashsmash_pipeline.py intake.</p></li><li><span class=\"ds-hist-at\">25m ago</span><span class=\"ds-hist-word\"><svg class=\"ds-glyph\" viewBox=\"0 0 8 8\" shape-rendering=\"crispEdges\" aria-hidden=\"true\"><path d=\"M3 3h2v2h-2zM1 1h1v1h-1zM6 1h1v1h-1zM1 6h1v1h-1zM6 6h1v1h-1z\"/></svg><span>Running an experiment</span></span><p class=\"ds-hist-text\">local_tracks.py check on the candidate package: mechanically valid. claim.json, proof.md and the Kissat trace attached.</p></li></ol>",
+      "css": ".ds-history { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--rule-2, #1c1c1c); font-family: 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-variant-numeric: tabular-nums; } .ds-history li { display: grid; grid-template-columns: 6rem 12rem minmax(0, 1fr); column-gap: 1rem; align-items: baseline; padding: 0.85rem 0; border-bottom: 2px solid var(--rule-2, #1c1c1c); } .ds-hist-at, .ds-hist-word { font-family: 'Silkscreen', 'Archivo', 'Helvetica Neue', Arial, sans-serif; font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; } .ds-hist-at { color: var(--ink-3, #7b7b7b); } .ds-hist-word { display: inline-flex; align-items: center; gap: 0.45rem; color: var(--ink-2, #a8a8a8); } .ds-glyph { width: 16px; height: 16px; flex: none; fill: currentColor; } .ds-hist-text { margin: 0; max-width: 70ch; color: var(--ink-2, #a8a8a8); font-size: 1rem; line-height: 1.55; } .ds-history li.ds-is-now .ds-hist-word, .ds-history li.ds-is-now .ds-hist-text { color: var(--ink, #ffffff); }"
     }
   ],
   "narrative": {
-    "northStar": "The Tournament Wallchart",
-    "overview": "RAMherd's page is the results chart pinned in the hall between rounds. A bottle-green noticeboard felt owns the whole ground, the strip at the top and the footer. One tall off-white paper sheet is pinned on it and owns everything else: the ruled header box with the fund printed in it, the results board, the coordinator log, the idea slip, the regulations. Nothing floats above the sheet and nothing sits beside it; every part of the page is a part of that one sheet, opened by a printed double rule.\n\nThree inks do all the talking. Printed black is what the organiser set before the hall opened: headings, column heads, prose, regulations. Blue-black pen is what gets written live by whoever keeps the chart: the fund figures, each entrant's row, every answer in the log, and every control a visitor touches. One judge red is reserved for HashSmash's own review states and the ruled judge margin, and is used nowhere else; it never marks focus, error or emphasis. Feint blue rulings carry the grid. The scene is light: a hall under fluorescent tubes, flat colour, no gradients, no imagery, a drawn weave on the felt rather than a photographed one.\n\nA single grotesk with a real width axis (Archivo variable, self-hosted) does the work two families would otherwise do: wide and heavy for the sheet title and the name on the strip, condensed and tracked for column heads and stamps, normal for everything else, tabular figures wherever a number sits. Status is written, not chipped: a word, a small drawn glyph, and a clock. Rows nobody has written to for a while thin their ink. The world has one motion, \"the pen writes\": a changed cell re-inks left to right; nothing else moves.",
+    "northStar": "The Line-Printer Listing",
+    "overview": "RAMherd's page is a line-printer listing on a black screen: a banner page in giant pixel letters, then one appended line per thing that happened, every line permanent. The world it is printed in is the operator's pinned brand asset (`src/brand/ram-smashing-hash-main.png`): a pixel ram charging a HASH block, binary digits scattering off the impact, monochrome, 1-bit. Everything the page draws is drawn the way that asset is drawn: on a 4px pixel unit, in white on pure black, with corners that step instead of curve. The five reference sites (chordpf.com, nearos.io, trykyoto.ai, dexora.tech, homefi.space) supplied structure only: black ground, an oversized headline, a filled pill beside a ghost pill, a small mark with a centred nav, generous negative space, and one subtle glow. Nothing of their gloss carried over: no soft cards, no blur, no neon.\n\nThe page is dense where it reports and empty where it persuades. The banner page gives the headline, the event line, two pills and the plate room to breathe; below it the listing takes over, and from there the page is rules, lines and frames. Three things carry hierarchy: the display face at banner size, the frame (a one-unit white rule with notched corners) around anything that is a screen or a control, and inverse video for the one stamp that matters. Colour does almost nothing. One amber exists, and it means \"live right now\"; the judge's state is never a colour, it is a white block with black text, the way a terminal highlights the line the cursor is on.\n\nMotion is the print. A changed line prints left to right in fourteen hard steps; the running glyph flips between two pixel frames once a second; the Herder's live dot blinks the same way. Nothing eases, fades or slides, and under reduced motion changes simply appear. The glow the references share is executed as an ordered dither: three concentric rings of single amber pixels behind the plate, masked with hard stops, no smooth gradient anywhere. The board sits on a scatter of 0 and 1 glyphs so faint they read as texture, and every section opens with a \"spray\": a rule that breaks into scattering digits, the asset's motif turned into the page's divider.",
     "keyCharacteristics": [
-      "One sheet on one wall: felt ground, a single paper surface, no cards, no panels, no second surface colour.",
-      "Three inks with fixed jobs: printed black, pen blue-black, judge red; no second accent.",
-      "Feint blue rulings and printed double rules carry all structure; borders are rulings, never outlines of boxes-for-their-own-sake.",
-      "One typeface, three widths: 112 for the title and name, 78\u201385 for column heads, stamps and buttons, 100 for prose.",
-      "Written status: word plus drawn glyph plus clock; stale rows thin to a paler pen; the judge's stamp is the only red.",
-      "One motion: a left-to-right re-ink on changed cells, off entirely under reduced motion.",
-      "Near-square geometry: a 2px hairline radius on the sheet, controls, stamp and toggle; nothing rounder."
+      "Pure black ground, white 1-bit ink, one amber for the live; nothing else is a colour.",
+      "One 4px pixel unit governs borders, stepped corners, pills, glyphs, block bars, the dot-leader, the dither and the spray.",
+      "Three self-hosted faces with fixed jobs: Jersey 10 displays, Silkscreen labels (caps only), Archivo reads.",
+      "Status is a pixel glyph, a Silkscreen word and a clock; the judge's state is inverse video.",
+      "Frames are notched, pills are stair-stepped, nothing is rounded, nothing casts a shadow.",
+      "One motion, the print: stepped, never eased; the running glyph and the live dot blink in two frames.",
+      "Append-only listing: a changed line prints a new one, history is never rewritten, the first paint is never animated."
     ],
     "rules": [
       {
-        "name": "The Three Inks Rule",
-        "body": "Printed black is what the organiser set; pen blue-black is anything written live or touched by the visitor; judge red is HashSmash's verdict and the judge margin. A colour outside those three jobs is a fourth ink and does not exist.",
+        "name": "The Amber Is Live Rule",
+        "body": "Amber means a thing is live right now: the Herder's dot and clock, a live stream's frame, badge and caption rule, the dither behind the plate. A running RAM's status glyph is white like every other glyph; \"running\" is a state, not a stream. Amber never marks hover, focus, error, emphasis or success.",
         "section": "colors"
       },
       {
-        "name": "The Red Is The Judge Rule",
-        "body": "Judge Red appears only in the `judge-mark` stamp and the ruled left edge of the Judge column. It never marks focus, validation, errors, warnings or emphasis. Focus is a 2px pen outline at 3px offset on the sheet, a felt-ink outline on the felt.",
+        "name": "The Inverse Video Rule",
+        "body": "The stamp is a white block with black text, set in the label voice: HashSmash's review state (\"in review\") on the board, in the facts and in the key, and on the entry slip the signing state (\"Not live yet\"). It is never a colour, never outlined, never iconed. Anything else that goes inverse is a control under the pointer (a ghost pill on hover, the OPEN label) or the skip link.",
         "section": "colors"
       },
       {
-        "name": "The Rulings Carry The Grid Rule",
-        "body": "Structure is drawn with rulings (`rule`, `rule-strong`) and printed double rules, never with background tints, filled bands, zebra stripes or boxed cards. The sheet has one tone; `paper-shade` is reserved for a disabled control.",
+        "name": "The Four Greys Rule",
+        "body": "Text is `ink`, `ink-2` or `ink-3`, and `ink-3` (4.9:1) is the floor; `rule` and `rule-2` draw lines and specks and never carry a word. Distance between lines is made by stepping down a grey, not by adding a tint, a band or a box.",
         "section": "colors"
       },
       {
-        "name": "The Width Axis Rule",
-        "body": "Hierarchy is carried by width and weight, not by a second family. 112 wide for the title and the name, 78\u201385 condensed for column heads, stamps, marks and buttons, 100 for everything else. A second typeface is a fourth ink.",
+        "name": "The Caps-Only Rule",
+        "body": "Silkscreen has no lowercase, so it never sets an identifier: model slugs (`anthropic/claude-opus-5.5`), lane paths (`lanes/exploratory/candidates/sha256-r31/`), round ids, addresses and anything a reader might copy are set in Archivo at reading size. Silkscreen labels; it never names.",
         "section": "typography"
       },
       {
-        "name": "The Column Head Rule",
-        "body": "The condensed, tracked, uppercase voice belongs to column heads, row heads, stamps and buttons: things that label a cell. It is never set above a headline as a kicker or eyebrow.",
+        "name": "The Display Is a Word Rule",
+        "body": "Jersey 10 sets short things: a headline, an id, a figure, a count, a prompt, the wordmark. It never sets a sentence; the moment a line needs to be read rather than seen, it is Archivo.",
         "section": "typography"
       },
       {
         "name": "The Tabular Figures Rule",
-        "body": "Every number sits in tabular figures so a rewritten value does not shift its neighbours. A fund figure is the only place a number grows past body size (1.35rem).",
+        "body": "`font-variant-numeric: tabular-nums` is on the body and inherited everywhere, so a fund value, a clock or a score can be reprinted in place without moving the line around it.",
         "section": "typography"
       },
       {
-        "name": "The One Sheet Rule",
-        "body": "There is one surface on the wall. Nothing else casts a shadow, nothing floats above the sheet, and no part of the sheet is a second, inset surface. If a new element needs to be \"on top\", it is drawn as a ruled box on the sheet instead.",
+        "name": "The Flat Screen Rule",
+        "body": "Nothing casts a shadow and nothing is translucent. If a new element needs to read as \"on top\", it gets a one-unit frame with notched corners, or it goes inverse video. Depth is a frame or a block, never a shadow.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Hard Stop Rule",
+        "body": "The only gradients are masks and leaders with hard stops: the dither's radial masks and the dot-leader's `linear-gradient(90deg, rule 50%, transparent 50%)`. A smooth gradient of any kind is outside the world.",
         "section": "elevation"
       }
     ],
     "dos": [
-      "Do write every live or visitor-touched value in `pen` (#1f3570) and every organiser-set word in `ink` (#16191f); if a value can change while the page is open, it is pen.",
-      "Do keep Judge Red (#b8271f) to the `judge-mark` stamp and the ruled Judge margin; show focus as a 2px pen outline (felt-ink on the felt).",
-      "Do draw structure with rulings: 1px `rule` (#bcc9df) between rows, 1.5px `rule-strong` (#6d87b4) around printed boxes, and the printed double rule (1px + 4px + 1px) to open each part of the sheet.",
-      "Do carry hierarchy on Archivo's width axis: wdth 112 at 800 for the title and name, wdth 78\u201385 at 700 uppercase for column heads, stamps and buttons, wdth 100 for prose; tabular figures on every number.",
-      "Do write status as a word, a drawn 15px glyph and a clock in one line, with fixed cell geometry across every state, and thin a row to `pen-soft` after 300 seconds without a write.",
-      "Do re-ink a changed cell left to right (0.55s, `cubic-bezier(0.16, 1, 0.3, 1)`), diff rows by key, never animate the first paint, and skip the motion under reduced motion.",
-      "Do keep one surface: the paper sheet with its pinned-sheet shadow; set new elements into it as ruled boxes.",
-      "Do keep the legend beneath the table fixed and in one place."
+      "Do keep amber (`live`, #ffb000) for what is live right now: the Herder's dot and clock, a live stream's frame, badge and caption rule, the dither behind the plate.",
+      "Do set the judge's state, and the slip's signing state, as inverse video: a `ink` block with `bg` text in the label voice, two units of side padding.",
+      "Do draw every edge on the unit: one-unit (4px) `ink` frames with the two-unit notch on screens, controls and the panel; 2px `rule-2` hairlines between listing rows; the six-unit stair on pills.",
+      "Do set identifiers (model slugs, lane paths, round ids, addresses) in Archivo at reading size; Silkscreen is caps-only and only ever labels.",
+      "Do write status as a 16px pixel glyph, a Silkscreen word and a \"written … ago\" clock, and dim a RAM to `ink-3` after 300 seconds of silence unless it is submitted.",
+      "Do print a changed line (`clip-path` inset, 0.5s, `steps(14, end)`), diff tiles by id, leave the first paint static, and let changes simply appear under reduced motion.",
+      "Do show the intact HASH block in `ink-2` with \"NO DESK RUNNING\" as every screen's resting state.",
+      "Do keep `ink-3` (4.9:1) as the dimmest colour that carries a word; `rule` and `rule-2` draw lines and specks only.",
+      "Do open every section with the spray, left-aligned, and texture only the board with the speck tile."
     ],
     "donts": [
-      "Don't add chips, pills, badges or filled status tokens; status is written, and the judge's stamp is the only boxed word.",
-      "Don't add cards, panels, tinted bands, zebra stripes or a second surface colour on the sheet; `paper-shade` is for a disabled control only.",
-      "Don't introduce a second accent, a success green, a warning amber, or any colour outside the three inks and the rulings.",
-      "Don't set the condensed uppercase voice above a headline as a kicker or eyebrow; it labels cells, not sections.",
-      "Don't use a second typeface, a mono face for numbers, italics, or a system display face; Archivo's width and weight axes are the whole range.",
-      "Don't use red for focus, validation, errors or emphasis; red is HashSmash's verdict.",
-      "Don't fade, slide, re-render or re-sort the sheet on a feed tick; a change is a discrete write to the cell that changed.",
-      "Don't add shadows, lifts or glows on hover or focus, or on anything other than the sheet itself.",
-      "Don't round anything past the 2px hairline; no pills, no circle avatars.",
-      "Don't replace the drawn felt tile or the drawn glyphs with raster textures, icon fonts or icon-library imports."
+      "Don't colour a running RAM's glyph amber, or use amber for hover, focus, errors, emphasis or success; \"running\" is a state, \"live\" is a stream.",
+      "Don't give the judge's state a colour, an outline, an icon or a dismiss; it is a white block, nothing else.",
+      "Don't round anything: no `border-radius`, no circles, no circle avatars; corners are stepped stairs on the 4px unit.",
+      "Don't add a shadow, a blur, a translucent layer or a lift on hover; the only `box-shadow` is the inset focus ring.",
+      "Don't use a smooth gradient; the dither's radial masks and the dot-leader are hard-stop only.",
+      "Don't fade, slide, ease or re-sort anything on a feed tick; a change prints a new line and history is never rewritten.",
+      "Don't set a sentence in Jersey 10 or an identifier in Silkscreen; Archivo reads, the other two display and label.",
+      "Don't treat the HASH block as an error, an empty state illustration or a placeholder to be replaced; it is the screen when no desk is running.",
+      "Don't add a second accent, a success green, an error red, cards, tinted bands or a second surface colour; the world is black, three greys, white and one amber.",
+      "Don't replace the drawn glyphs, the spray, the HASH block or the dither with icon fonts, icon libraries, raster textures or anything antialiased."
     ]
   }
 }

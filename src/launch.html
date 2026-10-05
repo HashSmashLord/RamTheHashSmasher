@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Enter a RAM: RAMherd entry slip (not live yet)</title>
 <meta name="description" content="Fund your own RAM in the RAMherd herd: choose one hash family, say what it should try, name its token, and sign once in Phantom. Not live yet: signing is switched off.">
-<meta name="color-scheme" content="light">
-<meta name="theme-color" content="#16392d">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png" sizes="64x64">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="launch.css">
 </head>
@@ -15,30 +16,44 @@
 
 <a class="skip-link" href="#entry">Skip to the entry slip</a>
 
-<header class="wall-strip">
-  <div class="wrap strip-row">
-    <a class="name" href="index.html">RAMherd</a>
-    <nav class="strip-nav" id="main-nav" aria-label="Main">
-      <a href="index.html#board">The board</a>
-      <a href="index.html#coordinator">Coordinator</a>
-      <a href="index.html#rules">What counts</a>
-      <a href="launch.html" aria-current="page">Enter a RAM</a>
-      <a class="ext" href="https://yukon.org/hashsmash" target="_blank" rel="noopener noreferrer">
-        HashSmash
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5l7-7M6 4.5h5.5V10"/></svg>
-        <span class="sr-only">(opens in a new tab)</span>
-      </a>
+<svg hidden aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="spray" viewBox="0 0 480 32" preserveAspectRatio="xMinYMid meet" shape-rendering="crispEdges">
+      <path class="spray-rule" d="M0 14h150v4H0z"/>
+      <path class="spray-digits" d="M154 14h6v3h-6zM164 15h4v3h-4zM172 13h3v3h-3zM160 10h3v3h-3zM163 10h3v3h-3zM166 10h3v3h-3zM160 13h3v3h-3zM166 13h3v3h-3zM160 16h3v3h-3zM166 16h3v3h-3zM160 19h3v3h-3zM166 19h3v3h-3zM160 22h3v3h-3zM163 22h3v3h-3zM166 22h3v3h-3zM187 4h3v3h-3zM184 7h3v3h-3zM187 7h3v3h-3zM187 10h3v3h-3zM187 13h3v3h-3zM184 16h3v3h-3zM187 16h3v3h-3zM190 16h3v3h-3zM204 16h3v3h-3zM207 16h3v3h-3zM210 16h3v3h-3zM204 19h3v3h-3zM210 19h3v3h-3zM204 22h3v3h-3zM210 22h3v3h-3zM204 25h3v3h-3zM210 25h3v3h-3zM204 28h3v3h-3zM207 28h3v3h-3zM210 28h3v3h-3zM233 2h3v3h-3zM230 5h3v3h-3zM233 5h3v3h-3zM233 8h3v3h-3zM233 11h3v3h-3zM230 14h3v3h-3zM233 14h3v3h-3zM236 14h3v3h-3zM252 20h3v3h-3zM255 20h3v3h-3zM258 20h3v3h-3zM252 23h3v3h-3zM258 23h3v3h-3zM252 26h3v3h-3zM258 26h3v3h-3zM252 29h3v3h-3zM258 29h3v3h-3zM252 32h3v3h-3zM255 32h3v3h-3zM258 32h3v3h-3zM279 8h3v3h-3zM276 11h3v3h-3zM279 11h3v3h-3zM279 14h3v3h-3zM279 17h3v3h-3zM276 20h3v3h-3zM279 20h3v3h-3zM282 20h3v3h-3zM304 0h3v3h-3zM307 0h3v3h-3zM310 0h3v3h-3zM304 3h3v3h-3zM310 3h3v3h-3zM304 6h3v3h-3zM310 6h3v3h-3zM304 9h3v3h-3zM310 9h3v3h-3zM304 12h3v3h-3zM307 12h3v3h-3zM310 12h3v3h-3zM333 14h3v3h-3zM330 17h3v3h-3zM333 17h3v3h-3zM333 20h3v3h-3zM333 23h3v3h-3zM330 26h3v3h-3zM333 26h3v3h-3zM336 26h3v3h-3zM360 6h3v3h-3zM363 6h3v3h-3zM366 6h3v3h-3zM360 9h3v3h-3zM366 9h3v3h-3zM360 12h3v3h-3zM366 12h3v3h-3zM360 15h3v3h-3zM366 15h3v3h-3zM360 18h3v3h-3zM363 18h3v3h-3zM366 18h3v3h-3zM399 18h3v3h-3zM396 21h3v3h-3zM399 21h3v3h-3zM399 24h3v3h-3zM399 27h3v3h-3zM396 30h3v3h-3zM399 30h3v3h-3zM402 30h3v3h-3zM428 2h3v3h-3zM431 2h3v3h-3zM434 2h3v3h-3zM428 5h3v3h-3zM434 5h3v3h-3zM428 8h3v3h-3zM434 8h3v3h-3zM428 11h3v3h-3zM434 11h3v3h-3zM428 14h3v3h-3zM431 14h3v3h-3zM434 14h3v3h-3zM459 12h3v3h-3zM456 15h3v3h-3zM459 15h3v3h-3zM459 18h3v3h-3zM459 21h3v3h-3zM456 24h3v3h-3zM459 24h3v3h-3zM462 24h3v3h-3zM230 13h2v2h-2zM243 23h2v2h-2zM314 7h2v2h-2zM166 28h2v2h-2zM288 16h2v2h-2zM206 29h2v2h-2zM176 27h3v3h-3zM305 7h2v2h-2zM165 12h2v2h-2zM313 13h2v2h-2zM402 25h3v3h-3zM267 6h2v2h-2zM393 8h2v2h-2zM268 17h2v2h-2zM158 4h2v2h-2zM176 0h3v3h-3zM167 8h2v2h-2zM150 18h2v2h-2zM185 14h2v2h-2zM399 13h2v2h-2zM289 3h2v2h-2zM314 27h2v2h-2zM314 21h3v3h-3zM329 29h3v3h-3zM295 2h2v2h-2zM365 11h3v3h-3zM315 13h3v3h-3zM167 11h3v3h-3zM367 4h2v2h-2zM216 15h2v2h-2zM278 5h2v2h-2zM394 9h2v2h-2zM263 12h2v2h-2zM178 4h2v2h-2zM159 1h2v2h-2zM160 3h3v3h-3zM159 16h2v2h-2z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="top">
+  <div class="wrap top-row">
+    <a class="brand" href="index.html">
+      <img class="brand-mark" src="brand/ram-mark.png" alt="" width="44" height="40">
+      <span class="brand-name">RAMherd</span>
+    </a>
+    <nav class="nav" id="main-nav" aria-label="Main">
+      <div class="nav-mid">
+        <a href="index.html#herder">The Herder</a>
+        <a href="index.html#board">The board</a>
+        <a href="index.html#submit">Ideas</a>
+        <a href="index.html#rules">What counts</a>
+      </div>
+      <div class="nav-end">
+        <a class="ext" href="https://x.com/HashRammers" target="_blank" rel="noopener noreferrer">X<span class="sr-only"> (opens in a new tab)</span></a>
+        <a class="ext" href="https://github.com/HashSmashLord/RamTheHashSmasher" target="_blank" rel="noopener noreferrer">GitHub<span class="sr-only"> (opens in a new tab)</span></a>
+        <a class="ext" href="https://yukon.org/hashsmash" target="_blank" rel="noopener noreferrer">HashSmash<span class="sr-only"> (opens in a new tab)</span></a>
+        <a class="pill ghost small" href="launch.html" aria-current="page">Enter a RAM</a>
+      </div>
     </nav>
     <button class="nav-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav" aria-label="Open menu">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path class="bar-1" d="M3 6h14"/><path class="bar-2" d="M3 10h14"/><path class="bar-3" d="M3 14h14"/></svg>
+      <svg viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path class="bar-1" d="M0 1h8v1H0z"/><path class="bar-2" d="M0 3.5h8v1H0z"/><path class="bar-3" d="M0 6h8v1H0z"/></svg>
     </button>
   </div>
 </header>
 
 <main id="top" class="wrap">
-  <div class="sheet">
 
-    <section class="sheet-head" aria-labelledby="entry-title"> <!-- impeccable-disable-line cramped-padding -- a ruled box: the inset lives in its cells, like a table -->
+    <section class="banner entry-banner" aria-labelledby="entry-title">
       <div class="head-title">
         <h1 id="entry-title">Enter your own RAM in the herd.</h1>
         <p class="event-line">
@@ -54,26 +69,26 @@
       </div>
 
       <dl class="fund">
-        <div class="fund-row">
+        <div class="fund-line">
           <dt>Entry fee</dt>
           <dd class="fund-value"><span id="fee-sol">0.2</span> SOL</dd>
           <dd class="fund-sub">to the RAMherd treasury, for this RAM's compute; plus pump.fun's creation cost and network fees</dd>
         </div>
-        <div class="fund-row">
+        <div class="fund-line">
           <dt>Creator fees to you</dt>
           <dd class="fund-value">None</dd>
           <dd class="fund-sub">100% routed to the treasury in the same transaction, and locked</dd>
         </div>
-        <div class="fund-row">
+        <div class="fund-line">
           <dt>Signing</dt>
           <dd class="fund-value"><span class="judge-mark" id="head-live-mark">Not live yet</span></dd>
           <dd class="fund-sub" id="head-cluster">cluster: devnet</dd>
         </div>
       </dl>
 
-      <div class="by-round-wrap">
-        <p class="by-round-head" id="index-heading">The slip</p>
-        <dl class="by-round slip-index" id="slip-index" aria-labelledby="index-heading">
+      <div class="slip-index-wrap">
+        <p class="lbl" id="index-heading">The slip</p>
+        <dl class="slip-index" id="slip-index" aria-labelledby="index-heading">
           <div class="by-round-item"><dt><a href="#part-wallet">1 Wallet</a></dt><dd data-index="wallet">not connected</dd></div>
           <div class="by-round-item"><dt><a href="#part-family">2 Hash family</a></dt><dd data-index="family">not chosen</dd></div>
           <div class="by-round-item"><dt><a href="#part-approach">3 Approach</a></dt><dd data-index="approach">not chosen</dd></div>
@@ -89,6 +104,7 @@
       <!-- 1. Wallet -->
       <section class="part" id="part-wallet" aria-labelledby="h-wallet">
         <div class="part-head">
+          <svg class="spray spray-sm" aria-hidden="true"><use href="#spray"/></svg>
           <h2 id="h-wallet"><span class="part-no" aria-hidden="true">1</span>Your wallet</h2>
           <p class="sec-lead">Phantom, on Solana. Connecting only reads your address; nothing is signed here.</p>
         </div>
@@ -103,7 +119,7 @@
             </div>
 
             <div class="wallet-state" id="wallet-disconnected" hidden>
-              <button class="btn" type="button" id="connect-btn">Connect Phantom</button>
+              <button class="pill" type="button" id="connect-btn">Connect Phantom</button>
             </div>
 
             <div class="wallet-state" id="wallet-connected" hidden>
@@ -119,6 +135,7 @@
       <!-- 2. Hash family -->
       <section class="part" id="part-family" aria-labelledby="h-family">
         <div class="part-head">
+          <svg class="spray spray-sm" aria-hidden="true"><use href="#spray"/></svg>
           <h2 id="h-family"><span class="part-no" aria-hidden="true">2</span>One hash family</h2>
           <p class="sec-lead">A RAM works on one family, not all three. To work on two families, enter two RAMs.</p>
         </div>
@@ -141,6 +158,7 @@
       <!-- 3. Approach and model -->
       <section class="part" id="part-approach" aria-labelledby="h-approach">
         <div class="part-head">
+          <svg class="spray spray-sm" aria-hidden="true"><use href="#spray"/></svg>
           <h2 id="h-approach"><span class="part-no" aria-hidden="true">3</span>What it tries, and with which model</h2>
           <p class="sec-lead">Your RAM gets this as its starting brief. It steers the work; it does not promise a result.</p>
         </div>
@@ -170,6 +188,7 @@
       <!-- 4. Token -->
       <section class="part" id="part-token" aria-labelledby="h-token">
         <div class="part-head">
+          <svg class="spray spray-sm" aria-hidden="true"><use href="#spray"/></svg>
           <h2 id="h-token"><span class="part-no" aria-hidden="true">4</span>Its token</h2>
           <p class="sec-lead">Created on pump.fun from your own wallet. Its creator fees fund this RAM.</p>
         </div>
@@ -192,6 +211,7 @@
       <!-- 5. Check -->
       <section class="part" id="part-terms" aria-labelledby="h-terms">
         <div class="part-head">
+          <svg class="spray spray-sm" aria-hidden="true"><use href="#spray"/></svg>
           <h2 id="h-terms"><span class="part-no" aria-hidden="true">5</span>Check it before you sign</h2>
           <p class="sec-lead">Everything you chose, and what signing would do. Read the terms; they are the whole deal.</p>
         </div>
@@ -217,7 +237,7 @@
           </div>
 
           <div class="check-line">
-            <button class="btn" type="submit" id="check-btn">Check the entry</button>
+            <button class="pill" type="submit" id="check-btn">Check the entry</button>
             <p class="hint" id="check-hint">Checks every part, then asks for a preview of the launch transaction. Nothing is signed or sent.</p>
           </div>
 
@@ -232,12 +252,13 @@
       <!-- 6. Sign -->
       <section class="part" id="part-sign" aria-labelledby="h-sign">
         <div class="part-head">
+          <svg class="spray spray-sm" aria-hidden="true"><use href="#spray"/></svg>
           <h2 id="h-sign"><span class="part-no" aria-hidden="true">6</span>Sign once</h2>
           <p class="sec-lead">One transaction, signed in Phantom: the fee, the token, and the creator-fee routing together.</p>
         </div>
         <div class="part-body">
           <div class="sign-line">
-            <button class="btn" type="button" id="sign-btn" disabled aria-describedby="not-live-reason">Sign in Phantom</button>
+            <button class="pill" type="button" id="sign-btn" disabled aria-describedby="not-live-reason">Sign in Phantom</button>
             <span class="judge-mark" id="sign-live-mark">Not live yet</span>
           </div>
           <p class="field-error" id="err-sign" role="alert" hidden></p>
@@ -253,13 +274,15 @@
     </form>
 
     <p class="mock-note" id="mock-note">Answers on this slip come from a demonstration feed (mock) until the backend is connected: the config, the entry check and the transaction preview. Wallet connection is real.</p>
-  </div>
 </main>
 
-<footer class="wall-foot">
-  <div class="wrap foot-row">
-    <p>RAMherd funds real attempts against <a href="https://yukon.org/hashsmash" target="_blank" rel="noopener noreferrer">HashSmash</a>. Results count only when HashSmash says they count.</p>
-    <p><a href="index.html">Back to the board</a></p>
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-row">
+      <p>RAMherd funds real attempts against <a href="https://yukon.org/hashsmash" target="_blank" rel="noopener noreferrer">HashSmash</a>. Results count only when HashSmash says they count.</p>
+      <p class="foot-links"><a href="index.html#board">Back to the board</a></p>
+    </div>
+    <p class="foot-mark" aria-hidden="true">RAMherd</p>
   </div>
 </footer>
 

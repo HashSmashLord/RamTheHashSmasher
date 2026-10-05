@@ -13,8 +13,9 @@ and scoring pipeline works.
 | PRD + HashSmash technical brief | **done** — grounded in the real competition repo, vendored at `reference/hash-smash/` |
 | Orchestration backend (`server/`) | **built, tested (154 tests), mocked.** Fee ledger, budget→slot allocator, RAM slots, read-only coordinator, moderated idea queue, HTTP API all real; fee numbers and LLM calls are mock by default |
 | Per-RAM models (OpenRouter) | **done, wired, mock by default.** Each of the six exploratory tracks carries its launch-roster model in `server/lib/targets.js` (RAM 1 `sha256-r31` → `anthropic/claude-opus-5.5`, 2 `sha256-r32` → `anthropic/claude-fable-5.1`, 3 `sha3-256-r5` → `openai/gpt-6.1-sol-pro`, 4 `sha3-256-r6` → `z-ai/glm-5.3-prime`, 5 `blake3-r1` → `deepseek/deepseek-v4-pro`, 6 `blake3-r2` → `qwen/qwen3.8-max-prime`; see `docs/PRD.md` "Decided"). Every slot sends its own model on each LLM call, a 7th+ slot inherits its track's model, and `/api/slots` shows it. Optional `RAMHERD_LLM_MODEL` forces one model on every slot (testing). Calls are still mock unless `RAMHERD_LIVE=true` **and** `OPENROUTER_API_KEY` are both set; no live call to any roster model has been made yet |
-| Frontend dashboard (`src/`) | **built, demoable, mocked.** Real UI/UX against a mock data layer — see "Mock data and the API swap point" below |
-| Solver-agent loop → real HashSmash pipeline (`server/lib/hashsmash.js`) | **pipeline integration working end to end, locally, for `sha256-r31-exploratory`.** A RAM slot clones the vendored repo, writes a clearly labeled harness *draft* (the organizer's own `draft_claim()` template, no attack claimed), and runs HashSmash's real `local_tracks.py check` and `hashsmash_pipeline.py intake`. Result: `check` → `mechanically_valid`, `intake` → `draft_not_submitted` with a real `package_sha256` and evidence file. Opt-in with `RAMHERD_PIPELINE=local`. **Not done:** no research content yet (the LLM doesn't write real candidates), no judge run (paid, gated off), no live submission (not implemented on purpose). The real accepted r31 candidate can't pass local intake here because its experiment needs Docker, which isn't installed. See "Real HashSmash pipeline" below |
+| Frontend dashboard (`src/`) | **built, demoable, mocked.** Third visual pass (2026-10-05): pixel-art monochrome, every RAM a screen, the Herder a panel, a full page per RAM at `#ram/<id>`. Real UI/UX against a mock data layer — see "Mock data and the API swap point" and "Design notes" below |
+| Real research content: `sha256-r32` (`research/sha256-r32/`) | **one real, modest, honest result; not judged.** An independent C reimplementation of the existing r32 package's finite construction reproduces every count and both SHA-256 hashes it prints, then measures its weakest premise (average tail yield >= 2^-49) directly: 2^37.6 prefix-tail pairs, trail followed through step 21 at 2^-33.6, **no collision observed**, estimated average yield 2^-44.6 (range 2^-45.5 to 2^-43.8) under one disclosed independence premise. Written up as Section 12 of the package; the claim stays at time 86, memory 39, success 0.9, nothing rounded up. A RAM on `sha256-r32-exploratory` now runs this package through the real `check` (exit 0, `mechanically_valid`) and `intake` (exit 0, `mechanically_valid`); the judge stays gated off. See "Real HashSmash pipeline" below |
+| Solver-agent loop → real HashSmash pipeline (`server/lib/hashsmash.js`) | **pipeline integration working end to end, locally, for `sha256-r31-exploratory`.** A RAM slot clones the vendored repo, writes a clearly labeled harness *draft* (the organizer's own `draft_claim()` template, no attack claimed), and runs HashSmash's real `local_tracks.py check` and `hashsmash_pipeline.py intake`. Result: `check` → `mechanically_valid`, `intake` → `draft_not_submitted` with a real `package_sha256` and evidence file. Opt-in with `RAMHERD_PIPELINE=local`. **Not done:** the LLM doesn't write candidates (the one research package, r32, was written by hand by a Claude session), no judge run (paid, gated off), no live submission (not implemented on purpose). The real accepted r31 candidate can't pass local intake here because its experiment needs Docker, which isn't installed. See "Real HashSmash pipeline" below |
 | Live VM view per RAM: E2B desktop sandbox (`server/lib/sandbox.js`, `src/sandbox-viewer.js`) | **view-only now enforced by the VNC server and proven with real input events; frontend viewer built; nothing runs inside the sandbox yet.** The previously flagged gap (noVNC `view_only` was only a page setting, so anyone holding the URL could take control) is **fixed**: x11vnc now runs with `-viewonly`, so it drops every pointer, key and clipboard message from every client, and no full-control VNC listener exists at all. Proven 2026-10-05 on a real sandbox (`scripts/prove-viewonly.mjs`): a raw RFB client authenticated on the public stream and sent moves, a click and keystrokes → pointer unmoved, nothing typed, 0 raw X input events; the same script against a test-only x11vnc *without* `-viewonly` moved the pointer and typed. A public `GET /api/slots/:id/stream` hands out that stream, and each board row has a "Watch desk" viewer that embeds only it. Opt-in with `RAMHERD_SANDBOX=e2b` + `E2B_API_KEY`; off by default; starting one stays admin-only. **Not done:** running the RAM's real work inside the sandbox, a smaller template (stock `desktop` = 8 vCPU / 8 GiB, about $0.53/hour each), and the board is still mock data, so in the demo every desk reads "no desktop running". See "E2B desktop sandboxes" below |
 | Deployment (Fly.io, app `ramherd-app`, region lhr) | **set up, not live yet.** One server serves the API (`/api/*`) and the static frontend (`src/`) on one URL; `Dockerfile` + `fly.toml` (shared-cpu-1x / 256 MB, health check on `/api/health`, no volume: all state is in memory and resets on every deploy). **First launch (operator, once):** `fly apps create ramherd-app --org personal`, then `fly secrets set ADMIN_TOKEN=$(openssl rand -hex 32) -a ramherd-app` (without it the admin routes fall back to the public `dev-admin-token`), then `scripts/deploy.sh`. **Redeploy after every change (no CI/CD):** commit, then run `scripts/deploy.sh`. It deploys the last *commit* only (uncommitted work never ships) and curls `/api/health` on https://ramherd-app.fly.dev when done. Add a Fly volume once launchpad / RAM ownership data must survive restarts |
 | Launchpad: user-created RAMs — tested for real | **built and tested (75 offline tests + an opt-in devnet simulation).** `server/lib/launchpad.js` validation (exactly one hash family of SHA-256 / SHA3-256 / BLAKE3, a track inside it, one of six catalog approaches plus a 20–600 char brief through the idea screen, one of the six roster models, token name/symbol, on-curve owner wallet, unknown fields refused). Ownership model: `rams.js` (draft → awaiting-signature → active, operator confirms + approves the brief), `ramfunds.js` (per-RAM ledger: 0.2 SOL create fee, its token's creator fees, its compute; separate from the shared pool), owned slots in `slots.js` outside the budget roster (a resize never retires them), `payouts.js` (an *accepted* HashSmash win → "wallet X is owed Y, because Z" record, idempotent per candidate). Unsigned launch transaction in `launchtx.js`, encoded by pump.fun's official `@pump-fun/pump-sdk` 2.0.0: transfer 0.2 SOL user→treasury, `create_v2` (creator = user), `create_fee_sharing_config`, `update_fee_shares` (treasury 100%, locked by pump). Only the user and a browser-generated mint sign; the server only sees public keys. Serialization round-trips, both signature slots are empty, and an inspector rejects a changed treasury/fee/creator/shareholder, an extra instruction or a flipped byte. **Devnet:** with `RAMHERD_DEVNET_SIM=1`, every launch instruction is simulated against pump.fun's live devnet programs (err `null`; fee-sharing message 1210 bytes, ~240k CU), in two messages, since the full one doesn't fit without the lookup table |
@@ -46,16 +47,24 @@ HashSmash's own `bash .yukon/setup.sh` passes with no pip installs (168 tests, 5
   the pipeline's own verdict back into its feed (`server/lib/slots.js`, status `validated`). The
   tests also show the real intake **rejects** broken packages (bad `success_probability`, extra
   file), and that the real pipeline refuses to judge a draft.
-- **Not claimed:** any cryptanalysis result. The candidate is a harness test. Its numbers are the
+- **Not claimed (r31):** any cryptanalysis result. The candidate is a harness test. Its numbers are the
   organizer's unmodified template, it says so in `claim.json` and `proof.md`, and it is a `draft`,
   so HashSmash itself stops it before the judge. "Passed intake" means well-formed, nothing more.
+- **Real content (r32):** a slot on `sha256-r32-exploratory` copies `research/sha256-r32/package/`
+  into its clone. Sections 1-11 of its `proof.md` are the existing r32 package byte for byte;
+  Section 12 is ours: an independent reproduction of the finite construction and a staged
+  measurement of the tail-yield premise. It is `ready`, so real intake passes it (exit 0) and the
+  slot stops at a `gated` judge. What it proves and doesn't: the finite objects and two lemmas are
+  exact; the yield estimate (2^-44.6 vs the claimed 2^-49) is a measurement plus one disclosed
+  independence premise, not a theorem; no r32 collision exists. `tests/hashsmash.test.js`
+  recompiles `research/sha256-r32/r32.c` and re-checks the reproduction against the proof.
 - **Isolation:** each slot works in its own clone under `.ramherd/workspaces/<slot>/` (git-ignored).
   The vendored repo and its real accepted candidate are never written to, and a test checks this.
   Python runs without a shell and with a minimal environment, so no keys reach credential-free stages.
 
 | Env var | Default | Effect |
 |---|---|---|
-| `RAMHERD_PIPELINE=local` | off | sha256-r31 slots run the real local pipeline (free, credential-free) instead of the mock step |
+| `RAMHERD_PIPELINE=local` | off | sha256-r31 slots (harness draft) and sha256-r32 slots (research package) run the real local pipeline (free, credential-free) instead of the mock step |
 | `RAMHERD_HASHSMASH_JUDGE=true` | off | allows the paid `judge`/`score` stages, **only** when `RAMHERD_LIVE=true` and `OPENROUTER_API_KEY` are also set |
 | `RAMHERD_HASHSMASH_SUBMIT=true` | off | recorded only. Live submission to the HashSmash/Yukon competition is **not implemented**; `submitLive()` always refuses |
 
@@ -115,13 +124,21 @@ to override. It is still the next step for **cost**.
 - **Cost rails:** nothing is created unless an admin calls start. Every sandbox has an E2B-side hard
   timeout (it gets killed even if this server dies), there's a concurrency cap, retiring a slot kills
   its sandbox, and server shutdown kills them all.
-- **Frontend viewer** (`src/sandbox-viewer.js`): each board row has a "Watch desk" control that opens a
-  ruled row with the RAM's desktop in a sandboxed iframe (`allow-scripts allow-same-origin` only,
-  no-referrer, `pointer-events: none`). Otherwise it shows a plain "No desktop running" line. It
-  re-checks every 10 s and only shows a stream labelled `viewOnly: "server"` whose URL is
-  `https://6080-<id>.e2b.app/vnc.html`. Pages allow framing of `https://*.e2b.app` only (`frame-src`).
-  The board is still mock data, so it maps `ram-NN` to the server's `slot-(NN-1)` until the real feed
-  sends a `slotId`.
+- **Frontend viewer** (`src/sandbox-viewer.js`): every RAM's tile on the board is a screen, and the
+  RAM's full page (`#ram/<id>`) has the same screen larger. A screen embeds the RAM's desktop in a
+  sandboxed iframe (`allow-scripts allow-same-origin` only, no-referrer, `pointer-events: none`, never
+  focusable) only for a stream labelled `viewOnly: "server"` whose URL is
+  `https://6080-<id>.e2b.app/vnc.html`; anything else reads as "no desk running": the intact pixel
+  HASH block and the words NO DESK RUNNING, a calm idle state, not an error. Pages allow framing of
+  `https://*.e2b.app` only (`frame-src`). **How a screen finds its stream without a single failed
+  request:** at boot the page does one HEAD of itself and looks for that `frame-src` CSP, which only
+  the API server sends (`deskFeedAvailable()`); a bare static server (`python3 -m http.server`) has no
+  feed, so the screens idle and `/api/` is never asked. With the feed, one `GET /api/slots` per 10 s
+  (`createDeskDirectory()`, always 200) says which slots exist and whose sandbox is `running`, and only
+  those slots get a `GET /api/slots/:id/stream`. The iframe is only touched when the stream itself
+  changes, so a poll never reloads a live desk. The board is still mock data, so it maps `ram-NN` to
+  the server's `slot-(NN-1)` until the real feed sends a `slotId`. Verified 2026-10-05 against the
+  real server (no slots, sandboxes off): HEAD, then `/api/slots` at 0 s and 10 s, 0 console errors.
 - **Not built yet:** running the RAM's real work inside the sandbox (the intended content is written up
   at the top of `sandbox.js`). The stream password is in the public URL, which is fine because it only
   grants watching.
@@ -171,32 +188,42 @@ env (see `AGENTS.md`); the frontend stays out of its way and the two can run sid
 
 ```
 src/
-  index.html      one "sheet": header box (hook + fund rows + entrants-by-round), the
-                  results board (one row per RAM), coordinator log, idea slip + review
-                  notice, "what counts" regulations
-  styles.css      all styling — light paper on green felt, three inks, self-hosted Archivo
-                  variable, no framework; tokens in :root (see DESIGN.md)
-  app.js          wires the DOM to the mock data layer; diffs rows by id on every tick
-  sandbox-viewer.js  a RAM's desk: embeds its server-side view-only E2B stream, or "no desktop running"
+  index.html      the banner page (hook, pills, the brand plate, printed fund lines), the
+                  Herder's panel (summary, the herd by status, one line per RAM, the chat),
+                  the board (one screen per RAM), idea slip + review notice, "what counts",
+                  and the RAM page shell that #ram/<id> fills
+  styles.css      all styling — black screen, white pixel ink on a 4px unit, one amber for
+                  what is live, inverse video for the judge; tokens in :root (see DESIGN.md)
+  app.js          wires the DOM to the mock data layer; diffs tiles by id on every tick;
+                  the #ram/<id> route; one desk poll for every screen
+  sandbox-viewer.js  a RAM's screen: embeds its server-side view-only E2B stream, or "no desk
+                  running"; the feed probe and the slot directory that keep it request-clean
   mock-data.js    <- the mock-data / real-API swap point, see below
-  fonts/          archivo-variable.woff2 (the only face; width + weight axes)
-  favicon.svg
+  launch.html / launch.css / launch.js / launchpad-rules.js   the entry slip (not live)
+  brand/          ram-smashing-hash-main.png (the operator's pixel ram, source of truth),
+                  ram-hero.png (its transparent 1-bit crop, the banner plate), ram-mark.png (40px)
+  fonts/          jersey10.woff2 (display), silkscreen.woff2 (labels), archivo-variable.woff2 (reading)
+  favicon.png
 ```
 
 ## Mock data and the API swap point
 
 `src/mock-data.js` is the **only** file that knows whether data is mocked or real. Every
 render in `app.js` calls through the `RAMherdAPI` object exported from that file —
-`getStats()`, `getFleet()`, `getChatSeed()`, `askCoordinator(question)`, `submitIdea(payload)`,
-`subscribeLive(onTick)`. Nothing else in the frontend touches mock data directly.
+`getStats()`, `getFleet()`, `getRamDetail(id)` (a RAM plus its whole history, for its page),
+`getHerderSummary()` (the Herder's one-paragraph summary of the herd), `getChatSeed()`,
+`askCoordinator(question)`, `submitIdea(payload)`, `subscribeLive(onTick)`. Nothing else in the
+frontend touches mock data directly. The desk streams are the one exception by design: they are
+never mocked, `sandbox-viewer.js` only ever asks the same-origin API server (see "E2B desktop
+sandboxes").
 
 To swap in the real backend once it's up:
 
 1. Set `API_BASE` at the top of `mock-data.js` to the backend's URL (e.g.
    `http://127.0.0.1:4700`, matching `server/`'s `/api/*` routes).
 2. Replace each `RAMherdAPI` method body with a `fetch()` call to the matching endpoint
-   (`/api/ledger`, `/api/slots`, `/api/coordinator/summary`, `/api/coordinator/ask`,
-   `/api/ideas`). The shapes the frontend already expects are documented in the comments
+   (`/api/ledger`, `/api/slots`, `/api/slots/:id` plus its feed for `getRamDetail`,
+   `/api/coordinator/summary`, `/api/coordinator/ask`, `/api/ideas`). The shapes the frontend already expects are documented in the comments
    above each method — keep them, or adjust `app.js`'s render functions to match whatever
    the real response actually looks like.
 3. Delete `startMockLiveFeed` / `tickMockState` at the bottom of `mock-data.js` — the real
@@ -212,76 +239,115 @@ Nothing in `index.html`, `styles.css`, or `app.js` needs to change for that swap
 - The 6-RAM results board: the launch roster, one RAM per real HashSmash track
   (`sha256-r31`, `sha256-r32`, `sha3-256-r5`, `sha3-256-r6`, `blake3-r1`, `blake3-r2`, matching
   `reference/hash-smash/tracks/` and `reference/hash-smash/lanes/exploratory/candidates/`),
-  each row showing that RAM's real assigned OpenRouter model (same slugs as
-  `server/lib/targets.js`), with invented but specific per-agent activity text. Rows are
-  Entrant / Round / Now / Judge; a status is exactly "Running an experiment", "Thinking",
-  "Idle" or "Submitted". The Judge column is HashSmash's side: a submitted candidate reads
+  each tile showing that RAM's real assigned OpenRouter model (same slugs as
+  `server/lib/targets.js`), with invented but specific per-agent activity text and, on its
+  page, an invented but specific history (4–5 earlier lines each, newest first). A tile is
+  Screen / Entrant / Round / Now / Judge; a status is exactly "Running an experiment",
+  "Thinking", "Idle" or "Submitted". The Judge column is HashSmash's side: a submitted candidate reads
   "in review" (their "In review — Awaiting manual review" intake state; nothing from the herd
   has been accepted, and on the real site every submission on these tracks is in review) and
   carries a `log2T` score field, HashSmash's log₂(T) (total charged computation, lower is
   better), null and shown as an em dash until their judge scores it, which today is every row.
-- Coordinator chat — seeded with 5 realistic Q&A pairs plus keyword-matched replies for
-  anything else typed in; a real backend would route this to an actual model call.
+- The Herder's summary paragraph (composed from the rows) and its chat — seeded with 5
+  realistic Q&A pairs plus keyword-matched replies for anything else typed in; a real backend
+  would route this to an actual model call.
+- Every RAM's screen reads "no desk running": true today (nothing runs inside a sandbox
+  yet), and not mocked; see "E2B desktop sandboxes" for what makes a screen come alive.
 - Idea submission — client-side only; "submitting" increments a mock queue-position counter.
   The real version posts to the backend's human-review queue.
 
 ## Design notes
 
-The second pass was built through Impeccable's actual process (`.claude/skills/impeccable/`),
-not by eye. The artifacts it left behind are the source of truth for the look:
+Three visual passes so far. Each was built through Impeccable's actual process
+(`.claude/skills/impeccable/`: `context` → `new-work.md`'s direction roll → `craft-floor.md` →
+`detect` → a finish review → the documenter), not by eye, and each left its artifacts behind:
 
-- `PRODUCT.md` — product truth from `/impeccable init`. Written from the PRD without a live
-  interview (background run); inferred lines are marked.
+- `PRODUCT.md` — product truth from `/impeccable init` (background run, inferred lines marked).
 - `.impeccable/surfaces/src-index-html.md` — the surface brief with the six-block direction
-  contract (THESIS / OWN-WORLD / STORY / FIRST VIEWPORT / FORM / FINISH).
+  contract (THESIS / OWN-WORLD / STORY / FIRST VIEWPORT / FORM / FINISH) for the current pass.
 - `DESIGN.md` + `.impeccable/design.json` — the token-bearing design system, written from the
   built page by the documenter at finish.
 
-**What the process changed versus the first pass.** The first pass was the category default:
-near-black, one blue neon accent, status chips, same-size cards, Space Grotesk + IBM Plex Mono
-(both on Impeccable's "training-data defaults" list; the craft floor names "monospace as a
-costume for technical" as a refusal). `new-work.md`'s direction roll (`concept-seed`, seed key
-`4c815091`, mode Persuade) assigned candidate 6 of a seven-item list drawn from the audience's
-world and kept the dark-dashboard rut out of it. The result is **the tournament wallchart**:
-the page is one off-white results sheet pinned to bottle-green felt, with HashSmash's rounds
-as the chart's rounds, one written row per RAM, the fund printed in the header box, and three
-inks — printed black for what the organiser set, blue-black pen for what is written live,
-one red reserved for HashSmash's review state (the "in review" mark and the judge margin
-rule). Light scene on purpose: a hall under fluorescent light, so a light page. Status is a
-written word plus a drawn glyph, never a coloured chip; rows nobody has written to for five
-minutes thin their ink. One face, Archivo variable, self-hosted; its width axis does the work
-two families did before. One motion only: a changed cell is re-inked left to right (no
-entrance animation, rows are diffed by id so a tick never re-renders the sheet). Six catalog
-challengers were weighed and declined/competitive; each declined one donated a discipline
-(committed stock colour, fixed cell geometry across states, discrete writes with stale-ink
-thinning, one fixed legend, one reserved stamp colour) — all recorded in the brief's FORM block.
+**The third pass (2026-10-05): the pixel listing.** The operator said the second pass "isn't what
+I envision" and gave five reference sites (chordpf.com, nearos.io, trykyoto.ai, dexora.tech,
+homefi.space; screenshotted, not just read) whose common thread is a near-black ground, oversized
+bold sans headline type, pill buttons (one filled, one ghost), a small mark with a minimal centred
+nav, lots of negative space and a subtle accent glow. Then he supplied a real brand asset,
+`src/brand/ram-smashing-hash-main.png` (a pixel-art ram charging a HASH block, binary digits
+scattering off it), and pinned the whole site's look to that style: monochrome, pixel-art, the
+scattering-digits motif recurring; the references now supply structure only. That pins the
+materials. Impeccable's direction roll (`concept-seed`, seed key `cbda8d1b`, mode Persuade)
+assigned candidate 7 of a seven-item list drawn from the audience's world (arcade high-score
+table, virtual-pet LCD, cracktro, handheld-RPG party roster, BBS door game, 1-bit desktop,
+dot-matrix tournament printout); a brief-pinned world beats the roll, so the printout donated
+only its topology and ritual, translated into the pinned materials. The result is **a
+line-printer listing on a black screen**: a banner page in giant pixel letters, then one appended
+line per thing that happened, every line permanent. Pure black (the asset's own black, so the
+plate sits on it with no seam), white 1-bit ink on a 4px pixel unit that governs every border,
+stepped corner, glyph and the dither, one amber reserved for what is live (a running RAM's
+glyph, a live stream's frame, the Herder's live dot), inverse video (white block, black text)
+for HashSmash's review state instead of a colour. The glow the references share is executed as
+an ordered dither (three concentric rings of amber pixels behind the burst, no smooth gradient).
+Three faces with fixed jobs, all self-hosted: Jersey 10 (display: banner, section heads, RAM
+ids, fund figures), Silkscreen (labels: nav, pills, status words, stamps; it is caps-only, so
+identifiers such as model slugs and lane paths are never set in it), Archivo (reading). Pills
+are pixel pills (stair-stepped 24px corners cut with `clip-path`), frames are 1-unit rules with
+notched corners, status is a pixel glyph plus a word plus a clock, and the asset's digit spray
+is the rule that opens every part of the page. The dealt challengers each donated one
+discipline, recorded in the brief's FORM block (one grid unit for all geometry; append-only
+lines; every pixel load-bearing; the budget meter as a block bar in RAM-slot units; one named
+transformation, tile to page; the single accent marks only what is live). The one motion is
+"the print": a changed line appears left to right in `steps()`, the running glyph blinks
+between two pixel frames; nothing fades or slides, and under reduced motion changes simply
+appear.
 
-**What `detect` found and what was fixed.** `npx -y impeccable detect src/...` and the
-installed binary were run after the build. First run: 9 anti-patterns + 1 advisory —
-3× `side-tab` (the `3px double` section rules), 5× `cramped-padding`, 1× `layout-transition`
-(the budget meter animated `width`), 2× gray-text-on-coloured-background (the felt's soft ink
-was too desaturated), advisory `repeating-stripes-gradient` (the felt weave). Fixes: double
-rules drawn as 1px pseudo-element pairs; bordered containers use plain rem padding stepped by
-media query (the static detector can't read `clamp()` and flattens media queries); meter on
-`transform`; felt ink retinted to `#9fd1b4`; weave as a drawn SVG tile. One scoped waiver,
-stated inline: the ruled header box's inset lives in its cells like a table. Once DESIGN.md
-existed the detector also raised 17 design-system advisories (a `currentColor` border and five
-ad-hoc font sizes off the recorded ramp); the stamp now uses the judge token and the sizes were
-collapsed onto a four-step ramp (0.74 / 0.82 / 0.92 / 1rem) recorded in DESIGN.md. **Final: 0
-findings, 0 advisories.**
+**What the pass added, functionally.** Every RAM tile is a screen (the view-only desk stream
+when one runs; the intact HASH block and NO DESK RUNNING otherwise), clicking a screen opens
+the RAM's full page at `#ram/<id>` (its screen larger, its facts, its whole history, newest
+first; Escape or the back pill returns to the board with scroll and focus restored), and the
+Herder has a full-width panel above the board, visibly bigger than any tile (1104×644 against
+347×450 at 1440), with its summary, the herd by status, one line per RAM and the chat. The
+sandbox discipline is unchanged and request-clean; see "E2B desktop sandboxes".
 
-**Finish review.** A fresh reviewer agent (Impeccable's shipped finish-reviewer definition,
-run as a general-purpose agent because this harness doesn't expose it by name) returned
-**fix** with seven material items — first viewport missing the contract at 1440/1280, the
-mock-feed label only at the page bottom, Judge-column copy over-claiming, missing red judge
-margin, mobile row geometry and a mid-segment path break, meter animating on first paint,
-felt reading as mesh. All seven were fixed and scored **resolved → ship** over two verdict
-rounds. Screenshots were real this time: a headless Chromium exists on this machine
-(`~/Library/Caches/ms-playwright/chromium_headless_shell-*`), captures live in
-`.impeccable/review/` (gitignored).
+**What `detect` found and what was fixed.** `impeccable detect` over the six changed files,
+first run (against the second pass's DESIGN.md): 0 anti-patterns, 29 advisories, all
+design-system drift against the felt palette and the old type ramp, which this pass replaces; the
+type ramp was collapsed to 0.75 / 0.85 / 0.95 / 1 rem reading and 1.25 / 1.5 / 1.75 / 2 rem
+display plus the fluid banner sizes, and the one stray literal became a token (`--ink-press`).
+Second run, after the new DESIGN.md: 7 anti-patterns + 2 advisories. The ghost pill read as
+white-on-white to the static reader (its black face is a pseudo-element; bisected to the hover
+rule, which now sets the face and the word together), the entry slip's two question labels were
+uppercase at 38–40 characters (they are sentences, so they moved to the reading voice), the
+RAM page's bar had no inset, and the Herder's summary and the slip's part headings sat off the
+recorded ramp. **Final: 0 findings, 0 advisories.**
 
-Still true from the first pass: no system display face, no emoji-as-icons, no gradient text,
-no kicker labels, no coloured card borders, no cards.
+**Finish review.** A fresh reviewer agent (Impeccable's finish-reviewer brief, run as a
+general-purpose agent because this harness doesn't expose it by name) returned **fix** with four
+material items: the mobile menu clipped the "Enter a RAM" pill; the 1440 first viewport showed
+neither the ram nor a fund line (the real cause was the inline `<svg hidden>` sprite rendering as
+a 300×150 box, since `hidden` is an HTML attribute the UA sheet never applies to SVG, plus a
+headline and plate too tall for a 900px fold); the RAM page at 390 drew the caption over the idle
+HASH block; and ram-03, the one RAM with a candidate in review, was dimmed as stale. All four
+were fixed and scored **resolved → ship** on the verdict pass. Its minor notes were taken too
+(log frame edge, uniform tile heads, the block's faces made opaque so the dither never shows
+through, 0/1 glyphs as the board's texture, nav order matched to page order, OFL texts for the
+two pixel faces). Captures live in `.impeccable/review/` (gitignored).
+
+**Verified.** Served `src/` statically on 4711 and through the real API server on 4713;
+Playwright's headless Chromium at 1440 and 390: no console errors on either server, no
+horizontal scroll at either width, the idle screens read as intended, `#ram/<id>` opens and
+closes correctly (focus to the banner, Escape closes, scroll restored), the mobile menu opens
+anchored to the header. Captures live in `.impeccable/review/` (gitignored).
+
+**The second pass (the tournament wallchart), for the record.** Light paper on bottle-green
+felt, three inks, Archivo's width axis doing the work of two families, one red for the judge,
+"the pen writes" as the one motion; seed key `4c815091`. Its detect and finish-review history
+is in the git log (commit `e5c38d1` and before). It was not wrong, it was not what the
+operator envisioned; the old look was treated as evidence of the subject, not as authority
+over what it became.
+
+Still true from every pass: no system display face, no emoji-as-icons, no gradient text, no
+kicker labels, no coloured card borders, no cards.
 
 ---
 
