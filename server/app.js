@@ -4,6 +4,7 @@ import { resolve, dirname, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore } from './store.js';
 import { createRateLimiter } from './lib/ratelimit.js';
+import { createLaunchpadRoutes } from './launchpad-routes.js';
 
 const SECURITY_HEADERS = {
   // JSON-only API: no document is ever rendered, so the strictest policy applies.
@@ -88,7 +89,12 @@ function parseJson(raw) {
 
 export function createApp(config) {
   // config.env / config.loadSandboxSdk exist for tests; production uses process.env and the real SDK.
-  const store = createStore({ budgetConfig: config.budget, env: config.env ?? process.env, loadSandboxSdk: config.loadSandboxSdk });
+  const store = createStore({
+    budgetConfig: config.budget,
+    env: config.env ?? process.env,
+    loadSandboxSdk: config.loadSandboxSdk,
+    launchpad: { publicBaseUrl: config.launchpad.publicBaseUrl, treasury: config.launchpad.treasury },
+  });
   const ideaLimiter = createRateLimiter(config.ideaRateLimit);
   const log = config.log || (() => {});
 
@@ -121,6 +127,17 @@ export function createApp(config) {
     if (body === undefined) sendError(res, 400, 'invalid_body');
     return body;
   }
+
+  // Launchpad (user-created RAMs): its own module; see server/launchpad-routes.js.
+  const launchpad = createLaunchpadRoutes({
+    store,
+    config,
+    sendOk,
+    sendError: (res, status, code, message = ERROR_MESSAGES[code], headers, extra = {}) =>
+      send(res, status, { ok: false, error: code, message, ...extra }, headers),
+    readJsonBody,
+    clientKey: (req) => clientAddress(req, config.trustProxy),
+  });
 
   function requireAdmin(req, res) {
     const token = req.headers['x-admin-token'];
@@ -333,6 +350,11 @@ export function createApp(config) {
       return postIdea(req, res);
     }
 
+    if (parts[0] === 'api' && parts[1] === 'launchpad') {
+      const query = new URLSearchParams(target.includes('?') ? target.slice(target.indexOf('?') + 1).split('#')[0] : '');
+      if (await launchpad.handlePublic(req, res, { pathname, parts, method, query })) return;
+    }
+
     // ---- admin ----
     if (parts[0] === 'api' && parts[1] === 'admin') {
       req.routeLabel = `api/admin/${parts.slice(2).join('/') || 'root'}`;
@@ -358,6 +380,7 @@ export function createApp(config) {
       if (parts.length === 5 && parts[2] === 'ideas' && parts[4] === 'reject' && method === 'POST') {
         return postAdminIdeaReject(req, res, parts[3]);
       }
+      if (parts[2] === 'launchpad' && (await launchpad.handleAdmin(req, res, { parts, method }))) return;
       return sendError(res, 404, 'not_found');
     }
 
@@ -433,6 +456,7 @@ export function createApp(config) {
       if (store.sandboxManager) await store.sandboxManager.stopAll().catch(() => {});
       return new Promise((resolve) => {
         ideaLimiter.stop();
+        launchpad.stop();
         server.closeAllConnections?.();
         server.close(() => resolve());
       });

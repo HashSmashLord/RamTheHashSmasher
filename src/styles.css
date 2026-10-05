@@ -189,6 +189,9 @@ main.wrap { padding-top: clamp(1rem, 2.5vw, 1.5rem); padding-bottom: clamp(2rem,
 .head-title h1 { margin-bottom: 0.45em; }
 .event-line { font-size: 1rem; max-width: 58ch; }
 .event-note { color: var(--ink-soft); font-size: 0.92rem; max-width: 58ch; margin-bottom: 0; }
+/* the way to the entry slip (launch.html), marked not live */
+.enter-line { font-size: 0.92rem; max-width: 58ch; margin: 0.9rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--rule); }
+.nav-note { font-size: 0.82rem; font-weight: 400; }
 
 .fund { margin: 0; display: flex; flex-direction: column; }
 .fund-row {

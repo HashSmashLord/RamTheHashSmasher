@@ -13,6 +13,18 @@
 //
 // Nothing else in the frontend needs to change. That's the whole swap point.
 
+import {
+  HASH_FAMILIES,
+  APPROACHES,
+  MODELS,
+  LIMITS,
+  CREATE_FEE_SOL,
+  CREATE_FEE_LAMPORTS,
+  TREASURY,
+  validateDraft,
+  toRamRequest,
+} from "./launchpad-rules.js";
+
 export const API_BASE = null; // e.g. "https://api.herd.xyz" once the backend ships.
 
 // ---------------------------------------------------------------------------
@@ -277,7 +289,149 @@ export const RAMherdAPI = {
   subscribeLive(onTick, intervalMs) {
     return startMockLiveFeed(onTick, intervalMs);
   },
+
+  /** "Create a RAM" (launch.html): getConfig / createRam / buildTransaction. Assigned below. */
+  launchpad: null,
 };
+
+// ---------------------------------------------------------------------------
+// Launchpad ("Create a RAM", launch.html). Same swap rule as above: with API_BASE set,
+// each method fetches the backend ("" means same origin, when server/ serves src/); with
+// API_BASE null it answers from the mock below.
+// Every method resolves to `{ status, body, mock }`: `body` is the JSON the backend sent (or
+// the mock's stand-in for it), `mock` is true when no backend was asked. Network failures
+// reject; HTTP errors (400, 409) resolve, so the page can show the server's own message.
+// ---------------------------------------------------------------------------
+
+const mockLaunchpad = {
+  lookupTableConfigured: false, // mirrors the real server today: no address lookup table yet
+  rams: new Map(),
+  nextId: 1,
+};
+
+function mockLaunchpadConfig() {
+  const tracks = HASH_FAMILIES.flatMap((f) => f.tracks);
+  return {
+    ok: true,
+    launchpad: {
+      live: false,
+      cluster: "devnet",
+      createFeeLamports: CREATE_FEE_LAMPORTS,
+      createFeeSol: CREATE_FEE_SOL,
+      treasury: TREASURY,
+      lookupTableConfigured: mockLaunchpad.lookupTableConfigured,
+      hashFamilies: HASH_FAMILIES.map((f) => ({ family: f.family, tracks: f.tracks.map((t) => ({ ...t })) })),
+      approaches: APPROACHES.map((a) => ({ ...a })),
+      models: MODELS.map((slug, i) => ({ slug, ram: i + 1, track: tracks[i].track })),
+      limits: JSON.parse(JSON.stringify(LIMITS)),
+    },
+  };
+}
+
+function mockCreateRam(draft) {
+  const check = validateDraft(draft);
+  if (!check.ok) {
+    return { status: 400, body: { ok: false, error: "invalid_ram", message: "Some fields need another look.", fields: check.errors } };
+  }
+  const req = toRamRequest(draft);
+  const track = HASH_FAMILIES.flatMap((f) => f.tracks).find((t) => t.track === req.track);
+  const id = `mock-ram-${String(mockLaunchpad.nextId++).padStart(3, "0")}`;
+  const ram = {
+    id,
+    owner: req.owner,
+    hashFamily: req.hashFamily,
+    track: req.track,
+    rounds: track.rounds,
+    approach: req.approach,
+    approachDetail: req.approachDetail,
+    model: req.model,
+    token: { name: req.tokenName, symbol: req.tokenSymbol, uri: null, mint: null },
+    status: "draft",
+    createFeeLamports: CREATE_FEE_LAMPORTS,
+    createdAt: new Date().toISOString(),
+  };
+  mockLaunchpad.rams.set(id, ram);
+  return { status: 201, body: { ok: true, ram } };
+}
+
+// Mock stand-in for the build endpoint. With no lookup table it answers the way the real
+// server does today (409 lookup_table_required). The sizes and instruction list are
+// illustrative, not measured: only the real backend can build and size this transaction.
+function mockBuildTransaction(id, mint) {
+  const ram = mockLaunchpad.rams.get(id);
+  if (!ram) return { status: 404, body: { ok: false, error: "not_found", message: "Not found." } };
+  if (!mockLaunchpad.lookupTableConfigured) {
+    const sizeBytes = 1418; // illustrative
+    return {
+      status: 409,
+      body: {
+        ok: false,
+        error: "lookup_table_required",
+        message: `Without an address lookup table the launch transaction is ${sizeBytes} bytes, over Solana's 1232-byte limit. The operator has not set one up yet.`,
+        sizeBytes,
+      },
+    };
+  }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      transaction: {
+        base64: null, // the mock never produces signable bytes
+        version: 0,
+        sizeBytes: 1104, // illustrative
+        requiredSigners: [ram.owner, mint],
+        instructions: [
+          { label: "Set compute budget", programId: "ComputeBudget111111111111111111111111111111" },
+          { label: `Pay ${CREATE_FEE_SOL} SOL to the RAMherd treasury`, programId: "11111111111111111111111111111111" },
+          { label: "pump.fun: create the token", programId: "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" },
+          { label: "pump.fun: route 100% of creator fees to the treasury", programId: "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ" },
+        ],
+        recentBlockhash: "mock-blockhash",
+      },
+    },
+  };
+}
+
+async function apiRequest(method, path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let json;
+  try {
+    json = await res.json();
+  } catch {
+    json = { ok: false, error: "bad_response", message: `The server answered ${res.status} without JSON.` };
+  }
+  return { status: res.status, body: json, mock: false };
+}
+
+const launchpadAPI = {
+  /** GET /api/launchpad/config -> { ok, launchpad: { live, cluster, createFeeSol, treasury, lookupTableConfigured, hashFamilies, approaches, models, limits } } */
+  async getConfig() {
+    if (API_BASE != null) return apiRequest("GET", "/api/launchpad/config");
+    await simulatedLatency();
+    return { status: 200, body: mockLaunchpadConfig(), mock: true };
+  },
+
+  /** POST /api/launchpad/rams -> 201 { ok, ram } | 400 { ok:false, error:'invalid_ram', message, fields } */
+  async createRam(draft) {
+    if (API_BASE != null) return apiRequest("POST", "/api/launchpad/rams", draft);
+    await simulatedLatency(200, 400);
+    return { ...mockCreateRam(draft), mock: true };
+  },
+
+  /** POST /api/launchpad/rams/:id/transaction { mint } -> 200 { ok, transaction } | 409 { ok:false, error:'lookup_table_required', message, sizeBytes } */
+  async buildTransaction(id, mint) {
+    if (API_BASE != null) return apiRequest("POST", `/api/launchpad/rams/${encodeURIComponent(id)}/transaction`, { mint });
+    await simulatedLatency(200, 400);
+    return { ...mockBuildTransaction(id, mint), mock: true };
+  },
+};
+
+RAMherdAPI.launchpad = launchpadAPI;
 
 function simulatedLatency(min = 80, max = 220) {
   const ms = min + Math.random() * (max - min);

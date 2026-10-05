@@ -11,15 +11,19 @@ import { createIdeaQueue } from './lib/moderation.js';
 import { createLlmProvider, modelOverride } from './lib/llm.js';
 import { createHashSmashRunner, pipelinePolicy } from './lib/hashsmash.js';
 import { createSandboxManager, sandboxPolicy } from './lib/sandbox.js';
+import { createRamFunds } from './lib/ramfunds.js';
+import { createPayoutBook } from './lib/payouts.js';
+import { createRamRegistry } from './lib/rams.js';
 
 /**
  * @param {{
  *   budgetConfig: import('./lib/budget.js').BudgetConfig,
  *   env?: NodeJS.ProcessEnv,
  *   loadSandboxSdk?: () => Promise<{ Sandbox: any }>,
+ *   launchpad?: { publicBaseUrl: string, treasury: string },
  * }} opts
  */
-export function createStore({ budgetConfig, env = process.env, loadSandboxSdk }) {
+export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, launchpad = { publicBaseUrl: 'http://127.0.0.1:4700', treasury: undefined } }) {
   const feeSource = createMockFeeSource();
   const ledger = createFeeLedger({ source: feeSource });
   const llmProvider = createLlmProvider(env);
@@ -48,6 +52,12 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk })
   // model on all of them. Mock vs live is still only llm.js's decision.
   const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, modelOverride: modelOverride(env) });
   const ideaQueue = createIdeaQueue();
+  // Launchpad: user-created RAMs, each with its own funding account and owned
+  // slot, plus the payout book for judged wins. Bookkeeping only: nothing in
+  // these modules can sign, send or claim.
+  const ramFunds = createRamFunds();
+  const payouts = createPayoutBook();
+  const rams = createRamRegistry({ slotManager, funds: ramFunds, payouts, publicBaseUrl: launchpad.publicBaseUrl, treasury: launchpad.treasury });
 
   function getAllocation() {
     const { totalUsd } = ledger.getSnapshot();
@@ -74,6 +84,9 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk })
     sandboxManager,
     slotManager,
     ideaQueue,
+    ramFunds,
+    payouts,
+    rams,
     coordinator,
     getAllocation,
     reallocateSlotsFromBudget,
