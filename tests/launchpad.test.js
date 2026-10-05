@@ -27,6 +27,7 @@ const valid = (over = {}) => ({
   model: 'anthropic/claude-opus-5.5',
   tokenName: 'RAM Smasher',
   tokenSymbol: 'smash',
+  image: 'img-0123456789abcdef01234567',
   ...over,
 });
 
@@ -131,7 +132,7 @@ test('whole request: a valid one normalizes; every problem is reported per field
 
   const bad = validateCreateRequest({ owner: 'x', hashFamily: ['SHA-256'], approach: 'nope', approachDetail: 'short', model: 'x/y', tokenName: '', tokenSymbol: '' });
   assert.equal(bad.ok, false);
-  assert.deepEqual(Object.keys(bad.fields).sort(), ['approach', 'approachDetail', 'hashFamily', 'model', 'owner', 'tokenName', 'tokenSymbol']);
+  assert.deepEqual(Object.keys(bad.fields).sort(), ['approach', 'approachDetail', 'hashFamily', 'image', 'model', 'owner', 'tokenName', 'tokenSymbol']);
 });
 
 test('whole request: unknown fields (a family list, a payout address) are refused', () => {

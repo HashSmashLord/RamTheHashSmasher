@@ -6,6 +6,8 @@ import { Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
 import { randomBytes } from 'node:crypto';
 import { validateCreateRequest } from '../server/lib/launchpad.js';
+import { imageIdFor } from '../server/lib/images.js';
+import { makePng } from './helpers/png.js';
 
 const budgetConfig = loadConfig({}).budget;
 
@@ -72,6 +74,12 @@ test('a cost recorded against a RAM with no open funding account never throws', 
 
 const lpWallet = () => Keypair.generate().publicKey.toBase58();
 const lpSig = () => bs58.encode(randomBytes(64));
+// Every draft needs a token image the registry holds; uploaded per store by lpImage().
+const LP_PNG = makePng({ note: 'store.test' });
+function lpImage(store) {
+  store.rams.uploadImage(LP_PNG); // no Pinata in tests: held synchronously
+  return imageIdFor(LP_PNG);
+}
 function lpDraft(over = {}) {
   const v = validateCreateRequest({
     owner: lpWallet(),
@@ -82,6 +90,7 @@ function lpDraft(over = {}) {
     model: 'qwen/qwen3.8-max-prime',
     tokenName: 'Blake Breaker',
     tokenSymbol: 'BLKB',
+    image: imageIdFor(LP_PNG),
     ...over,
   });
   assert.equal(v.ok, true);
@@ -95,6 +104,7 @@ function launch(store) {
 
 test('each confirmed launchpad RAM raises the roster ceiling by one; drafts and cancels do not', () => {
   const store = createStore({ budgetConfig, env: {} });
+  lpImage(store);
   assert.equal(budgetConfig.maxSlots, 12);
   assert.deepEqual(
     (({ maxSlots, maxSlotsBase, launchesConfirmed }) => ({ maxSlots, maxSlotsBase, launchesConfirmed }))(store.getAllocation()),
@@ -120,6 +130,7 @@ test('each confirmed launchpad RAM raises the roster ceiling by one; drafts and 
 
 test('ceiling growth is permanent: later cancels of other RAMs never lower it', () => {
   const store = createStore({ budgetConfig, env: {} });
+  lpImage(store);
   launch(store);
   const pending = store.rams.createDraft(lpDraft());
   store.rams.prepareLaunch(pending.id, lpWallet());
@@ -129,6 +140,7 @@ test('ceiling growth is permanent: later cancels of other RAMs never lower it', 
 
 test('a grown ceiling raises only the roster\'s own cap: owned RAMs neither count toward nor consume it', async () => {
   const store = createStore({ budgetConfig, env: {} });
+  lpImage(store);
   const owned = [launch(store), launch(store), launch(store)];
   // Fees for 6 roster seats: the roster reads 6 of 15, and the 3 owned slots sit outside it.
   store.feeSource.set(30);

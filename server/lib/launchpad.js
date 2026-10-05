@@ -16,6 +16,7 @@ import { PublicKey } from '@solana/web3.js';
 import { ACTIVE_TRACKS, APPROACHES, DEFAULT_ROSTER } from './targets.js';
 import { screenIdea } from './moderation.js';
 import { DEFAULT_TREASURY } from './launchtx.js';
+import { IMAGE_ID_RE, IMAGE_TYPES, MAX_IMAGE_BYTES } from './images.js';
 
 /** The three hash families a RAM can be pointed at, in manifest order. */
 export const HASH_FAMILIES = Object.freeze([...new Set(ACTIVE_TRACKS.map((t) => t.hashFunction))]);
@@ -127,7 +128,18 @@ export function validateToken(tokenName, tokenSymbol) {
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, tokenName: name, tokenSymbol: symbol };
 }
 
-const ALLOWED_FIELDS = new Set(['owner', 'hashFamily', 'track', 'approach', 'approachDetail', 'model', 'tokenName', 'tokenSymbol']);
+/**
+ * The token image, required: every pump.fun token has one. The request
+ * carries the id POST /api/launchpad/images returned (never a URL the client
+ * chose); the route then checks this server really holds that image.
+ */
+export function validateImageId(image) {
+  if (image === undefined || image === null || image === '') return { ok: false, field: 'image', reason: 'Add an image for the token.' };
+  if (typeof image !== 'string' || !IMAGE_ID_RE.test(image)) return { ok: false, field: 'image', reason: 'Upload the token image again.' };
+  return { ok: true, image };
+}
+
+const ALLOWED_FIELDS = new Set(['owner', 'hashFamily', 'track', 'approach', 'approachDetail', 'model', 'tokenName', 'tokenSymbol', 'image']);
 
 /**
  * Validates a whole create request. Unknown fields are refused too, so a
@@ -149,6 +161,8 @@ export function validateCreateRequest(body, { treasury = DEFAULT_TREASURY } = {}
   if (!model.ok) fields[model.field] = model.reason;
   const token = validateToken(body.tokenName, body.tokenSymbol);
   if (!token.ok) Object.assign(fields, token.errors);
+  const image = validateImageId(body.image);
+  if (!image.ok) fields[image.field] = image.reason;
 
   if (Object.keys(fields).length) return { ok: false, fields };
   return {
@@ -163,6 +177,7 @@ export function validateCreateRequest(body, { treasury = DEFAULT_TREASURY } = {}
       model: model.model,
       tokenName: token.tokenName,
       tokenSymbol: token.tokenSymbol,
+      image: image.image,
     },
   };
 }
@@ -174,5 +189,6 @@ export function launchpadCatalog() {
     approaches: APPROACHES.map((id) => ({ id, label: APPROACH_LABELS[id] })),
     models: DEFAULT_ROSTER.map((r) => ({ slug: r.model, ram: r.ram, track: r.track })),
     limits: JSON.parse(JSON.stringify(LIMITS)),
+    image: { maxBytes: MAX_IMAGE_BYTES, types: [...IMAGE_TYPES] },
   };
 }

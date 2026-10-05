@@ -2,16 +2,13 @@
 //
 // Everything a real backend would eventually serve lives behind the `RAMherdAPI` object
 // at the bottom of this file. Every page module (index.js, herd.js, herder.js, submit.js, launch.js) calls through that object and
-// never touches the mock arrays directly. When the real backend lands:
-//
-//   1. Set API_BASE to its URL (or read it from an env-injected <meta> tag / build step).
-//   2. Replace each RAMherdAPI method body with a fetch() call to the matching endpoint.
-//      The shapes below are the contract the frontend already expects — keep them, or
-//      update the render functions in board.js / herder-panel.js / fund-lines.js to match whatever the real API actually returns.
-//   3. Delete the setInterval-driven mock mutation at the bottom of this file
-//      (`startMockLiveFeed`) — the real backend pushes/updates this state itself.
-//
-// Nothing else in the frontend needs to change. That's the whole swap point.
+// never touches the mock arrays directly. The real backend has landed: every method below
+// auto-detects it (`backendReady`, from `deskFeedAvailable()` in sandbox-viewer.js — a HEAD
+// of the page itself, checking for the API server's distinguishing CSP header) and fetches
+// same-origin when it's there, falling back to the in-memory state below with zero failed
+// requests when it isn't (e.g. this page served by a bare static file server). The
+// setInterval-driven mock mutation at the bottom of this file (`startMockLiveFeed`) only
+// ever runs on that fallback path; the real backend pushes/updates its own state.
 
 import {
   HASH_FAMILIES,
@@ -24,8 +21,6 @@ import {
   validateDraft,
   toRamRequest,
 } from "./launchpad-rules.js";
-
-export const API_BASE = null; // e.g. "https://api.herd.xyz" once the backend ships.
 
 // ---------------------------------------------------------------------------
 // Real, specific HashSmash tracks this fleet is actually assigned to.
@@ -686,11 +681,11 @@ export const RAMherdAPI = {
 };
 
 // ---------------------------------------------------------------------------
-// Launchpad ("Create a RAM", /launch). Same swap rule as above: with API_BASE set,
-// each method fetches the backend ("" means same origin, when server/ serves src/); with
-// API_BASE null it answers from the mock below.
+// Launchpad ("Create a RAM", /launch). Same auto-detection as the rest of this file
+// (`backendReady`): when the real backend is there, each method fetches it same-origin;
+// otherwise it answers from the fallback state below.
 // Every method resolves to `{ status, body, mock }`: `body` is the JSON the backend sent (or
-// the mock's stand-in for it), `mock` is true when no backend was asked. Network failures
+// the fallback's stand-in for it), `mock` is true when no backend was asked. Network failures
 // reject; HTTP errors (400, 409) resolve, so the page can show the server's own message.
 // ---------------------------------------------------------------------------
 
@@ -706,7 +701,7 @@ function mockLaunchpadConfig() {
     ok: true,
     launchpad: {
       live: false,
-      cluster: "devnet",
+      cluster: "mainnet-beta",
       createFeeLamports: CREATE_FEE_LAMPORTS,
       createFeeSol: CREATE_FEE_SOL,
       treasury: TREASURY,
@@ -736,7 +731,7 @@ function mockCreateRam(draft) {
     approach: req.approach,
     approachDetail: req.approachDetail,
     model: req.model,
-    token: { name: req.tokenName, symbol: req.tokenSymbol, uri: null, mint: null },
+    token: { name: req.tokenName, symbol: req.tokenSymbol, uri: null, mint: null, imageId: req.image, image: null },
     status: "draft",
     createFeeLamports: CREATE_FEE_LAMPORTS,
     createdAt: new Date().toISOString(),
@@ -785,7 +780,7 @@ function mockBuildTransaction(id, mint) {
 }
 
 async function apiRequest(method, path, body) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(path, {
     method,
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
@@ -802,21 +797,42 @@ async function apiRequest(method, path, body) {
 const launchpadAPI = {
   /** GET /api/launchpad/config -> { ok, launchpad: { live, cluster, createFeeSol, treasury, lookupTableConfigured, hashFamilies, approaches, models, limits } } */
   async getConfig() {
-    if (API_BASE != null) return apiRequest("GET", "/api/launchpad/config");
+    if (await backendReady) return apiRequest("GET", "/api/launchpad/config");
     await simulatedLatency();
     return { status: 200, body: mockLaunchpadConfig(), mock: true };
   },
 
+  /**
+   * POST /api/launchpad/images, the picked File as the raw body ->
+   * 201 { ok, image: { id, url, type, size, pinned } } | 400/413/415 { ok:false, error, message, fields: { image } } | 503 image_storage_full
+   */
+  async uploadImage(file) {
+    if (await backendReady) {
+      const res = await fetch("/api/launchpad/images", { method: "POST", headers: { "content-type": file.type }, body: file });
+      let json;
+      try {
+        json = await res.json();
+      } catch {
+        json = { ok: false, error: "bad_response", message: `The server answered ${res.status} without JSON.` };
+      }
+      return { status: res.status, body: json, mock: false };
+    }
+    await simulatedLatency(150, 300);
+    // Fallback: nothing is uploaded or pinned anywhere; the id only has the real shape.
+    const hex = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+    return { status: 201, body: { ok: true, image: { id: `img-${hex}`, url: null, type: file.type, size: file.size, pinned: false } }, mock: true };
+  },
+
   /** POST /api/launchpad/rams -> 201 { ok, ram } | 400 { ok:false, error:'invalid_ram', message, fields } */
   async createRam(draft) {
-    if (API_BASE != null) return apiRequest("POST", "/api/launchpad/rams", draft);
+    if (await backendReady) return apiRequest("POST", "/api/launchpad/rams", draft);
     await simulatedLatency(200, 400);
     return { ...mockCreateRam(draft), mock: true };
   },
 
   /** POST /api/launchpad/rams/:id/transaction { mint } -> 200 { ok, transaction } | 409 { ok:false, error:'lookup_table_required', message, sizeBytes } */
   async buildTransaction(id, mint) {
-    if (API_BASE != null) return apiRequest("POST", `/api/launchpad/rams/${encodeURIComponent(id)}/transaction`, { mint });
+    if (await backendReady) return apiRequest("POST", `/api/launchpad/rams/${encodeURIComponent(id)}/transaction`, { mint });
     await simulatedLatency(200, 400);
     return { ...mockBuildTransaction(id, mint), mock: true };
   },

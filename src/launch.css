@@ -81,6 +81,13 @@
 .token-fields { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.4rem; }
 .symbol-ctl { text-transform: uppercase; letter-spacing: 0.04em; }
 .symbol-ctl::placeholder { text-transform: none; }
+.image-field { grid-column: 1 / -1; }
+.image-pick { display: flex; gap: 1rem; align-items: flex-start; }
+.image-pick-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 0.5rem; }
+.image-preview { flex: none; width: 96px; height: 96px; object-fit: cover; border: var(--u) solid var(--ink-3); background: var(--bg); }
+.file-ctl { padding: 0.5rem; cursor: pointer; }
+.file-ctl::file-selector-button { font: inherit; color: var(--bg); background: var(--ink); border: 0; padding: 0.35rem 0.8rem; margin-right: 0.8rem; cursor: pointer; }
+#image-name { overflow-wrap: anywhere; }
 
 /* ---------- check: summary, terms, preview ---------- */
 

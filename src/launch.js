@@ -1,11 +1,12 @@
 // HashRammers entry slip ("Create a RAM", /launch). Data comes through RAMherdAPI.launchpad
-// (mock-data.js, the only mock/real swap point); rules come from launchpad-rules.js.
+// (mock-data.js auto-detects the real backend; see `backendReady` there); rules come from
+// launchpad-rules.js.
 //
 // Signing is gated twice: LAUNCHPAD_LIVE below AND `config.live` from the API must both be
 // true. Today LAUNCHPAD_LIVE is false, so the signing button is never enabled and
 // signAndSendLaunch() throws before doing anything.
 
-import { RAMherdAPI, API_BASE } from "./mock-data.js";
+import { RAMherdAPI, backendReady } from "./mock-data.js";
 import { initNav } from "./nav.js";
 import {
   HASH_FAMILIES,
@@ -18,6 +19,8 @@ import {
   isLaunchpadLive,
   familyByName,
   validateDraft,
+  validateImage,
+  IMAGE_LIMITS,
   normalizeSymbol,
   toRamRequest,
 } from "./launchpad-rules.js";
@@ -35,6 +38,8 @@ const state = {
   owner: null, // base58 address once connected
   checking: false,
   ramId: null, // the RAM recorded by the last successful check
+  imageFile: null, // the File picked for the token image
+  uploaded: null, // { file, id } once that exact File was uploaded, so a re-check doesn't upload it again
 };
 
 export function isLive() {
@@ -244,13 +249,75 @@ function readDraft() {
     model: radioValue("model"),
     tokenName: $("token-name").value,
     tokenSymbol: $("token-symbol").value,
+    image: state.imageFile,
   };
+}
+
+// ---------------------------------------------------------------------------
+// The token image: checked and previewed here, uploaded when the entry is checked
+// ---------------------------------------------------------------------------
+
+function clearImagePreview() {
+  const img = $("image-preview");
+  img.hidden = true;
+  img.removeAttribute("src");
+  $("image-name").hidden = true;
+  $("image-name").textContent = "";
+}
+
+function onImagePicked() {
+  const file = $("token-image").files?.[0] ?? null;
+  state.imageFile = null;
+  clearImagePreview();
+  if (!file) return;
+  const check = validateImage(file);
+  if (!check.ok) {
+    showError("image", check.errors.image);
+    $("token-image").value = "";
+    return;
+  }
+  state.imageFile = file;
+  $("image-name").textContent = `${file.name}, ${Math.max(1, Math.round(file.size / 1024))} KB`;
+  $("image-name").hidden = false;
+  // A data: URL, not a blob: one: the page CSP allows img-src 'self' data: only.
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (state.imageFile !== file) return; // a newer pick won
+    const img = $("image-preview");
+    img.src = String(reader.result);
+    img.alt = `Preview of ${file.name}`;
+    img.onerror = () => {
+      // The browser could not decode it: not a real image, whatever its name says.
+      if (state.imageFile !== file) return;
+      state.imageFile = null;
+      clearImagePreview();
+      $("token-image").value = "";
+      showError("image", "That file could not be read as an image.");
+      refresh();
+    };
+    img.hidden = false;
+  };
+  reader.readAsDataURL(file);
+}
+
+/** Uploads the picked image once; returns its id, or null after showing the error. */
+async function ensureImageUploaded() {
+  const file = state.imageFile;
+  if (state.uploaded?.file === file) return state.uploaded.id;
+  const up = await api.uploadImage(file);
+  if (up.status !== 201 || !up.body?.ok || !up.body.image?.id) {
+    showErrors({ image: up.body?.fields?.image || up.body?.message || `The image could not be uploaded (${up.body?.error || up.status}).` });
+    return null;
+  }
+  state.uploaded = { file, id: up.body.image.id };
+  return state.uploaded.id;
 }
 
 const FIELD_CONTROL = {
   approachDetail: "approach-detail",
   tokenName: "token-name",
   tokenSymbol: "token-symbol",
+  image: "token-image",
 };
 const FIELD_FOCUS = {
   owner: () => ($("wallet-disconnected").hidden ? $("h-wallet") : $("connect-btn")),
@@ -279,7 +346,7 @@ function clearError(field) {
   if (ctl) ctl.removeAttribute("aria-invalid");
 }
 
-const ALL_FIELDS = ["owner", "hashFamily", "track", "approach", "approachDetail", "model", "tokenName", "tokenSymbol"];
+const ALL_FIELDS = ["owner", "hashFamily", "track", "approach", "approachDetail", "model", "tokenName", "tokenSymbol", "image"];
 const FIELD_ORDER = ALL_FIELDS;
 
 function showErrors(errors) {
@@ -323,12 +390,14 @@ function refresh() {
   setSum("approachDetail", d.approachDetail.trim(), "not written");
   setSum("model", d.model, "not chosen");
   setSum("token", d.tokenName.trim() || symbol ? `${d.tokenName.trim() || "(no name)"} · ${symbol || "(no symbol)"}` : "", "not named");
+  setSum("image", state.imageFile ? state.imageFile.name : "", "not added");
 
   setIndex("wallet", state.owner ? shortAddress(state.owner) : "not connected", Boolean(state.owner));
   setIndex("family", trackRec ? `${family.family} r${trackRec.rounds}` : "not chosen", Boolean(trackRec));
   const approachDone = Boolean(d.approach && d.model && d.approachDetail.trim().length >= LIMITS.approachDetail.min);
   setIndex("approach", approachDone ? "written" : "not finished", approachDone);
-  setIndex("token", symbol ? symbol : "not named", Boolean(symbol && d.tokenName.trim()));
+  const tokenDone = Boolean(symbol && d.tokenName.trim() && state.imageFile);
+  setIndex("token", symbol ? (state.imageFile ? symbol : `${symbol}, no image`) : "not named", tokenDone);
 
   const n = d.approachDetail.trim().length;
   write($("detail-count"), `${n} of ${LIMITS.approachDetail.max}`, { animate: false });
@@ -346,6 +415,7 @@ $("entry").addEventListener("change", (e) => {
   if (e.target.name === "hashFamily") renderTracks();
   if (e.target.name) clearError(e.target.name);
   if (e.target.name === "hashFamily") clearError("track");
+  if (e.target.id === "token-image") onImagePicked();
   invalidateCheck();
   refresh();
 });
@@ -436,9 +506,17 @@ $("entry").addEventListener("submit", async (e) => {
   btn.disabled = true;
   btn.textContent = "Checking…";
   try {
-    const created = await api.createRam(toRamRequest(draft));
+    const imageId = await ensureImageUploaded();
+    if (!imageId) {
+      setIndex("check", "needs another look", false);
+      $("preview").hidden = true;
+      return;
+    }
+    const created = await api.createRam(toRamRequest({ ...draft, image: imageId }));
     if (created.status !== 201 || !created.body?.ok) {
       const fields = created.body?.fields || {};
+      // The server no longer holds that image (e.g. it restarted): upload it again next time.
+      if (fields.image) state.uploaded = null;
       showErrors(fields);
       setIndex("check", "needs another look", false);
       if (!Object.keys(fields).length) {
@@ -454,7 +532,7 @@ $("entry").addEventListener("submit", async (e) => {
     renderPreview(sourceLabel(built.mock), built, ram);
     setIndex("check", "checked", true);
   } catch (err) {
-    renderPreview(sourceLabel(API_BASE == null), { status: 0, body: { error: "unreachable", message: "The server could not be reached. Your answers are still in the slip; try again." } }, null);
+    renderPreview(sourceLabel(!(await backendReady)), { status: 0, body: { error: "unreachable", message: "The server could not be reached. Your answers are still in the slip; try again." } }, null);
     setIndex("check", "not checked", false);
     console.warn("launch check failed:", err);
   } finally {
@@ -465,7 +543,7 @@ $("entry").addEventListener("submit", async (e) => {
 });
 
 const sourceLabel = (mock) =>
-  mock ? "Mock answer from the demonstration feed, not the real server." : "Answer from the HashRammers server.";
+  mock ? "Answer from the page's own built-in fallback (no backend reached), not the real server." : "Answer from the HashRammers server.";
 
 // ---------------------------------------------------------------------------
 // Part 6: signing. Not live: the button stays disabled and the handoff below refuses to run.
@@ -573,8 +651,10 @@ function applyConfig() {
   $("fee-sol").textContent = fee;
   for (const n of document.querySelectorAll("[data-fee]")) n.textContent = fee;
   for (const n of document.querySelectorAll("[data-treasury]")) n.textContent = c?.treasury ?? TREASURY;
-  $("head-cluster").textContent = `cluster: ${c?.cluster ?? "devnet"}`;
+  $("head-cluster").textContent = `cluster: ${c?.cluster ?? "mainnet-beta"}`;
   if (c?.limits?.approachDetail?.max) $("approach-detail").maxLength = c.limits.approachDetail.max;
+  const imageMax = (c?.image?.maxBytes ?? IMAGE_LIMITS.maxBytes) / 1024 / 1024;
+  for (const n of document.querySelectorAll("[data-image-max]")) n.textContent = String(imageMax);
   $("mock-note").hidden = !state.configIsMock;
 }
 

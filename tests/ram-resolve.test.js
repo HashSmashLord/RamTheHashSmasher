@@ -2,6 +2,7 @@
 // website link pinned into its token's metadata before the RAM had a slot).
 
 import test from 'node:test';
+import { makePng } from './helpers/png.js';
 import assert from 'node:assert/strict';
 import { Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
@@ -60,6 +61,10 @@ test('against a real server: the same launchpad id resolves before and after the
   const s = await startApp({ launchpadRateLimit: { max: 1000, windowMs: 60_000 } });
   t.after(() => s.stop());
   const fetchImpl = (path, opts) => fetch(`${s.base}${path}`, opts);
+  // The token image first, through the real upload route, as the entry slip does.
+  const up = await fetch(`${s.base}/api/launchpad/images`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: makePng({ note: 'ram-resolve.test' }) });
+  assert.equal(up.status, 201);
+  const { image } = await up.json();
   const res = await s.postJson('/api/launchpad/rams', {
     owner: Keypair.generate().publicKey.toBase58(),
     hashFamily: 'SHA3-256',
@@ -69,6 +74,7 @@ test('against a real server: the same launchpad id resolves before and after the
     model: 'z-ai/glm-5.3-prime',
     tokenName: 'Keccak Knocker',
     tokenSymbol: 'KECK',
+    image: image.id,
   });
   assert.equal(res.status, 201);
   const { ram } = await res.json();

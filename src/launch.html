@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Enter a RAM: HashRammers entry slip (not live yet)</title>
-<meta name="description" content="Fund your own RAM in the HashRammers herd: choose one hash family, say what it should try, name its token, and sign once in Phantom. Not live yet: signing is switched off.">
+<meta name="description" content="Fund your own RAM in the HashRammers herd: choose one hash family, say what it should try, name its token and give it an image, and sign once in Phantom. Not live yet: signing is switched off.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#000000">
 <link rel="icon" href="brand/ram-mark.png" type="image/png">
@@ -86,7 +86,7 @@
         <div class="fund-line">
           <dt>Signing</dt>
           <dd class="fund-value"><span class="judge-mark" id="head-live-mark">Not live yet</span></dd>
-          <dd class="fund-sub" id="head-cluster">cluster: devnet</dd>
+          <dd class="fund-sub" id="head-cluster">cluster: mainnet-beta</dd>
         </div>
       </dl>
 
@@ -209,6 +209,18 @@
             <p class="hint" id="symbol-hint">1 to 10, letters A to Z and digits only</p>
             <p class="field-error" id="err-tokenSymbol" hidden></p>
           </div>
+          <div class="field image-field">
+            <label for="token-image">Image</label>
+            <div class="image-pick">
+              <img class="image-preview" id="image-preview" alt="" width="96" height="96" hidden>
+              <div class="image-pick-text">
+                <input class="ctl file-ctl" id="token-image" name="image" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="image-hint err-image">
+                <p class="hint" id="image-hint">Required. PNG, JPG, GIF or WEBP, up to <span data-image-max>2</span> MB. Square works best: pump.fun recommends 1:1, at least 1000 by 1000 pixels. It is uploaded when you check the entry.</p>
+                <p class="hint pen-value" id="image-name" hidden></p>
+              </div>
+            </div>
+            <p class="field-error" id="err-image" hidden></p>
+          </div>
         </div>
       </section>
 
@@ -228,6 +240,7 @@
             <div><dt>What it tries</dt><dd data-sum="approachDetail"></dd></div>
             <div><dt>Model</dt><dd data-sum="model"></dd></div>
             <div><dt>Token</dt><dd data-sum="token"></dd></div>
+            <div><dt>Image</dt><dd data-sum="image"></dd></div>
           </dl>
 
           <div class="terms" aria-labelledby="terms-heading">

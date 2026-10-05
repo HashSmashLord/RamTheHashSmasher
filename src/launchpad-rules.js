@@ -58,6 +58,18 @@ export const LIMITS = Object.freeze({
   tokenSymbol: Object.freeze({ min: 1, max: 10 }),
 });
 
+/**
+ * The token image (required: every pump.fun token has one). Same numbers as
+ * server/lib/images.js. 2 MB is this server's own ceiling, stricter than pump.fun's 15 MB
+ * because the upload passes through (and may be held by) this server; see images.js.
+ */
+export const IMAGE_LIMITS = Object.freeze({
+  maxBytes: 2 * 1024 * 1024,
+  types: Object.freeze(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
+});
+
+const IMAGE_ID = /^img-[0-9a-f]{24}$/;
+
 export const CREATE_FEE_SOL = '0.2';
 export const CREATE_FEE_LAMPORTS = 200_000_000;
 
@@ -175,6 +187,29 @@ export function validateToken(name, symbol) {
   return result(errors);
 }
 
+/**
+ * The token image. Before upload `image` is the picked File (anything with `type` and `size`);
+ * after upload it is the id the server returned. Required either way. The type check here
+ * uses the browser's declared type; the server checks the file's real signature.
+ */
+export function validateImage(image) {
+  const errors = {};
+  if (image === undefined || image === null || image === '') {
+    errors.image = 'Add an image for the token: PNG, JPG, GIF or WEBP.';
+  } else if (typeof image === 'string') {
+    if (!IMAGE_ID.test(image)) errors.image = 'Pick the token image again.';
+  } else if (typeof image !== 'object' || typeof image.size !== 'number') {
+    errors.image = 'Add an image for the token: PNG, JPG, GIF or WEBP.';
+  } else if (!IMAGE_LIMITS.types.includes(String(image.type).toLowerCase())) {
+    errors.image = 'That file is not a PNG, JPG, GIF or WEBP image.';
+  } else if (image.size === 0) {
+    errors.image = 'That file is empty.';
+  } else if (image.size > IMAGE_LIMITS.maxBytes) {
+    errors.image = `The image must be ${IMAGE_LIMITS.maxBytes / 1024 / 1024} MB or smaller (this one is ${(image.size / 1024 / 1024).toFixed(1)} MB).`;
+  }
+  return result(errors);
+}
+
 /** A Solana address in base58 (32–44 characters). Shape only: not an on-curve check. */
 export function validateOwner(owner) {
   const errors = {};
@@ -184,7 +219,7 @@ export function validateOwner(owner) {
 
 /**
  * The whole draft. `form` = { owner, hashFamily, track, approach, approachDetail, model,
- * tokenName, tokenSymbol }. Returns { ok, errors: { field: message } }.
+ * tokenName, tokenSymbol, image }. Returns { ok, errors: { field: message } }.
  */
 export function validateDraft(form) {
   const f = form && typeof form === 'object' ? form : {};
@@ -194,6 +229,7 @@ export function validateDraft(form) {
     ...validateApproach(f.approach, f.approachDetail).errors,
     ...validateModel(f.model).errors,
     ...validateToken(f.tokenName, f.tokenSymbol).errors,
+    ...validateImage(f.image).errors,
   };
   return result(errors);
 }
@@ -201,7 +237,7 @@ export function validateDraft(form) {
 /**
  * The request body for POST /api/launchpad/rams, from a draft that passed validateDraft:
  * trimmed text, uppercased symbol, the family's first track when none was picked.
- * `hashFamily` is always a single string.
+ * `hashFamily` is always a single string. `form.image` must by now be the uploaded image's id.
  */
 export function toRamRequest(form) {
   const family = familyByName(form.hashFamily);
@@ -214,5 +250,6 @@ export function toRamRequest(form) {
     model: form.model,
     tokenName: String(form.tokenName).trim(),
     tokenSymbol: normalizeSymbol(form.tokenSymbol),
+    image: form.image,
   };
 }

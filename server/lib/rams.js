@@ -23,6 +23,7 @@ import bs58 from 'bs58';
 import { PublicKey } from '@solana/web3.js';
 import { CREATE_FEE_LAMPORTS, DEFAULT_TREASURY } from './launchtx.js';
 import { createRateLimiter } from './ratelimit.js';
+import { createImageStore, DEFAULT_IMAGE_PIN_RATE_LIMIT, DEFAULT_MAX_HELD_IMAGE_BYTES } from './images.js';
 
 export const RAM_STATUSES = Object.freeze(['draft', 'awaiting-signature', 'active', 'cancelled']);
 
@@ -65,11 +66,13 @@ function isSignature(value) {
  *   idPrefix?: string,
  *   pinata?: ReturnType<typeof import('./pinata.js').createPinataClient>|null,
  *   pinRateLimit?: { max: number, windowMs: number, now?: () => number },
+ *   imagePinRateLimit?: { max: number, windowMs: number },
+ *   maxHeldImageBytes?: number,
  *   maxInactiveRams?: number,
  *   onActivated?: (ram: object) => void,
  * }} opts
  */
-export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram', pinata = null, pinRateLimit = DEFAULT_PIN_RATE_LIMIT, maxInactiveRams = DEFAULT_MAX_INACTIVE_RAMS, onActivated = null }) {
+export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram', pinata = null, pinRateLimit = DEFAULT_PIN_RATE_LIMIT, imagePinRateLimit = DEFAULT_IMAGE_PIN_RATE_LIMIT, maxHeldImageBytes = DEFAULT_MAX_HELD_IMAGE_BYTES, maxInactiveRams = DEFAULT_MAX_INACTIVE_RAMS, onActivated = null }) {
   if (typeof publicBaseUrl !== 'string' || !/^https?:\/\//.test(publicBaseUrl)) throw new TypeError('publicBaseUrl must be an http(s) URL');
   const base = publicBaseUrl.replace(/\/+$/, '');
   /** @type {Map<string, any>} */
@@ -81,6 +84,9 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
   if (!Number.isInteger(maxInactiveRams) || maxInactiveRams <= 0) throw new RangeError('maxInactiveRams must be a positive integer');
   // countDenied:false keeps this one global key's timestamp list at most `max` long under a flood.
   const pinLimiter = pinata ? createRateLimiter({ ...pinRateLimit, countDenied: false }) : null;
+  // Token images (images.js): pinned with the same Pinata client under their
+  // own global cap, or held here and self-hosted when they can't be.
+  const images = createImageStore({ publicBaseUrl: base, pinata, pinRateLimit: imagePinRateLimit, maxHeldBytes: maxHeldImageBytes, now });
 
   const copy = (r) => JSON.parse(JSON.stringify(r));
 
@@ -122,6 +128,11 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
 
   /** @param {ReturnType<typeof import('./launchpad.js').validateCreateRequest>['value']} value - already validated */
   function createDraft(value) {
+    // Every pump.fun token needs an image, uploaded first (uploadImage) so the
+    // metadata pinned below already carries it. Checked before an id is used.
+    if (typeof value.image !== 'string' || !value.image) throw new TypeError('a token image is required');
+    const image = images.get(value.image);
+    if (!image) throw new RangeError(`unknown image id: ${value.image}`);
     const id = `${idPrefix}-${String(++seq).padStart(4, '0')}`;
     const uri = `${base}/api/launchpad/rams/${id}/metadata.json`;
     if (uri.length > MAX_URI_LENGTH) throw new RangeError(`metadata URI is longer than ${MAX_URI_LENGTH} characters`);
@@ -134,7 +145,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
       approach: value.approach,
       approachDetail: value.approachDetail,
       model: value.model,
-      token: { name: value.tokenName, symbol: value.tokenSymbol, uri, mint: null },
+      token: { name: value.tokenName, symbol: value.tokenSymbol, uri, mint: null, imageId: image.id, image: image.url },
       treasury,
       createFeeLamports,
       status: 'draft',
@@ -147,6 +158,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     };
     evictForNewDraft();
     rams.set(id, ram);
+    images.claim(image.id, 'drafted');
     // Pinata, if configured: pin the real metadata JSON to IPFS and swap the
     // token's uri from this server's own endpoint to the pinned gateway URL.
     // Fire-and-forget on purpose -- createDraft stays synchronous (callers
@@ -229,6 +241,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     ram.briefApproved = true;
     ram.slotId = slot.id;
     touch(ram, 'active');
+    images.claim(ram.token.imageId, 'kept');
     // Store hook (store.js raises the roster ceiling by one per confirmed
     // launch). Runs only after the RAM is fully active; a throwing hook must
     // never undo or fail a launch that already happened, so it is contained.
@@ -280,14 +293,22 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     return `${base}/herd#ram/${encodeURIComponent(id)}`;
   }
 
-  /** Token metadata JSON served at the RAM's metadata URI. */
+  /**
+   * Token metadata JSON served at the RAM's metadata URI. `image` is the
+   * token's logo: the Pinata gateway URL when the image was pinned, else this
+   * server's own /api/launchpad/images/<id>. It is left out only if a
+   * self-hosted image has since been dropped from memory, so the metadata
+   * never points at something that no longer serves.
+   */
   function metadata(id) {
     const ram = mustGet(id);
     if (ram.status === 'cancelled') throw new RangeError(`RAM ${id} was cancelled`);
+    const image = ram.token.imageId ? images.get(ram.token.imageId) : undefined;
     return {
       name: ram.token.name,
       symbol: ram.token.symbol,
       description: `HashRammers RAM ${ram.id}: an AI agent working on ${ram.hashFamily} (${ram.track}) with ${ram.model}. 100% of creator fees fund this RAM's compute via the HashRammers treasury.`,
+      ...(image ? { image: image.url } : {}),
       external_url: pageUrl(ram.id),
       attributes: [
         { trait_type: 'hash_family', value: ram.hashFamily },
@@ -306,5 +327,24 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     return [...rams.values()].filter((r) => !owner || r.owner === owner).map(copy);
   }
 
-  return { createDraft, prepareLaunch, confirmLaunch, cancel, recordCreatorFees, recordWin, metadata, waitForMetadataPin, get, list, stop: () => pinLimiter?.stop() };
+  return {
+    createDraft,
+    prepareLaunch,
+    confirmLaunch,
+    cancel,
+    recordCreatorFees,
+    recordWin,
+    metadata,
+    waitForMetadataPin,
+    get,
+    list,
+    /** Validates + stores a token image (images.js); throws ImageError on a refusal. */
+    uploadImage: (bytes) => images.upload(bytes),
+    getImage: (imageId) => images.get(imageId),
+    imageFile: (imageId) => images.file(imageId),
+    stop: () => {
+      pinLimiter?.stop();
+      images.stop();
+    },
+  };
 }

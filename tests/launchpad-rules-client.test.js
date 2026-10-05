@@ -32,6 +32,7 @@ const goodDraft = () => ({
   model: 'anthropic/claude-opus-5.5',
   tokenName: 'Ram Thirty Two',
   tokenSymbol: 'r32',
+  image: 'img-0123456789abcdef01234567',
 });
 
 test('constants: three families, two tracks each, real track ids and rounds', () => {
@@ -186,6 +187,7 @@ test('validateDraft passes a complete draft and collects every field error', () 
     'approach',
     'approachDetail',
     'hashFamily',
+    'image',
     'model',
     'owner',
     'tokenName',
@@ -205,7 +207,7 @@ test('toRamRequest trims, uppercases, defaults the track, and sends one family s
   assert.equal(body.tokenSymbol, 'R32');
   assert.equal(body.approachDetail, DETAIL);
   assert.deepEqual(Object.keys(body).sort(), [
-    'approach', 'approachDetail', 'hashFamily', 'model', 'owner', 'tokenName', 'tokenSymbol', 'track',
+    'approach', 'approachDetail', 'hashFamily', 'image', 'model', 'owner', 'tokenName', 'tokenSymbol', 'track',
   ]);
   assert.equal(toRamRequest(goodDraft()).track, 'sha256-r32-exploratory');
 });

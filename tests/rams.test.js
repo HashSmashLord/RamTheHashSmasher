@@ -8,6 +8,21 @@ import { createPayoutBook } from '../server/lib/payouts.js';
 import { createRamRegistry, MAX_URI_LENGTH } from '../server/lib/rams.js';
 import { validateCreateRequest } from '../server/lib/launchpad.js';
 import { CREATE_FEE_LAMPORTS, DEFAULT_TREASURY } from '../server/lib/launchtx.js';
+import { imageIdFor } from '../server/lib/images.js';
+import { makePng } from './helpers/png.js';
+
+// Every draft needs a token image uploaded first. Content-addressed, so this one
+// PNG has one fixed id; registry() uploads it into each registry it builds.
+const TEST_PNG = makePng({ note: 'rams.test' });
+const TEST_IMAGE_ID = imageIdFor(TEST_PNG);
+
+/** createRamRegistry + the test image uploaded. With no Pinata the image is held at once;
+ * with a (fake) Pinata it is pinned asynchronously: `await rams.imageReady` first. */
+function registry(opts) {
+  const r = createRamRegistry(opts);
+  r.imageReady = r.uploadImage(TEST_PNG);
+  return r;
+}
 
 const wallet = () => Keypair.generate().publicKey.toBase58();
 const sig = () => bs58.encode(Buffer.alloc(64, Math.floor(Math.random() * 255) + 1).map((b, i) => (b + i) % 256));
@@ -17,19 +32,27 @@ function setup({ llmCalls = [], pinata = null } = {}) {
   const slotManager = createSlotManager({ llmProvider });
   const funds = createRamFunds();
   const payouts = createPayoutBook();
-  const rams = createRamRegistry({ slotManager, funds, payouts, publicBaseUrl: 'https://ramherd.example', pinata });
+  const rams = registry({ slotManager, funds, payouts, publicBaseUrl: 'https://ramherd.example', pinata });
   return { slotManager, funds, payouts, rams, llmCalls };
 }
 
 /** A fake pinata client: resolves/rejects on command, records what it was asked to pin. */
 function fakePinata({ fails = false } = {}) {
   const calls = [];
+  const imageCallsRef = [];
   let resolvePin;
   const gate = new Promise((r) => { resolvePin = r; });
   return {
     calls,
     release: () => resolvePin(),
+    imageCalls: imageCallsRef,
     client: {
+      // Image pins resolve at once (they are awaited via rams.imageReady); only
+      // metadata-JSON pins are gated and counted in `calls`.
+      pinFile: async (bytes, opts) => {
+        imageCallsRef.push({ bytes, opts });
+        return { cid: 'bafyImageCid', uri: 'https://gateway.pinata.cloud/ipfs/bafyImageCid' };
+      },
       async pinJson(content, opts) {
         calls.push({ content, opts });
         await gate;
@@ -50,6 +73,7 @@ function draftValue(over = {}) {
     model: 'qwen/qwen3.8-max-prime',
     tokenName: 'Blake Breaker',
     tokenSymbol: 'BLKB',
+    image: TEST_IMAGE_ID,
     ...over,
   });
   assert.equal(v.ok, true, JSON.stringify(v.fields));
@@ -88,6 +112,7 @@ test('with no pinata client, the draft keeps the self-hosted metadata URI foreve
 test('with pinata configured, a draft starts on the self-hosted URI and swaps to the pinned one once the pin resolves', async () => {
   const pin = fakePinata();
   const { rams } = setup({ pinata: pin.client });
+  await rams.imageReady;
   const ram = rams.createDraft(draftValue({ tokenSymbol: 'TEST' }));
   // Synchronously, right after createDraft returns, pinning hasn't resolved yet.
   assert.equal(ram.token.uri, `https://ramherd.example/api/launchpad/rams/${ram.id}/metadata.json`);
@@ -105,6 +130,7 @@ test('with pinata configured, a draft starts on the self-hosted URI and swaps to
 test('a failed pin leaves the self-hosted URI working; it never blocks or breaks the draft', async () => {
   const pin = fakePinata({ fails: true });
   const { rams } = setup({ pinata: pin.client });
+  await rams.imageReady;
   const ram = rams.createDraft(draftValue());
   const selfHosted = ram.token.uri;
   pin.release();
@@ -311,7 +337,7 @@ test('list filters by owner', () => {
 
 function capped({ pinata = null, ...opts } = {}) {
   const slotManager = createSlotManager({ llmProvider: { complete: async () => ({ text: 'x' }) } });
-  const rams = createRamRegistry({ slotManager, funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://ramherd.example', pinata, ...opts });
+  const rams = registry({ slotManager, funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://ramherd.example', pinata, ...opts });
   return { slotManager, rams };
 }
 
@@ -319,6 +345,7 @@ test('Pinata pins are capped globally (not per client): past the cap, drafts kee
   const pin = fakePinata();
   pin.release();
   const { rams } = capped({ pinata: pin.client, pinRateLimit: { max: 3, windowMs: 60 * 60 * 1000 } });
+  await rams.imageReady;
   const made = [];
   for (let i = 0; i < 10; i++) made.push(rams.createDraft(draftValue())); // 10 different owner wallets
   for (const r of made) await rams.waitForMetadataPin(r.id);
@@ -393,6 +420,7 @@ test('metadata external_url is the RAM\'s own herd page, keyed by its launchpad 
 test('the pinned metadata carries the page external_url; URI lengths stay well under create_v2\'s 200', async () => {
   const pin = fakePinata();
   const { rams } = setup({ pinata: pin.client });
+  await rams.imageReady;
   const ram = rams.createDraft(draftValue());
   assert.equal(pin.calls[0].content.external_url, `https://ramherd.example/herd#ram/${ram.id}`);
   pin.release();
@@ -409,7 +437,7 @@ test('the pinned metadata carries the page external_url; URI lengths stay well u
   assert.ok(93 <= MAX_URI_LENGTH);
 
   // Self-hosted fallback on the production base: unchanged shape and still short.
-  const prod = createRamRegistry({ slotManager: createSlotManager({ llmProvider: { complete: async () => ({ text: 'x' }) } }), funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://hashrammers.com' });
+  const prod = registry({ slotManager: createSlotManager({ llmProvider: { complete: async () => ({ text: 'x' }) } }), funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://hashrammers.com' });
   const p = prod.createDraft(draftValue());
   assert.equal(p.token.uri, 'https://hashrammers.com/api/launchpad/rams/ram-0001/metadata.json');
   assert.equal(p.token.uri.length, 65);
@@ -419,7 +447,7 @@ test('the pinned metadata carries the page external_url; URI lengths stay well u
 test('onActivated fires once per confirmed launch, after the RAM is active; a throwing hook never undoes a launch', () => {
   const seen = [];
   const slotManager = createSlotManager({ llmProvider: { complete: async () => ({ text: 'x' }) } });
-  const rams = createRamRegistry({ slotManager, funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://ramherd.example', onActivated: (r) => seen.push(r) });
+  const rams = registry({ slotManager, funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://ramherd.example', onActivated: (r) => seen.push(r) });
   const a = rams.createDraft(draftValue());
   rams.prepareLaunch(a.id, wallet());
   assert.equal(seen.length, 0); // drafting and preparing raise nothing
@@ -432,7 +460,7 @@ test('onActivated fires once per confirmed launch, after the RAM is active; a th
   rams.cancel(b.id);
   assert.equal(seen.length, 1); // a cancel calls nothing
 
-  const boom = createRamRegistry({ slotManager, funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://ramherd.example', idPrefix: 'boom', onActivated: () => { throw new Error('hook broke'); } });
+  const boom = registry({ slotManager, funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://ramherd.example', idPrefix: 'boom', onActivated: () => { throw new Error('hook broke'); } });
   const c = boom.createDraft(draftValue());
   boom.prepareLaunch(c.id, wallet());
   assert.equal(boom.confirmLaunch(c.id, { signature: sig(), briefApproved: true }).status, 'active');

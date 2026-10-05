@@ -3,7 +3,9 @@
 //
 // Public:
 //   GET  /api/launchpad/config                 static catalog + honest status
-//   POST /api/launchpad/rams                   validate + store a draft RAM
+//   POST /api/launchpad/images                 the token image (raw bytes, Content-Type image/*)
+//   GET  /api/launchpad/images/:id             a self-hosted token image (pinned ones redirect)
+//   POST /api/launchpad/rams                   validate + store a draft RAM (needs an image id)
 //   GET  /api/launchpad/rams?owner=<wallet>    list RAMs (optionally by owner)
 //   GET  /api/launchpad/rams/:id               one RAM, with its funding totals
 //   GET  /api/launchpad/rams/:id/metadata.json the token's metadata (its create_v2 uri)
@@ -32,6 +34,7 @@ import {
   lamportsToSol,
 } from './lib/launchtx.js';
 import { createRateLimiter } from './lib/ratelimit.js';
+import { ImageError, MAX_IMAGE_BYTES } from './lib/images.js';
 
 // Any valid 32-byte base58 value works for measuring size; this one is the
 // System Program id. Used only when no table exists, to report the real size.
@@ -57,7 +60,7 @@ export function createSolanaClient(rpcUrl) {
   };
 }
 
-export function createLaunchpadRoutes({ store, config, sendOk, sendError, readJsonBody, clientKey }) {
+export function createLaunchpadRoutes({ store, config, sendOk, sendError, readJsonBody, readRawBody, clientKey }) {
   const lp = config.launchpad;
   try {
     if (new PublicKey(lp.treasury).toBase58() !== lp.treasury) throw new Error();
@@ -108,7 +111,57 @@ export function createLaunchpadRoutes({ store, config, sendOk, sendError, readJs
     if (!verdict.ok) {
       return sendError(res, 400, 'invalid_ram', 'Some answers need fixing before this RAM can be created.', undefined, { fields: verdict.fields });
     }
+    if (!store.rams.getImage(verdict.value.image)) {
+      // Well-formed id, but not one this server holds (never uploaded here, or
+      // a self-hosted image dropped from memory / lost in a restart).
+      return sendError(res, 400, 'invalid_ram', 'Some answers need fixing before this RAM can be created.', undefined, { fields: { image: 'That image is no longer on the server. Pick it again.' } });
+    }
     sendOk(res, { ram: store.rams.createDraft(verdict.value) }, 201);
+  }
+
+  // The token image: the raw file is the whole body (no multipart: this page
+  // and this server are the only two ends, and a raw body needs no parser).
+  // Content-Type must be image/*, which a cross-site <form> cannot send
+  // without a CORS preflight this server never answers. The declared type is
+  // only a gate; the real type comes from the file's own signature.
+  async function postImage(req, res) {
+    if (rateLimited(req, res)) return;
+    const declared = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (!declared.startsWith('image/')) {
+      req.resume();
+      return sendError(res, 415, 'invalid_image', 'Send the image file itself as the body, with its image/* Content-Type.', undefined, { fields: { image: 'That file is not a PNG, JPG, GIF or WEBP image.' } });
+    }
+    // A little over the cap so an exactly-at-cap file isn't refused by the reader
+    // before validateImageBytes gives its friendlier per-field message.
+    const bytes = await readRawBody(req, res, MAX_IMAGE_BYTES + 1);
+    if (bytes === undefined) return;
+    try {
+      sendOk(res, { image: await store.rams.uploadImage(bytes) }, 201);
+    } catch (err) {
+      if (!(err instanceof ImageError)) throw err;
+      if (err.code === 'image_storage_full') return sendError(res, 503, 'image_storage_full', err.message, { 'Retry-After': '600' });
+      sendError(res, err.code === 'too_large' ? 413 : 400, err.code === 'too_large' ? 'too_large' : 'invalid_image', err.message, undefined, { fields: { image: err.message } });
+    }
+  }
+
+  function getImage(res, imageId) {
+    const held = store.rams.imageFile(imageId);
+    if (held) {
+      res.writeHead(200, {
+        'Content-Type': held.type,
+        'Content-Length': held.bytes.length,
+        // Content-addressed id: these bytes never change under this URL.
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+      });
+      return res.end(held.bytes);
+    }
+    const pinned = store.rams.getImage(imageId);
+    if (pinned?.pinned) {
+      res.writeHead(302, { Location: pinned.url, 'Cache-Control': 'public, max-age=3600' });
+      return res.end();
+    }
+    sendError(res, 404, 'not_found');
   }
 
   async function postTransaction(req, res, id) {
@@ -217,6 +270,14 @@ export function createLaunchpadRoutes({ store, config, sendOk, sendError, readJs
     req.routeLabel = `api/launchpad/${parts.slice(2).map((p, i) => (i === 1 ? ':id' : p)).join('/')}`;
     if (pathname === '/api/launchpad/config' && method === 'GET') {
       sendOk(res, { launchpad: { ...status(), ...launchpadCatalog() } });
+      return true;
+    }
+    if (pathname === '/api/launchpad/images' && method === 'POST') {
+      await postImage(req, res);
+      return true;
+    }
+    if (parts[2] === 'images' && parts.length === 4 && (method === 'GET' || method === 'HEAD')) {
+      getImage(res, parts[3]);
       return true;
     }
     if (pathname === '/api/launchpad/rams' && method === 'POST') {

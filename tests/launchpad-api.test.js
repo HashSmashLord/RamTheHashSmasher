@@ -5,11 +5,16 @@ import bs58 from 'bs58';
 import { randomBytes } from 'node:crypto';
 import { startApp } from './helpers/harness.js';
 import { loadConfig } from '../server/config.js';
+import { imageIdFor } from '../server/lib/images.js';
+import { makePng } from './helpers/png.js';
 import { inspectLaunchTransaction, launchLookupTableAddresses, lookupTableAccount, DEFAULT_TREASURY, MAX_TX_BYTES } from '../server/lib/launchtx.js';
 
 const wallet = () => Keypair.generate().publicKey.toBase58();
 const sig = () => bs58.encode(randomBytes(64)); // shaped like a tx signature
 const TABLE = wallet();
+// Every draft needs a token image the server already holds (content-addressed id).
+const TEST_PNG = makePng({ note: 'launchpad-api.test' });
+const TEST_IMAGE_ID = imageIdFor(TEST_PNG);
 
 /** A Solana client that never touches the network and counts its calls. */
 function stubSolana({ tableAddresses = null } = {}) {
@@ -34,6 +39,7 @@ async function start({ lookupTable = null, liveRequested = false, solana = stubS
     solanaClient: solana,
     launchpadRateLimit: { max: 1000, windowMs: 60_000 },
   });
+  await s.store.rams.uploadImage(TEST_PNG);
   return { ...s, solana };
 }
 
@@ -46,6 +52,7 @@ const body = (over = {}) => ({
   model: 'z-ai/glm-5.3-prime',
   tokenName: 'Keccak Knocker',
   tokenSymbol: 'KECK',
+  image: TEST_IMAGE_ID,
   ...over,
 });
 
@@ -239,6 +246,7 @@ test('launchpad routes are rate limited per client', async (t) => {
   const base = loadConfig({});
   const s = await startApp({ launchpad: base.launchpad, solanaClient: stubSolana(), launchpadRateLimit: { max: 2, windowMs: 60_000 } });
   t.after(() => s.stop());
+  await s.store.rams.uploadImage(TEST_PNG); // directly, so it doesn't spend the per-client limit
   assert.equal((await s.postJson('/api/launchpad/rams', body())).status, 201);
   assert.equal((await s.postJson('/api/launchpad/rams', body())).status, 201);
   const third = await s.postJson('/api/launchpad/rams', body());

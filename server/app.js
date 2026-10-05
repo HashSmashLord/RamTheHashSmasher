@@ -152,6 +152,16 @@ export function createApp(config) {
     return body;
   }
 
+  /** Raw bytes with their own size cap (the launchpad image upload); undefined once answered. */
+  async function readRawBody(req, res, limit) {
+    try {
+      return await readBody(req, limit);
+    } catch (err) {
+      if (err.code === 'too_large') sendError(res, 413, 'too_large', undefined, { Connection: 'close' });
+      return undefined;
+    }
+  }
+
   // Launchpad (user-created RAMs): its own module; see server/launchpad-routes.js.
   const launchpad = createLaunchpadRoutes({
     store,
@@ -160,6 +170,7 @@ export function createApp(config) {
     sendError: (res, status, code, message = ERROR_MESSAGES[code], headers, extra = {}) =>
       send(res, status, { ok: false, error: code, message, ...extra }, headers),
     readJsonBody,
+    readRawBody,
     clientKey: (req) => clientAddress(req, config.trustProxy),
   });
 

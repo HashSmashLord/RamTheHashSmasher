@@ -35,7 +35,7 @@ test('every family x approach x model the page accepts, the server accepts too',
     for (const { track } of tracks) {
       for (const { id } of client.APPROACHES) {
         for (const model of client.MODELS) {
-          const form = { owner, hashFamily: family, track, approach: id, approachDetail: 'Look for a cheaper characteristic in the message schedule.', model, tokenName: 'Herd RAM', tokenSymbol: 'herd' };
+          const form = { owner, hashFamily: family, track, approach: id, approachDetail: 'Look for a cheaper characteristic in the message schedule.', model, tokenName: 'Herd RAM', tokenSymbol: 'herd', image: 'img-0123456789abcdef01234567' };
           assert.equal(client.validateDraft(form).ok, true);
           const verdict = validateCreateRequest(client.toRamRequest(form));
           assert.equal(verdict.ok, true, `${family}/${track}/${id}/${model}: ${JSON.stringify(verdict.fields)}`);
