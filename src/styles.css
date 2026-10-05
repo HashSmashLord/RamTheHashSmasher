@@ -241,6 +241,109 @@ img { image-rendering: pixelated; }
 .index-body p { color: var(--ink-2); font-size: 0.95rem; margin: 0; max-width: 60ch; }
 .index-body .herd-counts { margin: 0.9rem 0 0; gap: 0.4rem 1rem; }
 
+/* ---------- the explainer on the banner page: seven printed parts, each a head and a figure ---------- */
+
+.explain { padding-top: clamp(4rem, 8vw, 6.5rem); }
+.ex-parts { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--rule-2); }
+.ex-part { display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 1.6rem; padding: 2.4rem 0; border-bottom: 2px solid var(--rule-2); }
+.ex-head { min-width: 0; }
+.ex-head h3 { display: flex; align-items: baseline; gap: 0.6rem; font-size: 2rem; margin-bottom: 1rem; }
+.ex-head .part-no { color: var(--ink-3); flex: none; }
+.ex-head p { color: var(--ink-2); max-width: 52ch; }
+.ex-head p:last-child { margin-bottom: 0; }
+.ex-fig { margin: 0; min-width: 0; }
+.ex-fig figcaption { color: var(--ink-3); font-size: 0.85rem; line-height: 1.45; margin-top: 1rem; max-width: 72ch; }
+.ex-fig h4 { margin: 0 0 0.6rem; font-family: var(--display); font-weight: 400; font-size: 1.5rem; line-height: 1; }
+
+/* 01: the blender: an input, the HASH block, its fingerprint */
+.fp-rows { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--rule-2); }
+.fp-row {
+  display: grid; grid-template-columns: 6rem 16px 60px 16px minmax(0, 1fr);
+  grid-template-areas: "in a1 blk a2 out" "in a1 blk a2 tag";
+  column-gap: 0.9rem; row-gap: 0.25rem; align-items: center; padding: 0.9rem 0; border-bottom: 2px solid var(--rule-2);
+}
+.fp-row .fp-in { grid-area: in; }
+.fp-row .fp-arrow:nth-of-type(1) { grid-area: a1; }
+.fp-row .fp-block { grid-area: blk; }
+.fp-row .fp-arrow:nth-of-type(3) { grid-area: a2; }
+.fp-out { grid-area: out; align-self: end; font-size: 0.95rem; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.fp-tag { grid-area: tag; align-self: start; color: var(--ink-3); font-size: 0.85rem; line-height: 1.45; }
+.fp-half { display: inline-block; }
+.fp-in { font-family: var(--display); font-size: 1.5rem; line-height: 1; color: var(--ink); white-space: nowrap; }
+.fp-in u { text-decoration-thickness: 3px; text-underline-offset: 0.12em; }
+.fp-arrow { color: var(--ink-2); }
+.fp-block { display: block; width: 60px; height: 60px; fill: var(--ink-2); }
+
+/* 02: three systems, the blender each leans on */
+.chains { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); column-gap: clamp(1.5rem, 3vw, 3rem); border-top: 2px solid var(--rule-2); }
+.chains li { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 1rem; row-gap: 0.3rem; align-content: start; padding: 1.2rem 0; border-bottom: 2px solid var(--rule-2); min-width: 0; }
+.chain-mark { grid-row: 1 / span 3; width: 32px; height: 32px; fill: var(--ink); }
+.chain-name { font-family: var(--display); font-size: 1.75rem; line-height: 1; color: var(--ink); }
+.chain-hash { color: var(--ink); font-weight: 600; }
+.chain-job { color: var(--ink-2); font-size: 0.95rem; }
+
+/* 03: a collision: two inputs, one fingerprint; then the what-if beside where it stands */
+.collide { margin: 0 0 2rem; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 1.4rem; row-gap: 0.6rem; padding: 0.9rem 0; border-top: 2px solid var(--rule-2); border-bottom: 2px solid var(--rule-2); }
+.collide-in { grid-column: 1; display: grid; grid-template-columns: 8.5rem 16px 60px 16px; column-gap: 0.9rem; align-items: center; }
+.collide-out { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; margin: 0; padding-left: 1.2rem; border-left: var(--u) solid var(--ink); }
+.collide-what { font-family: var(--display); font-size: 1.5rem; line-height: 1; color: var(--ink); }
+.collide-real { color: var(--ink-3); font-size: 0.85rem; line-height: 1.45; max-width: 44ch; }
+.ex-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem; align-items: start; }
+.ex-cols p { color: var(--ink-2); font-size: 0.95rem; }
+.ex-cols p:last-child { margin-bottom: 0; }
+.ex-cols .ex-note { color: var(--ink-3); font-size: 0.85rem; margin-bottom: 0.7rem; }
+/* where it really stands: the true column, framed as the notice is */
+.ex-real { border: var(--u) solid var(--ink); clip-path: var(--clip-notch); padding: 1.2rem 1.3rem; }
+.ex-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; color: var(--ink-2); font-size: 0.95rem; }
+.ex-list li { display: grid; grid-template-columns: 8px minmax(0, 1fr); column-gap: 0.7rem; }
+.ex-list li::before { content: ""; width: 8px; height: 8px; margin-top: 0.55em; background: var(--ink-3); }
+
+/* 04: rounds kept, one block per round of the full hash */
+.rounds { margin: 0; border-top: 2px solid var(--rule-2); }
+.round-line { display: grid; grid-template-columns: 8rem minmax(0, 1fr); align-items: baseline; column-gap: 0.9rem; row-gap: 0.6rem; padding: 0.95rem 0; border-bottom: 2px solid var(--rule-2); }
+.round-line dt { color: var(--ink-2); font-family: var(--label); font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; }
+.round-line dd { margin: 0; }
+.round-count { font-family: var(--display); font-size: 2rem; line-height: 1; color: var(--ink); }
+.round-of { color: var(--ink-3); font-family: var(--label); font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; }
+.round-bar { grid-column: 1 / -1; display: flex; gap: 2px; }
+.round-bar i { display: block; flex: 1 1 0; height: calc(3 * var(--u)); background: var(--rule); }
+.round-bar i.on { background: var(--ink); }
+.round-bar i.alt { background: var(--ink-2); }
+
+/* 05: the roster, one ram per track */
+.roster { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); column-gap: clamp(1.5rem, 3vw, 3rem); border-top: 2px solid var(--rule-2); }
+.roster > div { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 0.3rem 1rem; padding: 0.75rem 0; border-bottom: 2px solid var(--rule-2); min-width: 0; }
+.roster dt { display: inline-flex; align-items: center; gap: 0.7rem; color: var(--ink-2); font-family: var(--label); font-size: 0.75rem; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; }
+.roster dt img { display: block; width: 26px; height: 20px; flex: none; }
+.roster dd { margin: 0; color: var(--ink); }
+
+/* 06: the pipeline, top to bottom, then who can reach a RAM */
+.flow { list-style: none; margin: 0 0 2.2rem; padding: 0; }
+.flow li { position: relative; display: grid; grid-template-columns: minmax(0, 13rem) minmax(0, 1fr); column-gap: 1.4rem; align-items: baseline; }
+.flow li + li { margin-top: 2.2rem; }
+.flow li + li::before {
+  content: ""; position: absolute; left: 0; top: -1.75rem; width: 16px; height: 16px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges' fill='%23a8a8a8'%3E%3Cpath d='M1 4h1v1H1zM2 5h1v2H2zM3 0h2v8H3zM5 5h1v2H5zM6 4h1v1H6z'/%3E%3C/svg%3E") no-repeat 0 0 / 16px 16px;
+}
+.flow-name { font-family: var(--display); font-size: 1.5rem; line-height: 1; color: var(--ink); }
+.flow-text { color: var(--ink-2); font-size: 0.95rem; max-width: 56ch; }
+.reach { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.4rem 2rem; }
+.reach li { border-top: 2px solid var(--rule-2); padding-top: 1rem; min-width: 0; }
+.reach-path { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.7rem; margin: 0 0 0.7rem; max-width: none; font-family: var(--display); font-size: 1.5rem; line-height: 1; color: var(--ink); }
+.reach-path a { text-decoration: none; }
+.reach-path a:hover { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 0.12em; }
+.reach-path .glyph { color: var(--ink-2); }
+.reach-path .reach-stop { color: var(--ink); }
+.reach-stop + .reach-end { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 3px; }
+.reach-text { color: var(--ink-2); font-size: 0.95rem; margin: 0; }
+
+/* 07: the launchpad's four steps */
+.ex-stamp { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin-top: 1.2rem; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); column-gap: clamp(1.5rem, 3vw, 3rem); border-top: 2px solid var(--rule-2); }
+.steps li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); align-items: baseline; column-gap: 0.6rem; padding: 0.9rem 0; border-bottom: 2px solid var(--rule-2); min-width: 0; }
+.step-no { font-family: var(--display); font-size: 2rem; line-height: 1; color: var(--ink-3); }
+.step-text { color: var(--ink); }
+
 /* ---------- the Herder's panel: the biggest screen on the page ---------- */
 
 .panel { border: var(--u) solid var(--ink); clip-path: var(--clip-notch); display: flex; flex-direction: column; min-height: 36rem; }
@@ -436,6 +539,11 @@ select.ctl option { background: var(--bg); color: var(--ink); }
 /* wide: the listing reads across, not down. Every row that can be a column of a wider row is one */
 @media (min-width: 641px) {
   .index-lines { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* the explainer's rows go across */
+  .chains { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .chains li { grid-template-columns: minmax(0, 1fr); }
+  .chain-mark { grid-row: auto; margin-bottom: 0.5rem; }
+  .roster, .reach, .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 1001px) {
@@ -451,6 +559,8 @@ select.ctl option { background: var(--bg); color: var(--ink); }
   .banner.home .fund-value { grid-column: 1; grid-row: auto; text-align: left; }
   .banner.home .feed-note { grid-column: 1 / -1; margin-left: 0; margin-right: 0; }
   .index-lines { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* the explainer: each part's head beside its figure, on the section head's own 2 : 3 */
+  .ex-part { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: clamp(2rem, 4vw, 4rem); align-items: start; padding: 3rem 0; }
 
   /* a part's head: the heading beside its lead */
   .sec-head { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); column-gap: clamp(2rem, 4vw, 4rem); align-items: start; }
@@ -491,7 +601,7 @@ select.ctl option { background: var(--bg); color: var(--ink); }
   .nav.is-open a { padding: 0.5rem 0; font-size: 0.85rem; }
   .nav.is-open a.pill { margin-top: 0.8rem; padding: 0 calc(5 * var(--u)); align-self: flex-start; font-size: 0.75rem; }
   .nav-toggle { display: inline-flex; }
-  .ideas-row, .rules-cols { grid-template-columns: 1fr; }
+  .ideas-row, .rules-cols, .ex-cols { grid-template-columns: 1fr; }
   .facts > div { grid-template-columns: 1fr; row-gap: 0.2rem; }
 }
 
@@ -512,4 +622,13 @@ select.ctl option { background: var(--bg); color: var(--ink); }
   .panel { min-height: 0; }
   .ram-page-crumb { display: none; }
   .brand-name { font-size: 1.5rem; }
+  /* the explainer: the fingerprint drops under its blender, the collision's verdict under its inputs */
+  .fp-row { grid-template-columns: 5.5rem 16px 60px 16px minmax(0, 1fr); grid-template-areas: "in a1 blk a2 ." "out out out out out" "tag tag tag tag tag"; row-gap: 0.5rem; }
+  .fp-out { align-self: start; }
+  .collide { grid-template-columns: minmax(0, 1fr); }
+  .collide-in { grid-template-columns: 7.5rem 16px 60px 16px; }
+  .collide-out { grid-column: 1; grid-row: auto; margin-top: 0.4rem; }
+  .flow li { grid-template-columns: minmax(0, 1fr); row-gap: 0.35rem; }
+  .chains li:last-child { border-bottom: 0; padding-bottom: 0; }
+  .ex-head h3 { font-size: 1.75rem; }
 }

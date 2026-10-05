@@ -5,7 +5,7 @@ import bs58 from 'bs58';
 import { createSlotManager } from '../server/lib/slots.js';
 import { createRamFunds } from '../server/lib/ramfunds.js';
 import { createPayoutBook } from '../server/lib/payouts.js';
-import { createRamRegistry } from '../server/lib/rams.js';
+import { createRamRegistry, MAX_URI_LENGTH } from '../server/lib/rams.js';
 import { validateCreateRequest } from '../server/lib/launchpad.js';
 import { CREATE_FEE_LAMPORTS, DEFAULT_TREASURY } from '../server/lib/launchtx.js';
 
@@ -372,4 +372,68 @@ test('eviction takes drafts/cancelled before an in-progress (awaiting-signature)
   assert.equal(rams.get(signing.id), undefined);
   const reuse = rams.list().find((r) => r.status === 'draft');
   assert.equal(rams.prepareLaunch(reuse.id, mint).token.mint, mint, 'the evicted RAM\'s mint is free again');
+});
+
+test('metadata external_url is the RAM\'s own herd page, keyed by its launchpad id, and stays put through launch', () => {
+  const ctx = setup();
+  const ram = ctx.rams.createDraft(draftValue());
+  const page = `https://ramherd.example/herd#ram/${ram.id}`;
+  assert.equal(ctx.rams.metadata(ram.id).external_url, page); // known at draft time, before any slot exists
+  assert.doesNotMatch(ctx.rams.metadata(ram.id).external_url, /\/api\//); // a page, not a JSON endpoint
+  ctx.rams.prepareLaunch(ram.id, wallet());
+  assert.equal(ctx.rams.metadata(ram.id).external_url, page);
+  const active = ctx.rams.confirmLaunch(ram.id, { signature: sig(), briefApproved: true });
+  assert.match(active.slotId, /^slot-\d+$/);
+  // Same link after the slot exists: the page resolves ram id -> slot (src/ram-resolve.js).
+  assert.equal(ctx.rams.metadata(ram.id).external_url, page);
+  // The token uri (the create_v2 field) is a different thing and is unchanged by this.
+  assert.equal(active.token.uri, `https://ramherd.example/api/launchpad/rams/${ram.id}/metadata.json`);
+});
+
+test('the pinned metadata carries the page external_url; URI lengths stay well under create_v2\'s 200', async () => {
+  const pin = fakePinata();
+  const { rams } = setup({ pinata: pin.client });
+  const ram = rams.createDraft(draftValue());
+  assert.equal(pin.calls[0].content.external_url, `https://ramherd.example/herd#ram/${ram.id}`);
+  pin.release();
+  await rams.waitForMetadataPin(ram.id);
+
+  // A pinned URI is gateway + CID: a CID is a fixed-length hash of the JSON, so its
+  // length never depends on the JSON's contents and external_url cannot push it over.
+  // CIDv1 (base32 sha256, the ~95-char shape measured on real Pinata) is 59 chars;
+  // CIDv0 (Qm..., base58) is 46.
+  const cidV1 = `bafkrei${'a'.repeat(52)}`;
+  const cidV0 = `Qm${'a'.repeat(44)}`;
+  assert.equal(`https://gateway.pinata.cloud/ipfs/${cidV1}`.length, 93);
+  assert.equal(`https://gateway.pinata.cloud/ipfs/${cidV0}`.length, 80);
+  assert.ok(93 <= MAX_URI_LENGTH);
+
+  // Self-hosted fallback on the production base: unchanged shape and still short.
+  const prod = createRamRegistry({ slotManager: createSlotManager({ llmProvider: { complete: async () => ({ text: 'x' }) } }), funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://hashrammers.com' });
+  const p = prod.createDraft(draftValue());
+  assert.equal(p.token.uri, 'https://hashrammers.com/api/launchpad/rams/ram-0001/metadata.json');
+  assert.equal(p.token.uri.length, 65);
+  assert.equal(prod.metadata(p.id).external_url, 'https://hashrammers.com/herd#ram/ram-0001');
+});
+
+test('onActivated fires once per confirmed launch, after the RAM is active; a throwing hook never undoes a launch', () => {
+  const seen = [];
+  const slotManager = createSlotManager({ llmProvider: { complete: async () => ({ text: 'x' }) } });
+  const rams = createRamRegistry({ slotManager, funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://ramherd.example', onActivated: (r) => seen.push(r) });
+  const a = rams.createDraft(draftValue());
+  rams.prepareLaunch(a.id, wallet());
+  assert.equal(seen.length, 0); // drafting and preparing raise nothing
+  rams.confirmLaunch(a.id, { signature: sig(), briefApproved: true });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].id, a.id);
+  assert.equal(seen[0].status, 'active');
+  assert.ok(seen[0].slotId);
+  const b = rams.createDraft(draftValue());
+  rams.cancel(b.id);
+  assert.equal(seen.length, 1); // a cancel calls nothing
+
+  const boom = createRamRegistry({ slotManager, funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://ramherd.example', idPrefix: 'boom', onActivated: () => { throw new Error('hook broke'); } });
+  const c = boom.createDraft(draftValue());
+  boom.prepareLaunch(c.id, wallet());
+  assert.equal(boom.confirmLaunch(c.id, { signature: sig(), briefApproved: true }).status, 'active');
 });

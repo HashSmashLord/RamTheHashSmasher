@@ -4,7 +4,7 @@
 // mutator — kept deliberately tiny and reviewed as such.
 
 import { createMockFeeSource, createFeeLedger } from './lib/ledger.js';
-import { computeAllocation } from './lib/budget.js';
+import { computeAllocation, withLaunchCeiling } from './lib/budget.js';
 import { createSlotManager } from './lib/slots.js';
 import { createCoordinator, createCoordinatorView } from './lib/coordinator.js';
 import { createIdeaQueue } from './lib/moderation.js';
@@ -98,11 +98,36 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   // before; nothing else changes either way.
   const pinata = pinataPolicy(env);
   const pinataClient = pinata.configured ? createPinataClient({ jwt: pinata.jwt }) : null;
-  const rams = createRamRegistry({ slotManager, funds: ramFunds, payouts, publicBaseUrl: launchpad.publicBaseUrl, treasury: launchpad.treasury, pinata: pinataClient });
+  // Roster ceiling growth (budget.js withLaunchCeiling): each launchpad RAM
+  // confirmed active adds SLOTS_PER_CONFIRMED_LAUNCH to the roster's maxSlots.
+  // Append-only, like ramFunds/payouts: an id is only ever added, never
+  // removed, so nothing later (a cancel, an eviction, a resize) can lower a
+  // ceiling a real launch raised. A Set, so the same RAM can't count twice.
+  // In memory like every other record here: a restart resets it (README).
+  const launchesThatRaisedCeiling = new Set();
+  const rams = createRamRegistry({
+    slotManager,
+    funds: ramFunds,
+    payouts,
+    publicBaseUrl: launchpad.publicBaseUrl,
+    treasury: launchpad.treasury,
+    pinata: pinataClient,
+    onActivated: (ram) => launchesThatRaisedCeiling.add(ram.id),
+  });
+
+  /** The budget config in force right now: the static one, plus launchpad ceiling growth. */
+  function currentBudgetConfig() {
+    return withLaunchCeiling(budgetConfig, launchesThatRaisedCeiling.size);
+  }
 
   function getAllocation() {
     const { totalUsd } = ledger.getSnapshot();
-    return computeAllocation(totalUsd, budgetConfig);
+    return {
+      ...computeAllocation(totalUsd, currentBudgetConfig()),
+      // Where maxSlots comes from, so the number can be explained honestly.
+      maxSlotsBase: budgetConfig.maxSlots,
+      launchesConfirmed: launchesThatRaisedCeiling.size,
+    };
   }
 
   const coordinatorView = createCoordinatorView({ slotManager, ledger, getAllocation });
@@ -132,6 +157,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
     rams,
     coordinator,
     getAllocation,
+    currentBudgetConfig,
     reallocateSlotsFromBudget,
   };
 }

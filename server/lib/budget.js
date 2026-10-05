@@ -86,3 +86,40 @@ export function computeAllocation(feeTotalUsd, config = DEFAULT_BUDGET_CONFIG) {
     maxSlots: config.maxSlots,
   };
 }
+
+/**
+ * Roster ceiling growth from the launchpad: every launchpad RAM the operator
+ * confirms (status -> active: a real 0.2 SOL, wallet-signed launch) raises the
+ * ORIGINAL roster's `maxSlots` by this many seats.
+ *
+ * Why +1: one confirmed launch is one real, paid-for unit of demand, so the
+ * herd's own (fee-funded) roster may grow by one more seat if fees cover it.
+ * It's the smallest step that still tracks activity one-for-one, so it can
+ * never outrun what really happened. The ceiling is only a cap: a seat still
+ * has to be paid for by fees (`usdPerSlot`) before it exists.
+ *
+ * The launched RAM itself never takes a roster seat (it runs in its own owned
+ * slot, outside the roster; see slots.js), so this raises the roster's limit
+ * without the launchpad RAM counting toward or consuming it.
+ */
+export const SLOTS_PER_CONFIRMED_LAUNCH = 1;
+
+/**
+ * A copy of `config` whose maxSlots includes the launchpad's growth. Pure: the
+ * caller owns the (append-only) count of confirmed launches.
+ *
+ * @param {BudgetConfig} config - base config (its maxSlots is the starting ceiling)
+ * @param {number} confirmedLaunches - launchpad RAMs ever confirmed active
+ * @param {number} [perLaunch]
+ * @returns {BudgetConfig}
+ */
+export function withLaunchCeiling(config, confirmedLaunches, perLaunch = SLOTS_PER_CONFIRMED_LAUNCH) {
+  if (!Number.isInteger(confirmedLaunches) || confirmedLaunches < 0) {
+    throw new RangeError('confirmedLaunches must be a non-negative integer');
+  }
+  if (!Number.isInteger(perLaunch) || perLaunch < 0) {
+    throw new RangeError('perLaunch must be a non-negative integer');
+  }
+  assertConfig(config);
+  return { ...config, maxSlots: config.maxSlots + confirmedLaunches * perLaunch };
+}

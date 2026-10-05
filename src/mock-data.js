@@ -364,6 +364,7 @@ function startRealPoll(onTick, intervalMs = 4000) {
 // ---------------------------------------------------------------------------
 
 import { deskFeedAvailable } from "./sandbox-viewer.js";
+import { resolveRamId } from "./ram-resolve.js";
 
 export const backendReady = deskFeedAvailable();
 
@@ -469,6 +470,11 @@ export const RAMherdAPI = {
         realFetch("/api/ledger"), realFetch("/api/allocation"), realFetch("/api/slots"),
       ]);
       const active = slots.filter((s) => s.active);
+      // "Original RAMs funded: X of maxSlots" counts the roster only. Launchpad
+      // (owned) RAMs run in their own slots outside the roster's ceiling
+      // (server/lib/slots.js), so counting them here would show a launch as
+      // eating an original seat. The status breakdown still covers every RAM.
+      const rosterActive = active.filter((s) => s.kind !== "owned");
       const breakdown = { idle: 0, thinking: 0, running: 0, submitted: 0, validated: 0, failed: 0 };
       for (const s of active) {
         const st = s.status === "running-experiment" ? "running" : s.status;
@@ -484,7 +490,7 @@ export const RAMherdAPI = {
         // in words instead of printing a dollar figure.
         computeSpentEpoch: null,
         epochLabel: "this 24h epoch",
-        slotsActive: active.length,
+        slotsActive: rosterActive.length,
         slotsMax: allocation.maxSlots,
         breakdown,
       };
@@ -539,11 +545,30 @@ export const RAMherdAPI = {
    */
   async getRamDetail(id) {
     if (await backendReady) {
-      const res = await fetch(`/api/slots/${encodeURIComponent(id)}`, { credentials: "omit" });
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`/api/slots/${id} -> ${res.status}`);
-      const { slot } = await res.json();
-      return realSlotToAgent(slot, { withHistory: true });
+      // A slot id, or a launchpad RAM id (its token's website link): see ram-resolve.js.
+      const found = await resolveRamId(id);
+      if (!found) return null;
+      if (found.kind === "not-launched") {
+        const { ram } = found;
+        // No slot exists, so no agent shape: ram-page.js renders this as its own
+        // "not launched yet" page (no desk, no activity, no slot id).
+        return {
+          id: ram.id,
+          notLaunched: true,
+          ramStatus: ram.status,
+          tokenName: ram.token.name,
+          tokenSymbol: ram.token.symbol,
+          hashFamily: ram.hashFamily,
+          track: ram.track,
+          approach: ram.approach,
+          model: ram.model,
+          createdLabel: relativeTime(secondsSince(ram.createdAt)),
+        };
+      }
+      const agent = realSlotToAgent(found.slot, { withHistory: true });
+      // Launched through the launchpad: its page lives at its slot id from here on.
+      if (found.kind === "launched") agent.launchpadRamId = found.ram.id;
+      return agent;
     }
     await simulatedLatency();
     const a = state.agents.find((x) => x.id === id);

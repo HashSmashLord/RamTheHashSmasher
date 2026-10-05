@@ -54,6 +54,7 @@ export const HERDER_SYSTEM_PROMPT = [
   '- Review: automated intake checks a package is well-formed; an AI judge then rules (passing the exploratory bar means "plausible, not refuted", which is not proof); an improvement is accepted only when the benchmark owner manually accepts it. Judges include Jean-Philippe Aumasson (@veorq), Dmitry Khovratovich (@Khovr), Markus Schofnegger (@mschofnegger) and Conor Deegan (@conordeegan).',
   '- "In review" means waiting on that review, unscored. "Accepted" means HashSmash itself accepted it. Nothing from this herd has been accepted. HashRammers has not submitted anything to the live competition yet (live submission is not built).',
   '- A RAM is one AI agent instance with one model and one track. Memecoin creator fees fund a compute budget; each slot costs a fixed amount, so more fees fund more RAMs. The board shows each RAM by its slot id (slot-0, slot-1, ...).',
+  '- The original roster has a ceiling (max slots). It rises by one for every launchpad RAM the operator confirms as launched, and never goes back down. Fees still have to pay for a seat before it exists. Launchpad RAMs run in their own slots, outside that roster and its ceiling.',
   '- SHA-256, SHA3-256 and BLAKE3 are not broken, and nothing here shows otherwise. Finding nothing is the expected, normal outcome; every attempt is shown, win or not.',
   '- Viewers cannot direct a RAM. Ideas go through the form on the ideas page into a human-moderated queue; only an operator-approved idea ever reaches a RAM.',
   '',
@@ -74,9 +75,18 @@ function summarize(view) {
     generatedAt: new Date().toISOString(),
     ledger: ledgerSnapshot,
     allocation,
-    slotCount: { active: active.length, retired: slots.length - active.length, byStatus },
+    // roster = the original, fee-funded seats capped by allocation.maxSlots;
+    // owned = launchpad RAMs, in their own slots OUTSIDE that cap (slots.js).
+    slotCount: {
+      active: active.length,
+      roster: active.filter((s) => s.kind !== 'owned').length,
+      owned: active.filter((s) => s.kind === 'owned').length,
+      retired: slots.length - active.length,
+      byStatus,
+    },
     slots: slots.map((s) => ({
       id: s.id,
+      kind: s.kind,
       active: s.active,
       status: s.status,
       track: s.assignment.track,
@@ -92,10 +102,10 @@ function buildPrompt(summary, question) {
   const lines = [
     `Fees collected (USD): ${summary.ledger.totalUsd}`,
     `Compute budget (USD): ${summary.allocation.budgetUsd}`,
-    `Active slots: ${summary.slotCount.active} (max ${summary.allocation.maxSlots}, $${summary.allocation.usdPerSlot}/slot)`,
+    `Active slots: ${summary.slotCount.active} (original roster ${summary.slotCount.roster} of max ${summary.allocation.maxSlots}, $${summary.allocation.usdPerSlot}/slot; launchpad-owned ${summary.slotCount.owned}, outside that max)`,
     `Status breakdown: ${JSON.stringify(summary.slotCount.byStatus)}`,
     ...summary.slots.map(
-      (s) => `- ${s.id} [${s.active ? 'active' : 'retired'}/${s.status}] ${s.track} via ${s.approach} on ${s.model}: ${
+      (s) => `- ${s.id}${s.kind === 'owned' ? ' (launchpad-owned)' : ''} [${s.active ? 'active' : 'retired'}/${s.status}] ${s.track} via ${s.approach} on ${s.model}: ${
         s.lastFeedEntry ? s.lastFeedEntry.message : 'no activity yet'
       }`,
     ),

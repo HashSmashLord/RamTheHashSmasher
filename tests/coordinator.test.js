@@ -173,3 +173,19 @@ test('ask() treats an empty completion as no answer, not a blank reply', async (
     assert.deepEqual(result, { ok: false, error: 'empty_answer' });
   }
 });
+
+test('the Herder sees roster vs launchpad-owned slots apart: owned RAMs sit outside the roster max', async () => {
+  const { ledger, slotManager } = buildRig();
+  await ledger.refresh();
+  slotManager.createOwnedSlot({ ramId: 'ram-0001', owner: 'Owner1111', track: 'blake3-r2-exploratory', approach: 'trail-search-heuristics', model: 'qwen/qwen3.8-max-prime', brief: 'b' });
+  const allocation = { ...computeAllocation(ledger.getSnapshot().totalUsd, DEFAULT_BUDGET_CONFIG), maxSlots: 13 };
+  const view = createCoordinatorView({ slotManager, ledger, getAllocation: () => allocation });
+  const coordinator = createCoordinator({ view, llmProvider: createMockLlmProvider() });
+  const summary = coordinator.getSummary();
+  assert.equal(summary.slotCount.active, 3);
+  assert.equal(summary.slotCount.roster, 2);
+  assert.equal(summary.slotCount.owned, 1);
+  const result = await coordinator.ask('How many RAMs?');
+  assert.match(result.answer, /Active slots: 3 \(original roster 2 of max 13, \$5\/slot; launchpad-owned 1/);
+  assert.match(HERDER_SYSTEM_PROMPT, /rises by one for every launchpad RAM the operator confirms/);
+});

@@ -1,5 +1,6 @@
 // HashRammers: a RAM's full page, /herd#ram/<id>. Its screen, larger, its facts, its whole
-// history. Opened over the board (the board stays mounted and keeps ticking underneath);
+// history. <id> is a slot id, or a launchpad RAM id (ram-0001: the website link in its
+// token's metadata), resolved by ram-resolve.js through RAMherdAPI.getRamDetail. Opened over the board (the board stays mounted and keeps ticking underneath);
 // Escape or the Back pill returns to the board with scroll and focus restored.
 // Data through RAMherdAPI only; the desk stream through the board's shared feed.
 
@@ -23,6 +24,21 @@ const PAGE_COPY = {
 
 // Where the hash goes when the page closes: the board, on this same page.
 const BOARD_HASH = "#board";
+
+// A launchpad RAM opened by its launchpad id (its token's website link) before it has
+// a slot. Plain facts about where it stands; nothing here pretends it has run.
+const NOT_LAUNCHED_COPY = {
+  draft: { now: "Not launched yet", line: "This RAM is a draft: its owner hasn't signed the launch transaction." },
+  "awaiting-signature": { now: "Not launched yet", line: "Its launch transaction was prepared for the owner's wallet; the launch hasn't been confirmed yet." },
+  cancelled: { now: "Cancelled before launch", line: "This RAM was cancelled before it launched. It never ran and never will." },
+};
+const NOT_LAUNCHED_TAIL = {
+  draft: "Nothing has run: no slot, no desk, no history. Once its launch is confirmed, this same link opens its live page.",
+  "awaiting-signature": "Nothing has run: no slot, no desk, no history. Once its launch is confirmed, this same link opens its live page.",
+  cancelled: "",
+};
+// How often an open not-launched page re-checks whether it has launched (in fleet ticks).
+const RECHECK_EVERY_TICKS = 3;
 
 /**
  * @param {{ feed: { load: (slotId: string) => Promise<any> } }} opts
@@ -92,6 +108,58 @@ export function mountRamPage({ feed }) {
     });
   }
 
+  function showPage() {
+    ramPage.hidden = false;
+    document.body.classList.add("page-open");
+    window.scrollTo(0, 0);
+    parts.title.setAttribute("tabindex", "-1");
+    parts.title.focus({ preventScroll: true });
+  }
+
+  function renderNotLaunched(detail) {
+    const copy = NOT_LAUNCHED_COPY[detail.ramStatus] || NOT_LAUNCHED_COPY.draft;
+    parts.title.textContent = detail.id;
+    parts.crumb.textContent = detail.id;
+    parts.now.textContent = copy.now;
+
+    const note = document.createElement("div");
+    note.className = "desk ram-not-launched";
+    const line = document.createElement("p");
+    line.className = "desk-line";
+    line.textContent = [copy.line, NOT_LAUNCHED_TAIL[detail.ramStatus] || ""].filter(Boolean).join(" ");
+    note.append(line);
+    parts.screen.prepend(note);
+    open.note = note;
+
+    const rows = [
+      ["Launch", copy.now],
+      ["Token", `${detail.tokenName} ($${detail.tokenSymbol})`],
+      ["Hash family", detail.hashFamily],
+      ["Track", detail.track],
+      ["Approach", detail.approach],
+      ["Model", detail.model, true],
+      ["Drafted", detail.createdLabel],
+      ["Server slot", "none yet"],
+    ];
+    parts.facts.innerHTML = "";
+    for (const [k, v, isPath] of rows) {
+      const div = document.createElement("div");
+      const dt = document.createElement("dt");
+      dt.textContent = k;
+      const dd = document.createElement("dd");
+      if (isPath) writePath(dd, v);
+      else dd.textContent = v;
+      div.append(dt, dd);
+      parts.facts.append(div);
+    }
+    parts.history.innerHTML = "";
+    const li = document.createElement("li");
+    li.innerHTML = `<p class="hist-text"></p>`;
+    li.querySelector(".hist-text").textContent = "Nothing yet. A RAM writes its first line when its slot starts.";
+    parts.history.append(li);
+    document.title = `${detail.id}: ${copy.now.toLowerCase()}. HashRammers`;
+  }
+
   async function openPage(id, returnTo) {
     if (open && open.id === id) return;
     if (open) closePage(false);
@@ -99,6 +167,18 @@ export function mountRamPage({ feed }) {
     if (!detail) {
       location.hash = BOARD_HASH;
       return;
+    }
+    if (detail.notLaunched) {
+      open = { id, notLaunched: true, note: null, ticks: 0, checking: false, desk: null, now: null, seconds: Infinity, returnTo: returnTo || null, scrollY: window.scrollY };
+      renderNotLaunched(detail);
+      showPage();
+      return;
+    }
+    // Opened by a launchpad RAM id (a token's website link) and it has launched: settle
+    // the URL on its real slot id, the same link the board uses, without a new history entry.
+    if (detail.id !== id) {
+      history.replaceState(history.state, "", `#ram/${encodeURIComponent(detail.id)}`);
+      id = detail.id;
     }
     open = { id, desk: null, now: null, seconds: Infinity, returnTo: returnTo || null, scrollY: window.scrollY };
     parts.title.textContent = detail.id;
@@ -113,18 +193,15 @@ export function mountRamPage({ feed }) {
     desk.refresh();
 
     document.title = `${detail.id}: ${roundShort(detail)}, ${STATUS_WORD[detail.status] || detail.status}. HashRammers`;
-    ramPage.hidden = false;
-    document.body.classList.add("page-open");
-    window.scrollTo(0, 0);
-    parts.title.setAttribute("tabindex", "-1");
-    parts.title.focus({ preventScroll: true });
+    showPage();
   }
 
   function closePage(restoreFocus = true) {
     if (!open) return;
-    const { desk, returnTo, scrollY } = open;
+    const { desk, note, returnTo, scrollY } = open;
     open = null;
     if (desk) desk.destroy();
+    if (note) note.remove();
     parts.now.innerHTML = "";
     ramPage.hidden = true;
     document.body.classList.remove("page-open");
@@ -160,6 +237,21 @@ export function mountRamPage({ feed }) {
     /** A fleet tick: keeps the open page's now-line current. */
     update(fleet) {
       if (!open) return;
+      if (open.notLaunched) {
+        // Every few ticks, ask again: once its launch is confirmed, swap to the real page.
+        const page = open;
+        if (page.checking || ++page.ticks % RECHECK_EVERY_TICKS !== 0) return;
+        page.checking = true;
+        RAMherdAPI.getRamDetail(page.id)
+          .then((detail) => {
+            if (open !== page || !detail || detail.notLaunched) return;
+            closePage(false);
+            openPage(page.id, page.returnTo);
+          })
+          .catch(() => {})
+          .finally(() => { page.checking = false; });
+        return;
+      }
       const agent = fleet.find((a) => a.id === open.id);
       if (agent) updateNow(agent);
     },

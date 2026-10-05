@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeBudgetUsd, computeSlotCount, computeAllocation, DEFAULT_BUDGET_CONFIG } from '../server/lib/budget.js';
+import { computeBudgetUsd, computeSlotCount, computeAllocation, DEFAULT_BUDGET_CONFIG, withLaunchCeiling, SLOTS_PER_CONFIRMED_LAUNCH } from '../server/lib/budget.js';
 
 test('computeBudgetUsd applies the allocation fraction', () => {
   assert.equal(computeBudgetUsd(100, { ...DEFAULT_BUDGET_CONFIG, allocationFraction: 1 }), 100);
@@ -48,4 +48,23 @@ test('computeAllocation ties fee total straight through to a slot count', () => 
   assert.equal(allocation.budgetUsd, 80);
   assert.equal(allocation.slotCount, 8);
   assert.equal(allocation.usdPerSlot, 10);
+});
+
+test('withLaunchCeiling: +1 roster seat of ceiling per confirmed launch, pure, never below the base', () => {
+  const base = { usdPerSlot: 5, allocationFraction: 1, minSlots: 0, maxSlots: 12 };
+  assert.equal(SLOTS_PER_CONFIRMED_LAUNCH, 1);
+  assert.equal(withLaunchCeiling(base, 0).maxSlots, 12);
+  assert.equal(withLaunchCeiling(base, 3).maxSlots, 15);
+  assert.equal(withLaunchCeiling(base, 3, 2).maxSlots, 18);
+  assert.equal(base.maxSlots, 12); // the input config is never mutated
+  assert.throws(() => withLaunchCeiling(base, -1), RangeError);
+  assert.throws(() => withLaunchCeiling(base, 1.5), RangeError);
+  assert.throws(() => withLaunchCeiling(base, 1, -1), RangeError);
+});
+
+test('a grown ceiling is still only a cap: fees must pay for every seat under it', () => {
+  const grown = withLaunchCeiling({ usdPerSlot: 5, allocationFraction: 1, minSlots: 0, maxSlots: 12 }, 3);
+  assert.equal(computeAllocation(30, grown).slotCount, 6); // $30 funds 6, ceiling 15 doesn't add seats
+  assert.equal(computeAllocation(1000, grown).slotCount, 15); // capped at the grown ceiling, not 12
+  assert.equal(computeAllocation(1000, grown).maxSlots, 15);
 });

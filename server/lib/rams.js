@@ -66,9 +66,10 @@ function isSignature(value) {
  *   pinata?: ReturnType<typeof import('./pinata.js').createPinataClient>|null,
  *   pinRateLimit?: { max: number, windowMs: number, now?: () => number },
  *   maxInactiveRams?: number,
+ *   onActivated?: (ram: object) => void,
  * }} opts
  */
-export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram', pinata = null, pinRateLimit = DEFAULT_PIN_RATE_LIMIT, maxInactiveRams = DEFAULT_MAX_INACTIVE_RAMS }) {
+export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram', pinata = null, pinRateLimit = DEFAULT_PIN_RATE_LIMIT, maxInactiveRams = DEFAULT_MAX_INACTIVE_RAMS, onActivated = null }) {
   if (typeof publicBaseUrl !== 'string' || !/^https?:\/\//.test(publicBaseUrl)) throw new TypeError('publicBaseUrl must be an http(s) URL');
   const base = publicBaseUrl.replace(/\/+$/, '');
   /** @type {Map<string, any>} */
@@ -228,6 +229,16 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     ram.briefApproved = true;
     ram.slotId = slot.id;
     touch(ram, 'active');
+    // Store hook (store.js raises the roster ceiling by one per confirmed
+    // launch). Runs only after the RAM is fully active; a throwing hook must
+    // never undo or fail a launch that already happened, so it is contained.
+    if (onActivated) {
+      try {
+        onActivated(copy(ram));
+      } catch {
+        // The launch stands; the hook's own state is the hook's problem.
+      }
+    }
     return copy(ram);
   }
 
@@ -256,6 +267,19 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     return payouts.recordOwed({ ramId: id, wallet: ram.owner, lamports: prizeLamports, track: ram.track, candidateRef, verdict, evidence });
   }
 
+  /**
+   * The token's "website": this RAM's own page on the herd board. Keyed by the
+   * launchpad RAM id (e.g. ram-0001), NOT its slot id, on purpose: metadata is
+   * built (and, with Pinata, pinned immutably to IPFS) at draft time, but the
+   * slot id only exists once confirmLaunch creates the owned slot. The herd
+   * page resolves a launchpad id itself (src/ram-resolve.js): before launch it
+   * shows an honest "not launched yet" page, after launch it settles on the
+   * real slot's page. So this one link is right before and after confirmation.
+   */
+  function pageUrl(id) {
+    return `${base}/herd#ram/${encodeURIComponent(id)}`;
+  }
+
   /** Token metadata JSON served at the RAM's metadata URI. */
   function metadata(id) {
     const ram = mustGet(id);
@@ -264,7 +288,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
       name: ram.token.name,
       symbol: ram.token.symbol,
       description: `HashRammers RAM ${ram.id}: an AI agent working on ${ram.hashFamily} (${ram.track}) with ${ram.model}. 100% of creator fees fund this RAM's compute via the HashRammers treasury.`,
-      external_url: `${base}/api/launchpad/rams/${ram.id}`,
+      external_url: pageUrl(ram.id),
       attributes: [
         { trait_type: 'hash_family', value: ram.hashFamily },
         { trait_type: 'track', value: ram.track },
