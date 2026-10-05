@@ -67,17 +67,48 @@ HashSmash's own `bash .yukon/setup.sh` passes with no pip installs (168 tests, 5
 - **Isolation:** each slot works in its own clone under `.ramherd/workspaces/<slot>/` (git-ignored).
   The vendored repo and its real accepted candidate are never written to, and a test checks this.
   Python runs without a shell and with a minimal environment, so no keys reach credential-free stages.
+- **Attribution:** every real pipeline run also writes `.ramherd/attribution/<slotId>__<track>.json`
+  (git-ignored, outside the candidate package and outside the workspace clone, so the organizer's own
+  `check`/`intake` never sees it) recording which RAM — slot id, real model id, approach — produced
+  that candidate, plus its claimed `time_log2`/`success_probability`. There is still no real external
+  submission path (see "Yukon submission CLI" below), so nothing is sent anywhere with it yet; it
+  exists so that attribution is ready the moment one exists. `writeAttribution` in `hashsmash.js`.
 
 | Env var | Default | Effect |
 |---|---|---|
 | `RAMHERD_PIPELINE=local` | off | sha256-r31 slots (harness draft) and sha256-r32 slots (research package) run the real local pipeline (free, credential-free) instead of the simulated step |
 | `RAMHERD_HASHSMASH_JUDGE=true` | off | allows the paid `judge`/`score` stages, **only** when `RAMHERD_LIVE=true` and `OPENROUTER_API_KEY` are also set |
-| `RAMHERD_HASHSMASH_SUBMIT=true` | off | recorded only. Live submission to the HashSmash/Yukon competition is **not implemented**; `submitLive()` always refuses |
+| `RAMHERD_HASHSMASH_SUBMIT=true` | off | recorded only, read nowhere. `submitLive()` always refuses; the real external path, if ever used, is `server/lib/yukon-submit.js` below, not this flag |
 
 Known environment gap: the real accepted r31 package declares a `python-message-pairs-v1`
 experiment, which HashSmash only runs in its pinned Docker sandbox, with no host fallback.
 Docker isn't installed on this machine, so intake on that package exits `3`. The runner reports
 this as `environment-blocked` (a setup problem, not a verdict on the candidate).
+
+## Yukon submission CLI (built, gated off, never run)
+
+`server/lib/yukon-submit.js` wraps the **real** external HashSmash/Yukon submission path — a
+separate CLI (`yukon`), not a GitHub PR against `Layr-Labs/hash-smash`: `yukon login`, `yukon clone
+<track-benchmark-id>`, `yukon setup --track`, `yukon run --track`, then `yukon submit --track <track>
+--model <model> --harness <harness> --note-file <file>`. `--model`/`--harness` are the real
+attribution mechanism for a real submission; this module feeds them from exactly the attribution
+record described above, never a fabricated name.
+
+**Nothing in this repo has ever run this for real.** It refuses unless BOTH `RAMHERD_YUKON_SUBMIT=true`
+and a real `YUKON_API_KEY` are set, and even then a caller still has to decide to call `submit()` —
+the gate is not the operator's go-ahead. Every test (`tests/yukon-submit.test.js`) runs against a
+fake CLI function, the same way `tests/sandbox.test.js` fakes the E2B SDK; none of them ever sets
+both env vars and a real key together. Per-track benchmark id is unconfirmed beyond one example
+(`blake3-r1-exploratory` → `86d5040e-d37d-4f41-bab6-1f2cd57e7398`); `clone()` takes it as a required
+argument rather than guessing the other five.
+
+| Env var | Default | Effect |
+|---|---|---|
+| `RAMHERD_YUKON_SUBMIT=true` | off | opt-in gate; without it every step of `createYukonSubmitter()` refuses before touching a process |
+| `YUKON_API_KEY` | unset | required in addition to the flag; a missing/blank key refuses even with the flag on |
+
+`writeSubmissionNote()` (writing the honest note file to disk) and `commandFor()` (a safe command
+preview) both work with the gate off — only `login`/`clone`/`setup`/`run`/`submit` are gated.
 
 ## E2B desktop sandboxes (what's proven, what isn't)
 
@@ -177,7 +208,7 @@ to override. It is still the next step for **cost**.
 | `RAMHERD_SANDBOX_AUTORESTART` | unset (off) | `true` = when E2B's hard timeout ends an active roster RAM's sandbox, start a fresh one (workbench task + banner rerun; nothing carries over). Never for owned RAMs, admin-stopped sandboxes, or ones gone before their hard stop. Switch at runtime: `POST /api/admin/sandboxes/autorestart {"enabled": false}` |
 | `RAMHERD_SANDBOX_AUTORESTART_BACKOFF_SEC` | 30 | wait before retrying a failed restart; doubles each retry, capped at 10 min |
 | `RAMHERD_SANDBOX_AUTORESTART_MAX_FAILURES` | 5 | consecutive failed restarts for one RAM before it gives up (feed line says so) |
-| `RAMHERD_SANDBOX_ACTIVE_LOOP` | unset (off) | `true` = after the workbench intro, a roster RAM's real research cycle (`advance()`) runs step after step for as long as its sandbox is up, and each step's feed line is typed into a Mousepad notes window on the desktop; when its model asks (`SEARCH:` line), at most every 2nd thinking step opens a real IACR ePrint search in the desktop's Chrome and logs the real result titles. Never starts in mock mode or while the paid judge gate is open; stops with the sandbox. Each thinking step is a real billed model call (about $0.009 on anthropic/claude-opus-5.5, roughly 30 an hour per RAM). `server/lib/sandbox-activity.js`, proof `scripts/prove-active-loop.mjs` |
+| `RAMHERD_SANDBOX_ACTIVE_LOOP` | unset (off) | `true` = after the workbench intro, a roster RAM's real research cycle (`advance()`) runs step after step for as long as its sandbox is up. Each step's feed line is typed into a Mousepad notes window; a running-experiment step also opens (or reuses) a terminal that looks at the RAM's own real cloned candidate files (`git log`, `ls`, `cat claim.json`/`proof.md`/`TASK.md`, cycled, so the desktop is not just the notes editor on repeat); when its model asks (`SEARCH:` line), at most every 2nd thinking step opens a real IACR ePrint search in Chrome and logs the real result titles. Each thinking prompt is grounded in the slot's own best REAL result so far this session (lowest `time_log2`, highest `success_probability` it has actually produced) and explicitly asked to try to beat it, honestly, not just cycle statuses (`updateBestResult`, `LOOP_THINKING_SYSTEM`). Never starts in mock mode or while the paid judge gate is open; stops with the sandbox. Each thinking step is a real billed model call (about $0.009 on anthropic/claude-opus-5.5, roughly 30 an hour per RAM). `server/lib/sandbox-activity.js`, proof `scripts/prove-active-loop.mjs` |
 | `RAMHERD_SANDBOX_ACTIVE_LOOP_PAUSE_SEC` | 5 | pause between two steps (2 to 30; out of range falls back to 5). Keeps every RAM under 60 s idle unless a step is mid-call |
 | `RAMHERD_SANDBOX_ACTIVE_LOOP_BROWSE_EVERY` | 2 | at most one literature search per this many thinking steps |
 | `RAMHERD_SANDBOX_ACTIVE_LOOP_MAX_CALLS` | 60 | real thinking calls one sandbox session may make before the loop stops (feed line says so) |

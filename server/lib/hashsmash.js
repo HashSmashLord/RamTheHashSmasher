@@ -46,6 +46,12 @@ import { isLiveMode } from './llm.js';
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const DEFAULT_REFERENCE_ROOT = join(PROJECT_ROOT, 'reference', 'hash-smash');
 export const DEFAULT_WORKSPACES_DIR = join(PROJECT_ROOT, '.ramherd', 'workspaces');
+// Attribution records live OUTSIDE every slot's workspace clone, never inside
+// the candidate package or the vendored repo tree: nothing the organizer's
+// own `check`/`intake` scripts walk ever sees an extra file from us. This is
+// our own bookkeeping only, kept ready for the day a real external submission
+// path exists (see `writeAttribution` below).
+export const DEFAULT_ATTRIBUTION_DIR = join(PROJECT_ROOT, '.ramherd', 'attribution');
 
 /**
  * Tracks this runner drives today. sha256-r31-exploratory is the research
@@ -301,6 +307,7 @@ export function classifyStage(stage, raw) {
 export function createHashSmashRunner({
   referenceRoot = DEFAULT_REFERENCE_ROOT,
   workspacesDir = DEFAULT_WORKSPACES_DIR,
+  attributionDir = DEFAULT_ATTRIBUTION_DIR,
   python = 'python3',
   judgeAllowed = false,
   env = process.env,
@@ -308,6 +315,7 @@ export function createHashSmashRunner({
 } = {}) {
   const refRoot = resolve(referenceRoot);
   const wsRoot = resolve(workspacesDir);
+  const attrRoot = resolve(attributionDir);
   const relToRef = relative(refRoot, wsRoot);
   if (relToRef === '' || (!relToRef.startsWith('..') && !isAbsolute(relToRef))) {
     throw new Error('workspacesDir must be outside the vendored HashSmash repo');
@@ -348,6 +356,40 @@ export function createHashSmashRunner({
   function workspacePath(slotId) {
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(slotId) || slotId.startsWith('.')) throw new RangeError(`invalid slot id: ${slotId}`);
     return join(wsRoot, slotId);
+  }
+
+  /**
+   * Records which RAM (slot id, model, track, approach) produced a candidate
+   * package, in a file OUTSIDE the package and outside the workspace's git
+   * clone (see DEFAULT_ATTRIBUTION_DIR). This repo has no real external
+   * submission path yet (`submitLive` always refuses); this file carries
+   * exactly the fields a real one would need for `--model`/`--harness`/a
+   * note file, so attribution is ready the moment that path exists. Writing
+   * it never touches claim.json, proof.md or certificates/manifest.json: the
+   * package the organizer's own scripts see is unchanged.
+   */
+  function writeAttribution({ slotId, track, model = null, approach = null, modelSource = null, candidate, head }) {
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(slotId) || slotId.startsWith('.')) throw new RangeError(`invalid slot id: ${slotId}`);
+    assertTrack(track);
+    mkdirSync(attrRoot, { recursive: true });
+    const record = {
+      schema_version: 1,
+      note: 'HashRammers internal attribution record. Not sent to HashSmash or part of the candidate package: this repo has no real external submission mechanism yet. Kept so a real submission step can honestly say which RAM produced this candidate.',
+      slotId,
+      track,
+      approach,
+      model,
+      modelSource,
+      referenceHead: head ?? null,
+      candidateKind: candidate?.kind ?? null,
+      submissionState: candidate?.submissionState ?? null,
+      timeLog2: candidate?.timeLog2 ?? null,
+      successProbability: candidate?.successProbability ?? null,
+      producedAt: new Date().toISOString(),
+    };
+    const path = join(attrRoot, `${slotId}__${track}.json`);
+    writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+    return { path, record };
   }
 
   /** Is the environment able to run the pipeline at all? Never throws. */
@@ -503,7 +545,7 @@ export function createHashSmashRunner({
    * package is `ready`; a harness draft never is, and the judge gate is off
    * by default, so a ready research package stops at a `gated` judge stage).
    */
-  async function runCycle({ slotId, track }) {
+  async function runCycle({ slotId, track, model = null, approach = null, modelSource = null }) {
     const ws = await prepareWorkspace(slotId);
     const research = RESEARCH_CANDIDATES[track];
     const { candidateDir, claim } = research
@@ -513,12 +555,14 @@ export function createHashSmashRunner({
       kind: research ? 'research' : 'harness-draft',
       submissionState: claim.submission_state,
       timeLog2: claim.claim?.time_log2 ?? null,
+      successProbability: claim.claim?.success_probability ?? null,
       heuristics: (claim.heuristics || []).map((h) => h.id),
       summary: research ? research.summary : 'labeled harness draft (organizer template, no attack claimed)',
     };
+    const attribution = writeAttribution({ slotId, track, model, approach, modelSource, candidate, head: ws.head });
     const precheck = precheckCandidate(candidateDir, ws.dir);
     const stages = [];
-    if (!precheck.ok) return { track, workspace: ws.dir, workspaceRelative: relative(PROJECT_ROOT, ws.dir), head: ws.head, candidateDir, candidate, precheck, stages };
+    if (!precheck.ok) return { track, workspace: ws.dir, workspaceRelative: relative(PROJECT_ROOT, ws.dir), head: ws.head, candidateDir, candidate, attribution, precheck, stages };
     stages.push(await check(ws.dir, track));
     stages.push(await intake(ws.dir, track));
     const intakeResult = stages.at(-1);
@@ -527,12 +571,13 @@ export function createHashSmashRunner({
       stages.push(j);
       if (j.outcome === 'ok') stages.push(await score(ws.dir, track));
     }
-    return { track, workspace: ws.dir, workspaceRelative: relative(PROJECT_ROOT, ws.dir), head: ws.head, candidateDir, candidate, precheck, stages };
+    return { track, workspace: ws.dir, workspaceRelative: relative(PROJECT_ROOT, ws.dir), head: ws.head, candidateDir, candidate, attribution, precheck, stages };
   }
 
   return Object.freeze({
     referenceRoot: refRoot,
     workspacesDir: wsRoot,
+    attributionDir: attrRoot,
     judgeAllowed,
     supportsTrack: (track) => PIPELINE_TRACKS.includes(track),
     candidateKindFor: (track) => (RESEARCH_CANDIDATES[track] ? 'research' : 'harness-draft'),
@@ -542,6 +587,7 @@ export function createHashSmashRunner({
     candidateDirFor,
     writeHarnessDraft,
     writeResearchCandidate,
+    writeAttribution,
     precheck: precheckCandidate,
     check,
     intake,

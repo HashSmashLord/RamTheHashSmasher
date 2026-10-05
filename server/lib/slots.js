@@ -102,12 +102,19 @@
 // is the visible side of the SAME event, not a second timer: the feed line(s)
 // each advance() just pushed are what get typed into the notes editor
 // (sandbox-activity.js), and the banner (which shows the latest feed entry)
-// says the same thing. On a thinking step the model may end with a
-// "SEARCH: <query>" line; on at most one in `browseEvery` thinking steps that
-// opens a real IACR ePrint search in the desktop's Chrome, reads the real
-// result titles, logs them in the feed and hands them to the next thinking
-// step. Loop-driven steps never fabricate: on a track with no real experiment
-// runner the experiment step says nothing ran instead of "drafted".
+// says the same thing. A running-experiment step also opens (or reuses) a
+// terminal that looks at this RAM's own real cloned candidate files (`git
+// log`, `ls`, `cat claim.json`/`proof.md`/`TASK.md`, cycled), so the desktop
+// is not only the notes editor and an occasional browser tab. On a thinking
+// step the model may end with a "SEARCH: <query>" line; on at most one in
+// `browseEvery` thinking steps that opens a real IACR ePrint search in the
+// desktop's Chrome, reads the real result titles, logs them in the feed and
+// hands them to the next thinking step. Loop-driven steps never fabricate: on
+// a track with no real experiment runner the experiment step says nothing
+// ran instead of "drafted", and a thinking step is grounded in the slot's
+// best REAL measured result so far this session (`slot.bestResult`,
+// `updateBestResult`) with an explicit standing goal of beating it, honestly,
+// rather than just cycling through statuses (LOOP_THINKING_SYSTEM).
 // Guardrails:
 //   - never starts in mock mode (`activeLoop.live`, from llm.js isLiveMode),
 //     and stops itself if a thinking call ever comes back mocked;
@@ -160,18 +167,47 @@ export function restartDelayMs(failures, baseMs, maxMs) {
 
 /** System prompt for a thinking step the active loop drives. */
 export const LOOP_THINKING_SYSTEM = 'You are a HashSmash solver agent whose work is shown live on a desktop people are watching. '
-  + 'In two or three short sentences, say the next concrete thing you will try on this target and why. '
-  + 'Never claim a result, a found collision or progress you do not have. '
+  + 'Your standing goal across this whole session is to beat your own best REAL result so far on this target (lowest time_log2, highest success_probability) — '
+  + 'you are not just cycling through statuses, you are trying to genuinely improve on what you have actually produced. '
+  + 'In two or three short sentences, say the next concrete thing you will try on this target, why, and how it could beat your best result so far. '
+  + 'Never claim a result, a found collision or progress you do not have; if you have no real result yet, or cannot beat your best one, say that plainly instead of pretending otherwise. '
   + 'If looking up published literature would genuinely help this step, end with one line "SEARCH: <a short query for the IACR ePrint archive>"; otherwise do not add that line.';
 
 /** Feed entry types that are the RAM's research history (what a thinking step is grounded in). */
 const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|pipeline-.*|sandbox-browse|sandbox-task-done|suggestion-attached)$/;
 
-/** Real recent history + last real search results, appended to a loop thinking prompt. */
+/**
+ * Updates, on the slot itself, the best REAL numeric result a pipeline run
+ * has produced this session (lowest time_log2, highest success_probability).
+ * Only ever replaced by a genuinely better real measurement from `detail`
+ * (a pipeline cycle's `candidate`, see hashsmash.js) — never invented, never
+ * moved by anything else. Lives on the slot (in-memory, per slot), not in the
+ * public snapshot. Returns the slot's best record (or null if `detail` had
+ * nothing numeric yet).
+ */
+export function updateBestResult(slot, detail) {
+  if (!detail) return slot.bestResult ?? null;
+  if (!slot.bestResult) slot.bestResult = { timeLog2: null, successProbability: null };
+  if (typeof detail.timeLog2 === 'number' && (slot.bestResult.timeLog2 === null || detail.timeLog2 < slot.bestResult.timeLog2)) {
+    slot.bestResult.timeLog2 = detail.timeLog2;
+  }
+  if (typeof detail.successProbability === 'number' && (slot.bestResult.successProbability === null || detail.successProbability > slot.bestResult.successProbability)) {
+    slot.bestResult.successProbability = detail.successProbability;
+  }
+  return slot.bestResult;
+}
+
+/** Real recent history + the running best-so-far + last real search results, appended to a loop thinking prompt. */
 export function loopGrounding(slot) {
   const clip = (t, n) => { const x = String(t).replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
   const recent = slot.feed.filter((f) => HISTORY_TYPES.test(f.type)).slice(-6).map((f) => `[${f.type}] ${clip(f.message, 220)}`);
   let out = ` Your recent activity, newest last: ${recent.length ? recent.join(' || ') : 'none yet'}.`;
+  const best = slot.bestResult;
+  out += (best && (best.timeLog2 !== null || best.successProbability !== null))
+    ? ` Your best REAL result so far this session: ${best.timeLog2 !== null ? `time 2^${best.timeLog2}` : 'time not yet measured'}, ${
+      best.successProbability !== null ? `success probability ${best.successProbability}` : 'success probability not yet measured'
+    }. Try to beat it; if you cannot, say so honestly instead of claiming you did.`
+    : ' You have no real measured result yet this session on this target (no experiment has actually produced a number); say that honestly rather than inventing one.';
   const ls = slot.lastSearch;
   if (ls) {
     out += ` Your last literature search, "${ls.query}" on the IACR ePrint archive, listed: ${
@@ -476,16 +512,17 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
   }
 
   async function runRealPipeline(slot) {
-    const { track } = slot.assignment;
+    const { track, model, approach, modelSource } = slot.assignment;
     let cycle;
     try {
-      cycle = await pipelineRunner.runCycle({ slotId: slot.id, track });
+      cycle = await pipelineRunner.runCycle({ slotId: slot.id, track, model, approach, modelSource });
     } catch (err) {
       slot.status = 'failed';
       slot.pipeline = { track, error: err.message, ranAt: now() };
       pushFeed(slot, 'pipeline-error', `HashSmash pipeline could not run: ${err.message}`);
       return;
     }
+    updateBestResult(slot, cycle.candidate);
     slot.pipeline = {
       track,
       ranAt: now(),
@@ -494,6 +531,11 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       workspace: cycle.workspaceRelative ?? null,
       candidate: cycle.candidate?.kind ?? 'harness-draft',
       candidateDetail: cycle.candidate ?? null,
+      // Which RAM (slot id, model, track) produced this candidate — written to
+      // its own file outside the package by writeAttribution, never into
+      // claim.json/proof.md. Ready for a real submission step; nothing here
+      // sends it anywhere external yet.
+      attributionPath: cycle.attribution?.path ?? null,
       precheck: { ok: cycle.precheck.ok, errors: cycle.precheck.errors },
       stages: cycle.stages.map(({ stage, outcome, exitCode, status, detail, durationMs, parsed }) => ({
         stage, outcome, exitCode, status, detail, durationMs,
@@ -514,8 +556,8 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       slot.status = 'validated';
       const judged = slot.pipeline.stages.find((st) => st.stage === 'judge');
       pushFeed(slot, 'validated', slot.pipeline.candidate === 'research'
-        ? `Research package passed HashSmash's real local intake for ${track} (mechanical checks only). Judge stage: ${judged?.outcome ?? 'not run'}; nothing was scored or submitted. Its claim still rests on disclosed exploratory heuristics; passing intake is not a verdict on them.`
-        : `Harness draft passed HashSmash's real local intake for ${track}. Integration check only: no attack is claimed, nothing was judged or submitted.`);
+        ? `Research package passed HashSmash's real local intake for ${track} (mechanical checks only). Judge stage: ${judged?.outcome ?? 'not run'}; nothing was scored or submitted. Its claim still rests on disclosed exploratory heuristics; passing intake is not a verdict on them. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track} — not sent anywhere yet, there is no real external submission path.`
+        : `Harness draft passed HashSmash's real local intake for ${track}. Integration check only: no attack is claimed, nothing was judged or submitted. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track}.`);
     } else {
       slot.status = 'failed';
       const blocked = intake?.outcome === 'environment-blocked';
@@ -639,11 +681,11 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     const entry = {
       sessionId, timer: null, running: null, stopped: false, startedAt: now(),
       steps: 0, thinking: 0, failures: 0, lastBrowseThinking: -Infinity, browses: 0,
-      notepadId: null, browserId: null, unverifiedTyping: 0,
+      notepadId: null, browserId: null, terminalId: null, inspects: 0, unverifiedTyping: 0,
       lastAdvanceEndMs: null, maxGapMs: 0, history: [],
     };
     loops.set(slot.id, entry);
-    pushFeed(slot, 'sandbox-loop-started', `Always-on research loop started on desktop ${sessionId}: this RAM now advances its real research cycle step after step (a ${Math.round(loopCfg.stepPauseMs / 1000)}s pause between steps, never idle for ${MAX_IDLE_MS / 1000}s unless a step is mid-call), and each step's feed line is typed into a notes editor on the desktop as it happens.`);
+    pushFeed(slot, 'sandbox-loop-started', `Always-on research loop started on desktop ${sessionId}: this RAM now advances its real research cycle step after step (a ${Math.round(loopCfg.stepPauseMs / 1000)}s pause between steps, never idle for ${MAX_IDLE_MS / 1000}s unless a step is mid-call); each step's feed line is typed into a notes editor, and on a running-experiment step a terminal also looks at this RAM's own real cloned candidate files, on the desktop as it happens.`);
     scheduleLoopStep(slot, entry, 0);
   }
 
@@ -692,6 +734,21 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         return sandboxActivity.typeIntoNotepad(sbx, { assignment: slot.assignment, windowId: entry.notepadId, block });
       });
       if (typed && !typed.verified) entry.unverifiedTyping += 1;
+      // A second, distinct honest activity: on the step that just entered
+      // running-experiment, a terminal looks at this RAM's own real cloned
+      // candidate files (sandbox-activity.js), so a viewer sees more than
+      // the notes editor and an occasional browser tab. Cycled so the same
+      // file is never shown twice back to back.
+      if (slot.status === 'running-experiment' && loopIsCurrent(slot, entry)) {
+        const inspected = await sandboxManager.runTask(slot.id, (sbx) => sandboxActivity.inspectRepoFile(sbx, { assignment: slot.assignment, windowId: entry.terminalId, index: entry.inspects }));
+        if (loopIsCurrent(slot, entry)) {
+          entry.terminalId = inspected.windowId;
+          entry.inspects += 1;
+          pushFeed(slot, 'sandbox-inspect', `Opened a terminal on desktop ${entry.sessionId} and looked at ${inspected.label}: ${
+            inspected.output ? inspected.output.slice(0, 220) : '(no output)'
+          }`);
+        }
+      }
       const query = wasIdle ? slot.lastThink?.search : null;
       if (query && entry.thinking - entry.lastBrowseThinking >= loopCfg.browseEvery && loopIsCurrent(slot, entry)) {
         entry.lastBrowseThinking = entry.thinking;
@@ -751,7 +808,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       browseEvery: loopCfg?.browseEvery ?? null,
       maxThinkingPerSession: loopCfg?.maxThinkingPerSession ?? null,
       loops: [...loops].map(([slotId, e]) => ({
-        slotId, sessionId: e.sessionId, startedAt: e.startedAt, steps: e.steps, thinking: e.thinking, browses: e.browses,
+        slotId, sessionId: e.sessionId, startedAt: e.startedAt, steps: e.steps, thinking: e.thinking, browses: e.browses, inspects: e.inspects,
         failures: e.failures, maxGapMs: e.maxGapMs, unverifiedTyping: e.unverifiedTyping, history: e.history.map((h) => ({ ...h })),
       })),
     };

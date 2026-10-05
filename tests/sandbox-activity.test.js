@@ -12,6 +12,7 @@ import { createStore } from '../server/store.js';
 import { loadConfig } from '../server/config.js';
 import {
   parseThinking, asciiText, noteBlock, eprintSearchUrl, notesFile, ensureNotepad, typeIntoNotepad,
+  repoInspectSteps, researchTerminalTitle, ensureResearchTerminal, inspectRepoFile,
   MAX_IDLE_MS, MAX_TYPED_CHARS,
 } from '../server/lib/sandbox-activity.js';
 import { ACTIVE_TRACKS } from '../server/lib/targets.js';
@@ -79,14 +80,16 @@ function fakeLiveLlm(answers = []) {
   };
 }
 
-/** Fake desktop activity: records what would be typed / browsed. */
+/** Fake desktop activity: records what would be typed / browsed / inspected. */
 function fakeActivity({ failType = 0, results = [{ id: '2026/1120', title: 'Pushing Collision Attacks on SHA-2 to 39 Steps' }] } = {}) {
   const typed = [];
   const browsed = [];
+  const inspected = [];
   const state = { failType };
   return {
     typed,
     browsed,
+    inspected,
     state,
     activity: {
       ensureNotepad: async (sbx, { windowId }) => windowId ?? `win-${sbx.sandboxId}`,
@@ -96,6 +99,12 @@ function fakeActivity({ failType = 0, results = [{ id: '2026/1120', title: 'Push
         return { verified: true };
       },
       browseLiterature: async (sbx, { query }) => { browsed.push({ sbx: sbx.sandboxId, query }); return { windowId: 'chrome1', url: eprintSearchUrl(query), pageTitle: 'Search results', results }; },
+      inspectRepoFile: async (sbx, { windowId, index }) => {
+        const labels = ['commit history', 'candidate directory', 'claim.json', 'proof.md', 'TASK.md'];
+        const entry = { sbx: sbx.sandboxId, index, label: labels[index % labels.length] };
+        inspected.push(entry);
+        return { windowId: windowId ?? `term-${sbx.sandboxId}`, label: entry.label, command: `cat ${entry.label}`, output: `real output for ${entry.label}` };
+      },
     },
   };
 }
@@ -185,6 +194,44 @@ test('ensureNotepad launches Mousepad on the notes file and refuses when no wind
   await assert.rejects(ensureNotepad(sbx(''), { assignment: ACTIVE_TRACKS[0] }), /did not appear/);
 });
 
+test('repoInspectSteps lists real, honest commands against the RAM\'s own cloned candidate files, cycled', () => {
+  const steps = repoInspectSteps(ACTIVE_TRACKS[0]);
+  assert.equal(steps.length, 5);
+  assert.equal(steps[0].command, 'cd ~/hash-smash && git log --oneline -8');
+  assert.equal(steps[2].command, "cat ~/hash-smash/lanes/exploratory/candidates/sha256-r31/claim.json 2>/dev/null || echo 'claim.json not in this clone yet'");
+  assert.equal(researchTerminalTitle('sha256-r31-exploratory'), 'RAM research terminal - sha256-r31-exploratory');
+});
+
+test('ensureResearchTerminal opens xfce4-terminal and refuses when no window appears', async () => {
+  const cmds = [];
+  const sbx = (win) => ({ commands: { run: async (cmd) => { cmds.push(cmd); if (cmd.includes('xdotool search')) return { stdout: win }; if (cmd.startsWith('xprop')) return { stdout: '0,94,1280,676' }; return { stdout: '' }; } } });
+  const id = await ensureResearchTerminal(sbx('555\n'), { assignment: ACTIVE_TRACKS[0] });
+  assert.equal(id, '555');
+  assert.ok(cmds.some((c) => c.startsWith('xfce4-terminal --disable-server --maximize --hide-menubar -T')));
+  assert.ok(cmds.some((c) => c.startsWith('xdotool windowmove 555 0 94 windowsize 555 1280')));
+  await assert.rejects(ensureResearchTerminal(sbx(''), { assignment: ACTIVE_TRACKS[0] }), /did not appear/);
+});
+
+test('inspectRepoFile types the cycled command live and reads back its real output', async () => {
+  const cmds = [];
+  const sbx = { commands: { run: async (cmd) => {
+    cmds.push(cmd);
+    if (cmd.includes('xdotool search')) return { stdout: '42\n' };
+    if (cmd.startsWith('xprop')) return { stdout: '0,0,1280,720' };
+    if (cmd === 'cd ~/hash-smash && git log --oneline -8') return { stdout: 'abc123 fix something\n' };
+    return { stdout: '' };
+  } } };
+  const r = await inspectRepoFile(sbx, { assignment: ACTIVE_TRACKS[0], index: 0 });
+  assert.equal(r.windowId, '42');
+  assert.equal(r.label, "the cloned repo's recent commit history");
+  assert.equal(r.output, 'abc123 fix something');
+  assert.ok(cmds.some((c) => c.startsWith('xdotool windowactivate --sync 42')));
+  assert.ok(cmds.some((c) => c.includes("xdotool type --delay 20 -- 'cd ~/hash-smash && git log --oneline -8'")));
+  // A different index cycles to a different, still real command, never the same thing twice in a row.
+  const r2 = await inspectRepoFile(sbx, { assignment: ACTIVE_TRACKS[0], windowId: '42', index: 1 });
+  assert.notEqual(r2.label, r.label);
+});
+
 // ---- policy / wiring ----
 
 test('the loop is off by default and needs RAMHERD_SANDBOX=e2b plus exactly RAMHERD_SANDBOX_ACTIVE_LOOP=true; the pause is clamped', () => {
@@ -238,14 +285,24 @@ test('after the workbench, the loop advances the real status back to back, forev
   const fail = feed.find((f) => f.type === 'failed');
   assert.match(fail.message, /No experiment ran .* no real runner/);
   assert.equal(feed.some((f) => /drafted for/.test(f.message)), false);
-  // Thinking calls are grounded: loop system prompt + real recent history.
+  // Thinking calls are grounded: loop system prompt + real recent history + the running best-so-far.
   assert.equal(r.llm.calls.length, 3);
   assert.equal(r.llm.calls[1].system, LOOP_THINKING_SYSTEM);
   assert.match(r.llm.calls[1].prompt, /Target: SHA-256 reduced to 31 rounds/);
   assert.match(r.llm.calls[1].prompt, /recent activity, newest last: .*\[thinking\] Plan step 1/);
+  assert.match(r.llm.calls[1].prompt, /no real measured result yet this session/);
   assert.equal(r.llm.calls[1].maxTokens, 800);
   assert.equal(r.llm.calls[1].model, 'anthropic/claude-opus-5.5');
   assert.equal(r.m.activeLoopStatus().loops[0].thinking, 3);
+  // A second, distinct honest activity: a terminal looks at this RAM's own
+  // real cloned candidate files on every running-experiment step (there are
+  // two in these 9 steps), never the same thing on repeat as the notepad.
+  assert.equal(r.activity.inspected.length, 2);
+  assert.deepEqual(r.activity.inspected.map((i) => i.index), [0, 1]);
+  const inspect = feed.filter((f) => f.type === 'sandbox-inspect');
+  assert.equal(inspect.length, 2);
+  assert.match(inspect[0].message, /Opened a terminal on desktop .* looked at commit history: real output for commit history/);
+  assert.equal(r.m.activeLoopStatus().loops[0].inspects, 2);
 });
 
 test('concurrent advance() calls on one slot are serialized: one model call, two distinct steps', async () => {
