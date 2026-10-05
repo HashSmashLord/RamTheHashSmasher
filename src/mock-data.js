@@ -1,4 +1,4 @@
-// RAMherd — mock data layer.
+// HashRammers — mock data layer.
 //
 // Everything a real backend would eventually serve lives behind the `RAMherdAPI` object
 // at the bottom of this file. Every page module (index.js, herd.js, herder.js, submit.js, launch.js) calls through that object and
@@ -749,7 +749,7 @@ function mockBuildTransaction(id, mint) {
         requiredSigners: [ram.owner, mint],
         instructions: [
           { label: "Set compute budget", programId: "ComputeBudget111111111111111111111111111111" },
-          { label: `Pay ${CREATE_FEE_SOL} SOL to the RAMherd treasury`, programId: "11111111111111111111111111111111" },
+          { label: `Pay ${CREATE_FEE_SOL} SOL to the HashRammers treasury`, programId: "11111111111111111111111111111111" },
           { label: "pump.fun: create the token", programId: "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P" },
           { label: "pump.fun: route 100% of creator fees to the treasury", programId: "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ" },
         ],

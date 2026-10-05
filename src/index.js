@@ -1,4 +1,4 @@
-// RAMherd: the banner page. The fund lines and the listing's live count; nothing else
+// HashRammers: the banner page. The fund lines and the listing's live count; nothing else
 // on this page moves. The herd itself is on /herd, the Herder on /herder.
 
 import { RAMherdAPI, backendReady } from "./mock-data.js";

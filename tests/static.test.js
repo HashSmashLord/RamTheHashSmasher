@@ -10,7 +10,7 @@ test('serves the frontend from src/ on the same origin as the API', async (t) =>
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-type'), /^text\/html/);
   assert.match(page.headers.get('content-security-policy'), /default-src 'self'/);
-  assert.match(await page.text(), /RAMherd/);
+  assert.match(await page.text(), /HashRammers/);
   for (const [path, type] of [['/herd.html', /text\/html/], ['/herder.html', /text\/html/], ['/submit.html', /text\/html/], ['/rules.html', /text\/html/], ['/index.js', /javascript/], ['/herd.js', /javascript/], ['/ui.js', /javascript/], ['/styles.css', /text\/css/], ['/mock-data.js', /javascript/], ['/favicon.svg', /svg/], ['/fonts/archivo-variable.woff2', /woff2/]]) {
     const res = await s.get(path);
     assert.equal(res.status, 200, path);

@@ -1,4 +1,4 @@
-// RAMherd launchpad: the rules a "Create a RAM" draft must meet, shared by the page
+// HashRammers launchpad: the rules a "Create a RAM" draft must meet, shared by the page
 // (launch.js) and by node tests. Pure ESM: no DOM, no fetch, no globals.
 //
 // The server holds its own copy of these rules and is the authority; this file exists so the
@@ -61,7 +61,7 @@ export const LIMITS = Object.freeze({
 export const CREATE_FEE_SOL = '0.2';
 export const CREATE_FEE_LAMPORTS = 200_000_000;
 
-/** The RAMherd treasury: receives the create fee and 100% of the token's creator fees. */
+/** The HashRammers treasury: receives the create fee and 100% of the token's creator fees. */
 export const TREASURY = '5M6Pc7ossZ8cuQAjnexH9vv2axEJoncgZ3C6uD2PJqHm';
 
 const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;

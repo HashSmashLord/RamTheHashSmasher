@@ -1,5 +1,5 @@
 ---
-name: RAMherd
+name: HashRammers
 description: A line-printer listing on a black screen, in the pixel ram's own 1-bit world; amber only for what is live.
 colors:
   bg: "#000000"
@@ -191,13 +191,13 @@ components:
     typography: "{typography.figure}"
 ---
 
-# Design System: RAMherd
+# Design System: HashRammers
 
 ## Overview
 
 **Creative North Star: "The Line-Printer Listing"**
 
-RAMherd's page is a line-printer listing on a black screen: a banner page in giant pixel letters, then one appended line per thing that happened, every line permanent. The world it is printed in is the operator's pinned brand asset (`src/brand/ram-smashing-hash-main.png`): a pixel ram charging a HASH block, binary digits scattering off the impact, monochrome, 1-bit. Everything the page draws is drawn the way that asset is drawn: on a 4px pixel unit, in white on pure black, with corners that step instead of curve. The five reference sites (chordpf.com, nearos.io, trykyoto.ai, dexora.tech, homefi.space) supplied structure only: black ground, an oversized headline, a filled pill beside a ghost pill, a small mark with a centred nav, generous negative space, and one subtle glow. Nothing of their gloss carried over: no soft cards, no blur, no neon.
+HashRammers's page is a line-printer listing on a black screen: a banner page in giant pixel letters, then one appended line per thing that happened, every line permanent. The world it is printed in is the operator's pinned brand asset (`src/brand/ram-smashing-hash-main.png`): a pixel ram charging a HASH block, binary digits scattering off the impact, monochrome, 1-bit. Everything the page draws is drawn the way that asset is drawn: on a 4px pixel unit, in white on pure black, with corners that step instead of curve. The five reference sites (chordpf.com, nearos.io, trykyoto.ai, dexora.tech, homefi.space) supplied structure only: black ground, an oversized headline, a filled pill beside a ghost pill, a small mark with a centred nav, generous negative space, and one subtle glow. Nothing of their gloss carried over: no soft cards, no blur, no neon.
 
 The page is dense where it reports and empty where it persuades. The banner page gives the headline, the event line, two pills and the plate room to breathe; below it the listing takes over, and from there the page is rules, lines and frames. Three things carry hierarchy: the display face at banner size, the frame (a one-unit white rule with notched corners) around anything that is a screen or a control, and inverse video for the one stamp that matters. Colour does almost nothing. One amber exists, and it means "live right now"; the judge's state is never a colour, it is a white block with black text, the way a terminal highlights the line the cursor is on.
 
@@ -248,7 +248,7 @@ A 1-bit palette with four greys for distance, one amber for the live signal, and
 ### Hierarchy
 - **Display** (400, `clamp(2.8rem, 6vw, 5rem)`, 0.95, balanced): the h1 on the banner page ("Fees fund RAMs. RAMs ram hashes.") and the slip's h1, at 20ch and 16ch respectively.
 - **Banner** (400, `clamp(4rem, 12vw, 9rem)`, 0.85): a RAM's id as the first line of its own page (`.ram-banner`).
-- **Wordmark** (400, `clamp(5rem, 22vw, 16rem)`, 0.8): "RAMherd" across the foot (`.foot-mark`), cropped at the bottom, unselectable, decorative.
+- **Wordmark** (400, `clamp(5rem, 22vw, 16rem)`, 0.8): "HashRammers" across the foot (`.foot-mark`), cropped at the bottom, unselectable, decorative.
 - **Headline** (400, `clamp(2rem, 4vw, 3rem)`, 0.95): every h2 opening a section; on the slip, each part's h2 at `clamp(2rem, 4vw, 3rem)` with its number in `ink-3`.
 - **Title** (400, 1.5rem, 1): h3 inside a part (the notice, the two rules columns, the terms, the preview); also the `>` prompt (`.prompt`) and the counts in the Herder (`.herd-counts .n`), the brand name at 1.75rem (1.5rem below 640px).
 - **Figure** (400, 2rem, 1): fund values on the banner page (`.fund-value`); 1.5rem on the slip. The only place a number grows past reading size.
@@ -315,7 +315,7 @@ Everything is drawn on the 4px unit (`--u`), and corners step instead of curve. 
 ## Components
 
 ### Top
-The bar of a terminal: 4rem tall, sticky, black, edged with a 2px `rule-2` hairline. The pixel ram mark (44 by 40px) and "RAMherd" in Jersey 10 at 1.75rem on the left; four centred links to the pages (The Herd / The Herder / Ideas / What counts) in the label voice in `ink-2` (hover: `ink`, 2px underline at 0.35em offset; the current page's link, `aria-current="page"`, in `ink`); X / GitHub / HashSmash and a small ghost pill ("Enter a RAM") at the right. The same markup on every page. Below 860px the links hide behind a pixel toggle, a ten-unit (40px) notched frame whose three bars are SVG paths; when expanded, the outer bars morph into an X by swapping their `d: path()` and the middle bar goes to opacity 0. The open menu drops from the bar as a black sheet with a one-unit `ink` bottom edge, links stacked at 0.85rem, the pill last. A link click closes it. The RAM page's bar is the same bar with the Back pill at left and the crumb (`RAMherd / the herd / ram-03`, current id in `ink`) at right.
+The bar of a terminal: 4rem tall, sticky, black, edged with a 2px `rule-2` hairline. The pixel ram mark (44 by 40px) and "HashRammers" in Jersey 10 at 1.75rem on the left; four centred links to the pages (The Herd / The Herder / Ideas / What counts) in the label voice in `ink-2` (hover: `ink`, 2px underline at 0.35em offset; the current page's link, `aria-current="page"`, in `ink`); X / GitHub / HashSmash and a small ghost pill ("Enter a RAM") at the right. The same markup on every page. Below 860px the links hide behind a pixel toggle, a ten-unit (40px) notched frame whose three bars are SVG paths; when expanded, the outer bars morph into an X by swapping their `d: path()` and the middle bar goes to opacity 0. The open menu drops from the bar as a black sheet with a one-unit `ink` bottom edge, links stacked at 0.85rem, the pill last. A link click closes it. The RAM page's bar is the same bar with the Back pill at left and the crumb (`HashRammers / the herd / ram-03`, current id in `ink`) at right.
 
 ### Pills
 - **Shape:** the six-unit stair-stepped pill (`--clip-pill`), 48px tall, 24px side padding; `.small` is 40px tall with 20px padding.
@@ -366,7 +366,7 @@ The idea form: label-voice field labels, three controls, a filled pill, and a co
 Two columns of an h3 over a paragraph in `ink-2` at 0.95rem; the mock note beneath on a 2px `rule-2` rule in `ink-3` at 0.85rem.
 
 ### Foot + wordmark
-A 2px `rule-2` rule, the foot row (sentence in `ink-2` with `ink` links, link list right), then "RAMherd" in Jersey 10 at `clamp(5rem, 22vw, 16rem)` with its baseline pulled 0.08em below the edge and the overflow clipped.
+A 2px `rule-2` rule, the foot row (sentence in `ink-2` with `ink` links, link list right), then "HashRammers" in Jersey 10 at `clamp(5rem, 22vw, 16rem)` with its baseline pulled 0.08em below the edge and the overflow clipped.
 
 ### RAM page
 Its bar (Back pill, crumb), the id at banner size (`clamp(4rem, 12vw, 9rem)`, focused on open), the now-line at 1rem, the full screen, the facts (term in the label voice in `ink-2` over an 11rem column, value in `ink`; model and candidate path break after slashes; the review row carries the stamp; the score row reads "not scored yet"), then "History": one row per line the RAM has written, newest first, time in the label voice in `ink-3`, glyph and word in `ink-2`, text at 70ch in `ink-2`; the newest row is in full `ink`. A line is never rewritten; a change prints a new one. Escape or the Back pill returns to the board at the scroll position and focus the visitor left.

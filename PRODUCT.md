@@ -26,7 +26,7 @@ web
 
 ## Product Purpose
 
-RAMherd is a memecoin whose creator fees buy compute for a herd of RAMs — independent AI
+HashRammers is a memecoin whose creator fees buy compute for a herd of RAMs — independent AI
 agent instances — each working a different cryptanalysis angle against HashSmash, the public,
 judged competition on SHA-256, SHA3-256 and BLAKE3. The public page exists to show that work
 happening, live, win or not: fees collected, compute budget, how many RAMs are funded, what
@@ -72,11 +72,11 @@ claims a break; a result only counts when HashSmash marks it accepted.
   boundary and must be stated plainly wherever ideas are collected.
 - Undecided (the operator's call): slots per dollar, whether an approved idea attaches to an
   existing RAM or spins up a new one, how often candidates are submitted to HashSmash, and
-  the final product name ("RAMherd" is a working name).
+  the final product name (now HashRammers, matching @HashRammers and hashrammers.com; "RAMherd" was the working name).
 
 ## Brand Commitments
 
-- Name: RAMherd (working). "RAM" is both the animal and the pun; a herd of rams ramming at a
+- Name: HashRammers (formerly the working name RAMherd). "RAM" is both the animal and the pun; a herd of rams ramming at a
   hash. The copy may lean on it; the page must not become a cartoon.
 - Voice: plain, specific, unhyped. Says what is real and what is not in the same breath.
   "Nothing here claims a hash function is broken" is a fixed line, not a disclaimer to hide.

@@ -5,7 +5,7 @@ primary_target: "src/index.html"
 related_targets: ["src/styles.css","src/app.js","src/sandbox-viewer.js","src/mock-data.js"]
 ---
 
-# Surface brief: src/index.html (the public RAMherd page)
+# Surface brief: src/index.html (the public HashRammers page)
 
 Scope: the single public page, plus the RAM full-page view it opens as an in-page route
 (`#ram/<id>`). Visitor mode: **Persuade** (a first-time visitor must know what this is, why it
@@ -41,7 +41,7 @@ not attended.
 
 ## Direction contract
 
-THESIS: RAMherd's page is a line-printer listing on a black screen: a banner page in giant
+THESIS: HashRammers's page is a line-printer listing on a black screen: a banner page in giant
 pixel letters, then one appended line per thing that happened, every line permanent. It
 refuses the glossy dark-SaaS template (centred headline over a row of soft cards with a neon
 glow) and the paper wallchart it replaces alike. Pixel-art monochrome is pinned; the listing
@@ -71,7 +71,7 @@ panel (what the whole herd is doing, and a prompt to ask it), scrolls to six scr
 named for a real HashSmash track, opens one to its full page and history, reads that nothing
 counts until HashSmash's judge says so, and hands in an idea knowing a person reads it first.
 
-FIRST VIEWPORT (desktop 1440): a thin black nav: pixel ram mark and RAMherd at left, four
+FIRST VIEWPORT (desktop 1440): a thin black nav: pixel ram mark and HashRammers at left, four
 centred links, X / GitHub / HashSmash and a ghost pill "Enter a RAM" at right. Below, centred:
 the headline in Jersey 10 at 5rem on two lines, the event line beneath at reading size,
 two pixel pills ("Watch the board" filled, "Ask the Herder" ghost), and the brand plate (ram,

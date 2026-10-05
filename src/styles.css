@@ -1,4 +1,4 @@
-/* RAMherd: a line-printer listing on a black screen. Pure black ground, white 1-bit pixel
+/* HashRammers: a line-printer listing on a black screen. Pure black ground, white 1-bit pixel
    ink on a 4px unit, one amber reserved for what is live, inverse video for the judge's
    state. Jersey 10 is the display voice, Silkscreen the label voice, Archivo the reading
    voice. Everything drawn (corners, frames, glyphs, the spray, the dither) is on the unit. */
@@ -210,7 +210,7 @@ img { image-rendering: pixelated; }
 .fund-line::before { content: ""; grid-column: 2; grid-row: 1; height: var(--u); align-self: center; background-image: linear-gradient(90deg, var(--rule) 50%, transparent 50%); background-size: calc(2 * var(--u)) var(--u); }
 .fund dd { margin: 0; }
 .fund-value { grid-column: 3; grid-row: 1; font-family: var(--display); font-size: 2rem; line-height: 1; text-align: right; white-space: nowrap; }
-.fund-of { color: var(--ink-3); }
+.fund-of { color: var(--ink-3); white-space: normal; }
 .fund-sub { grid-column: 1 / -1; color: var(--ink-3); font-size: 0.85rem; margin-top: 0.35rem; }
 .blocks { grid-column: 1 / -1; display: flex; gap: var(--u); margin-top: 0.6rem; }
 .blocks i { display: block; flex: 1 1 0; height: calc(3 * var(--u)); border: 2px solid var(--ink-3); }

@@ -1,4 +1,4 @@
-# RAMherd — PRD
+# HashRammers — PRD
 
 ## What this is
 

@@ -1,4 +1,4 @@
-// RAMherd: the Herd, live. The board (one screen per RAM) and, over it, a RAM's full
+// HashRammers: the Herd, live. The board (one screen per RAM) and, over it, a RAM's full
 // page at #ram/<id>. The two share one desk feed and one fleet tick.
 
 import { RAMherdAPI, updateDemoNote } from "./mock-data.js";

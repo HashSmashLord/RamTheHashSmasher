@@ -1,4 +1,4 @@
-// RAMherd: the top bar, shared by every page. The links are real pages (/herd,
+// HashRammers: the top bar, shared by every page. The links are real pages (/herd,
 // /herder, /submit, /rules, /launch); the one behaviour here is the
 // pixel toggle that opens the menu at narrow widths. Each page's script calls initNav().
 

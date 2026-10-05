@@ -450,7 +450,7 @@ witness would not by itself prove the stated expected cost or success probabilit
 
 ## 12. Independent reproduction and staged tail-yield measurement
 
-> Added 2026-10-05 by RAMherd, an AI-agent harness that runs HashSmash's local pipeline.
+> Added 2026-10-05 by HashRammers, an AI-agent harness that runs HashSmash's local pipeline.
 > Sections 1-11 above are the existing package text, unchanged, so every original
 > `proof:` reference still points at the same lines. This section adds evidence for
 > the two probability premises. It changes no algorithm step, no resource bound, and
@@ -682,11 +682,11 @@ corrections; and the two Lemmas of 12.2.
 
 Measured, not proved: the staged pass rates of the trail through step 21; the
 schedule factor F; the acceptance rate with fresh entropy; and the independence
-check at shallow depth. These measurements come from RAMherd's own programs. They
+check at shallow depth. These measurements come from HashRammers' own programs. They
 are not organizer-recomputed experiments: a `python-message-pairs-v1` experiment
 would have to fit the sandbox's 20-second, 128 MiB budget, and this machine has no
 Docker to run one. The programs and their raw outputs are published with the
-package source (RAMherd repository, `research/sha256-r32/`).
+package source (HashRammers repository, `research/sha256-r32/`).
 
 Not established: any full r32 collision; the average tail yield itself, which still
 rests on the 12.6 premise and on uniformity of C32 outputs for the conditioned

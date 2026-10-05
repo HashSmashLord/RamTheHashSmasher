@@ -1,4 +1,4 @@
-// RAMherd: the Herd, live (/herd). One screen per RAM, diffed by id so a tick never
+// HashRammers: the Herd, live (/herd). One screen per RAM, diffed by id so a tick never
 // re-renders the board, and the desk feed every screen on the page shares.
 // Data through RAMherdAPI only; desk streams through sandbox-viewer.js only.
 

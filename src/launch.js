@@ -1,4 +1,4 @@
-// RAMherd entry slip ("Create a RAM", /launch). Data comes through RAMherdAPI.launchpad
+// HashRammers entry slip ("Create a RAM", /launch). Data comes through RAMherdAPI.launchpad
 // (mock-data.js, the only mock/real swap point); rules come from launchpad-rules.js.
 //
 // Signing is gated twice: LAUNCHPAD_LIVE below AND `config.live` from the API must both be
@@ -464,7 +464,7 @@ $("entry").addEventListener("submit", async (e) => {
 });
 
 const sourceLabel = (mock) =>
-  mock ? "Mock answer from the demonstration feed, not the real server." : "Answer from the RAMherd server.";
+  mock ? "Mock answer from the demonstration feed, not the real server." : "Answer from the HashRammers server.";
 
 // ---------------------------------------------------------------------------
 // Part 6: signing. Not live: the button stays disabled and the handoff below refuses to run.

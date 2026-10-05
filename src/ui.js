@@ -1,4 +1,4 @@
-// RAMherd: the listing's primitives, shared by every page that prints a line.
+// HashRammers: the listing's primitives, shared by every page that prints a line.
 // The status words, the pixel glyphs, the judge's column, the one motion (the print),
 // and the small writers that only touch the DOM when a value actually changed.
 // No data access here: every page gets its data through RAMherdAPI (mock-data.js).

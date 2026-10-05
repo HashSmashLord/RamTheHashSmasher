@@ -1,4 +1,4 @@
-// RAMherd: the Herder's page. Its panel, and nothing else.
+// HashRammers: the Herder's page. Its panel, and nothing else.
 
 import { RAMherdAPI, updateDemoNote } from "./mock-data.js";
 import { initNav } from "./nav.js";

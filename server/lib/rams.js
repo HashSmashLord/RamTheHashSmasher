@@ -263,7 +263,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     return {
       name: ram.token.name,
       symbol: ram.token.symbol,
-      description: `RAMherd RAM ${ram.id}: an AI agent working on ${ram.hashFamily} (${ram.track}) with ${ram.model}. 100% of creator fees fund this RAM's compute via the RAMherd treasury.`,
+      description: `HashRammers RAM ${ram.id}: an AI agent working on ${ram.hashFamily} (${ram.track}) with ${ram.model}. 100% of creator fees fund this RAM's compute via the HashRammers treasury.`,
       external_url: `${base}/api/launchpad/rams/${ram.id}`,
       attributes: [
         { trait_type: 'hash_family', value: ram.hashFamily },

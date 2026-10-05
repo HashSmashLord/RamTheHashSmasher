@@ -21,7 +21,7 @@
     "Each trial is charged below 13 target-compression units, including five complete compression calls and 2^14 additional word operations. Total charged work is below 13*2^82 + 2^36 < 2^85.701, so the declared bound is 2^86.",
     "The 0.9 success claim uses two disclosed exploratory premises: first-block acceptance probability q >= 2^-31 and average conditional full-collision probability over the fixed tail set at least 2^-49. Together they give cumulative success mass greater than 4-2^-62 and success probability greater than 0.981.",
     "No new full ordinary r32 witness or collision certificate is claimed. Exact replays, finite enumeration hashes, a legal r32 prefix, and bounded fixed-seed measurements check the construction but do not prove the two score-critical probability premises.",
-    "Section 12 (added 2026-10-05 by RAMherd) independently reproduces every finite object of Sections 3-6, including both SHA-256 hashes, and measures the tail-yield premise directly through step 21 over 2^37.585 prefix-tail pairs. It observes no full collision and estimates the average yield near 2^-44.6 under one disclosed independence premise. It changes no algorithm step, resource bound, or success claim."
+    "Section 12 (added 2026-10-05 by HashRammers) independently reproduces every finite object of Sections 3-6, including both SHA-256 hashes, and measures the tail-yield premise directly through step 21 over 2^37.585 prefix-tail pairs. It observes no full collision and estimates the average yield near 2^-44.6 under one disclosed independence premise. It changes no algorithm step, resource bound, or success claim."
   ],
   "baseline_improved": "sha256-r32-nominal-v2",
   "certificate_manifest": "certificates/manifest.json",
@@ -54,7 +54,7 @@
         "proof:548-626",
         "proof:627-643"
       ],
-      "limitations": "No full C32 second-block collision was observed, so the yield itself is estimated rather than seen: the last factor (dW22, dW24) rests on the disclosed independence premise. That premise is supported at step-17 depth (2,350,937 pairs, 136 S hits, rate 2^-14.08 against 2^-13.98 unconditionally) but is weakly tested at step 18 and untested at steps 19-21. The conditioned sampler treats reduced-round C32 chaining outputs as uniform; real-first-block prefixes agree at shallow depth only. The measurement programs are RAMherd's own, not organizer-recomputed experiments. Dependencies among the remaining conditions, or a hidden bias of C32 outputs correlated with this predicate, could make the true average smaller."
+      "limitations": "No full C32 second-block collision was observed, so the yield itself is estimated rather than seen: the last factor (dW22, dW24) rests on the disclosed independence premise. That premise is supported at step-17 depth (2,350,937 pairs, 136 S hits, rate 2^-14.08 against 2^-13.98 unconditionally) but is weakly tested at step 18 and untested at steps 19-21. The conditioned sampler treats reduced-round C32 chaining outputs as uniform; real-first-block prefixes agree at shallow depth only. The measurement programs are HashRammers' own, not organizer-recomputed experiments. Dependencies among the remaining conditions, or a hidden bias of C32 outputs correlated with this predicate, could make the true average smaller."
     },
     {
       "id": "starting-solution-resource-bound",

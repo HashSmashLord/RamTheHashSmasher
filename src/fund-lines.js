@@ -1,4 +1,4 @@
-// RAMherd: the printed fund lines on the banner page (the home page). Fees collected, compute
+// HashRammers: the printed fund lines on the banner page (the home page). Fees collected, compute
 // spent as a 24-block bar, RAMs funded as one block per slot. Data through RAMherdAPI only.
 
 import { RAMherdAPI } from "./mock-data.js";
@@ -38,7 +38,7 @@ export async function renderFundLines() {
   const spent = $("stat-budget");
   const tracked = s.computeSpentEpoch != null;
   if (write(spent, tracked ? money(s.computeSpentEpoch) : "not tracked yet") && !first) print(spent);
-  write(spent.parentElement.querySelector(".fund-of").firstChild, tracked ? "of " : "— the budget is every fee collected: ");
+  write(spent.parentElement.querySelector(".fund-of").firstChild, tracked ? "of " : "· budget = fees collected: ");
   write($("stat-budget-total"), money(s.computeBudgetEpoch));
   write($("stat-epoch"), s.epochLabel);
 

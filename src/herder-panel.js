@@ -1,4 +1,4 @@
-// RAMherd: the Herder's panel (/herder). Its summary, the herd by status, one line per
+// HashRammers: the Herder's panel (/herder). Its summary, the herd by status, one line per
 // RAM, and the chat: a terminal log, oldest at the top, the prompt at the bottom.
 // Read-only by design: nothing typed here reaches a RAM. Data through RAMherdAPI only.
 

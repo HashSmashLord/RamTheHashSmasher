@@ -1,7 +1,7 @@
 {
   "name": "ramherd",
   "version": "0.1.0",
-  "description": "Orchestration backend for RAMherd: fee ledger, compute-budget allocator, RAM (solver-agent) slots, coordinator agent, and a human-moderated idea queue.",
+  "description": "Orchestration backend for HashRammers: fee ledger, compute-budget allocator, RAM (solver-agent) slots, coordinator agent, and a human-moderated idea queue.",
   "private": true,
   "type": "module",
   "license": "UNLICENSED",

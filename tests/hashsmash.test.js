@@ -2,7 +2,7 @@
 // Python CLI. Nothing here mocks the Python: every pipeline verdict asserted
 // below is produced by HashSmash's own organizer-owned scripts.
 //
-// `reference/` is git-ignored in this project, so a fresh clone of RAMherd
+// `reference/` is git-ignored in this project, so a fresh clone of HashRammers
 // won't have it. These tests skip (loudly) when the vendored repo or python3
 // is missing rather than pretending to pass.
 

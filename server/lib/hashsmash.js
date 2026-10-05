@@ -71,7 +71,7 @@ export const RESEARCH_CANDIDATES = Object.freeze({
 });
 
 /** Marker placed in claim.json restrictions and proof.md of every harness draft. */
-export const HARNESS_MARKER = 'RAMherd harness integration test';
+export const HARNESS_MARKER = 'HashRammers harness integration test';
 
 /**
  * Reads the env once and decides what the pipeline may do. Defaults are all
@@ -421,7 +421,7 @@ export function createHashSmashRunner({
     writeFileSync(join(candidateDir, 'proof.md'), [
       `# ${HARNESS_MARKER}: ${track}`,
       '',
-      `Written by RAMherd RAM slot \`${slotId}\` to check that the agent harness can drive`,
+      `Written by HashRammers RAM slot \`${slotId}\` to check that the agent harness can drive`,
       "HashSmash's own local pipeline end to end. It is not research output.",
       '',
       '- **No attack is claimed.** There is no algorithm, characteristic, witness, or cost argument here.',

@@ -1,4 +1,4 @@
-// RAMherd: a RAM's desk, watched live.
+// HashRammers: a RAM's desk, watched live.
 //
 // Embeds the RAM's E2B desktop (noVNC page) when a sandbox is running for it,
 // and says plainly when none is. It only ever shows the stream the server hands
@@ -85,7 +85,7 @@ export async function loadDesk(slotId, { base = "", fetchImpl = globalThis.fetch
 }
 
 /**
- * Whether this page is served by the RAMherd API server, which answers
+ * Whether this page is served by the HashRammers API server, which answers
  * GET /api/slots/:id/stream, rather than by a bare static file server (the
  * README's `python3 -m http.server`), which has no desk feed at all. The API
  * server marks every page it serves with a frame-src CSP naming E2B hosts; a

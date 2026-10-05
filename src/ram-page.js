@@ -1,4 +1,4 @@
-// RAMherd: a RAM's full page, /herd#ram/<id>. Its screen, larger, its facts, its whole
+// HashRammers: a RAM's full page, /herd#ram/<id>. Its screen, larger, its facts, its whole
 // history. Opened over the board (the board stays mounted and keeps ticking underneath);
 // Escape or the Back pill returns to the board with scroll and focus restored.
 // Data through RAMherdAPI only; the desk stream through the board's shared feed.
@@ -112,7 +112,7 @@ export function mountRamPage({ feed }) {
     open.desk = desk;
     desk.refresh();
 
-    document.title = `${detail.id}: ${roundShort(detail)}, ${STATUS_WORD[detail.status] || detail.status}. RAMherd`;
+    document.title = `${detail.id}: ${roundShort(detail)}, ${STATUS_WORD[detail.status] || detail.status}. HashRammers`;
     ramPage.hidden = false;
     document.body.classList.add("page-open");
     window.scrollTo(0, 0);
