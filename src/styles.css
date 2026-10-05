@@ -389,7 +389,7 @@ select.ctl option { background: var(--bg); color: var(--ink); }
 .foot-row p { margin: 0; max-width: 62ch; }
 .foot-links { display: flex; flex-wrap: wrap; gap: 1.2rem; }
 .foot-row a { color: var(--ink); }
-.foot-mark { font-family: var(--display); font-size: clamp(5rem, 22vw, 16rem); line-height: 0.8; margin: 1.5rem 0 -0.08em; max-width: none; color: var(--ink); user-select: none; }
+.foot-mark { font-family: var(--display); font-size: clamp(2.5rem, 11vw, 8rem); line-height: 0.8; margin: 1.5rem 0 -0.08em; max-width: none; color: var(--ink); user-select: none; }
 
 /* ---------- a RAM's full page ---------- */
 
