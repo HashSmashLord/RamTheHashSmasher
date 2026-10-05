@@ -155,7 +155,7 @@ input, textarea, select, button { font: inherit; color: inherit; }
   display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem 1.5rem;
   color: var(--felt-ink-soft); font-size: 0.92rem;
 }
-.foot-row p { margin: 0; max-width: none; }
+.foot-row p { margin: 0; max-width: 62ch; }
 .foot-row a { color: var(--felt-ink); text-decoration-color: var(--felt-ink-soft); }
 .foot-row a:focus-visible { outline-color: var(--felt-ink); }
 
@@ -280,6 +280,10 @@ main.wrap { padding-top: clamp(1rem, 2.5vw, 1.5rem); padding-bottom: clamp(2rem,
   text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
 }
 .judge-none { color: var(--ink-soft); }
+/* HashSmash's score under the stamp: term in printed ink, value in pen once their judge writes one */
+.judge-score { display: block; margin-top: 0.4rem; font-size: 0.74rem; line-height: 1.35; color: var(--ink-soft); white-space: nowrap; }
+.judge-score-value { color: var(--pen); font-weight: 600; }
+.key .judge-score { display: inline; margin-top: 0; }
 
 /* stale ink: a row nobody has written to for a while thins */
 tr.stale .entrant-id, tr.stale .round-id, tr.stale .now-line, tr.stale .now-activity { color: var(--pen-soft); }
@@ -372,6 +376,7 @@ select.ctl {
 .rules-cols h3 { margin-bottom: 0.45rem; }
 .rules-cols p { font-size: 0.92rem; margin: 0; }
 .mock-note { margin: 1.7rem 0 0; padding-top: 0.8rem; border-top: 1px solid var(--rule); font-size: 0.82rem; color: var(--ink-soft); max-width: none; }
+.mock-note > span { display: block; max-width: 68ch; } /* the ruling runs the full width; the text does not */
 
 /* a RAM's desk: its live desktop, watch-only, opened in a ruled row under its board row */
 
@@ -449,6 +454,8 @@ select.ctl {
 
 @media (max-width: 640px) {
   .results thead { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .results thead tr { display: block; } /* not the row grid below: the hidden heads shrink-to-fit, so no cell overflows its clipped box */
+  .results thead th { display: inline-block; width: auto; white-space: nowrap; }
   .results, .results tbody { display: block; }
   .results tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 5.4rem; column-gap: 0.8rem; padding: 0.9rem 0; border-bottom: 1px solid var(--rule); }
   .results td { display: block; border: 0; padding: 0; width: auto; }
@@ -457,6 +464,8 @@ select.ctl {
   .c-round { grid-column: 2; grid-row: 1; }
   .c-judge { grid-column: 3; grid-row: 1; }
   .c-now { grid-column: 1 / -1; grid-row: 2; margin-top: 0.6rem; }
+  /* a long model segment (qwen3.8-max-prime) may break inside itself here rather than cross the ruling */
+  .entrant-model .path-segment { white-space: normal; overflow-wrap: anywhere; }
   .results tr.desk-row { display: block; padding: 0 0 0.9rem; }
   .results tr.desk-row td { padding: 0; }
   .ask { flex-direction: column; }

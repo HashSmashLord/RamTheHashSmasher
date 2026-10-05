@@ -64,6 +64,21 @@ const state = {
 
   // The launch roster (docs/PRD.md, "Decided"): one RAM per live exploratory track, each on
   // its own assigned OpenRouter model. Same slugs as server/lib/targets.js; keep them in sync.
+  //
+  // Row shape (one board row = Entrant / Round / Now / Judge):
+  //   id, model, approach            -> Entrant
+  //   trackId (+ TRACKS path)        -> Round
+  //   status, updatedSecondsAgo,     -> Now. `status` is exactly one of "running" (shown as
+  //   activity                          "Running an experiment"), "thinking", "idle", "submitted".
+  //   judge, log2T                   -> Judge. `judge` is HashSmash's own review state for a
+  //                                     handed-in candidate: "in review" (their intake state,
+  //                                     "In review — Awaiting manual review" on yukon.org/hashsmash)
+  //                                     or null when nothing has been handed in. Never "accepted"
+  //                                     from this side: that word only ever comes from their judge.
+  //                                     `log2T` is HashSmash's score, log₂(T): total charged
+  //                                     computation, lower is better; null until their judge scores
+  //                                     it. Today every submission on these tracks, ours included,
+  //                                     is in review with no score, so every log2T here is null.
   agents: [
     {
       id: "ram-01",
@@ -72,7 +87,9 @@ const state = {
       approach: "SAT solver — CaDiCaL",
       status: "running",
       activity: "Running CaDiCaL against a 31-round reduced characteristic, clause count 2.1M, 4 of 8 branch orderings tried.",
-      updatedSecondsAgo: 8,
+      updatedSecondsAgo: 32,
+      judge: null,
+      log2T: null,
     },
     {
       id: "ram-02",
@@ -81,7 +98,9 @@ const state = {
       approach: "Reduced-round analysis",
       status: "thinking",
       activity: "Extending the r31 differential path by one round; checking the probability estimate holds above the submission floor before committing solver time.",
-      updatedSecondsAgo: 41,
+      updatedSecondsAgo: 300,
+      judge: null,
+      log2T: null,
     },
     {
       id: "ram-03",
@@ -90,7 +109,9 @@ const state = {
       approach: "SAT solver — Kissat",
       status: "submitted",
       activity: "Candidate written to lanes/exploratory/candidates/sha3-256-r5/ and queued via hashsmash_pipeline.py intake.",
-      updatedSecondsAgo: 612,
+      updatedSecondsAgo: 840,
+      judge: "in review",
+      log2T: null,
     },
     {
       id: "ram-04",
@@ -99,7 +120,9 @@ const state = {
       approach: "Cost-model refinement",
       status: "running",
       activity: "Re-costing a prior candidate's charged computation after a cheaper preprocessing step cut solver calls by ~18%.",
-      updatedSecondsAgo: 23,
+      updatedSecondsAgo: 14,
+      judge: null,
+      log2T: null,
     },
     {
       id: "ram-05",
@@ -108,7 +131,9 @@ const state = {
       approach: "Differential search",
       status: "idle",
       activity: "Waiting on this epoch's next budget tick — last branch exhausted without a usable trail.",
-      updatedSecondsAgo: 203,
+      updatedSecondsAgo: 420,
+      judge: null,
+      log2T: null,
     },
     {
       id: "ram-06",
@@ -117,14 +142,16 @@ const state = {
       approach: "Formal methods",
       status: "running",
       activity: "Re-running Z3 on the r2 mixing schedule with a tighter bound after the previous 6h attempt timed out.",
-      updatedSecondsAgo: 15,
+      updatedSecondsAgo: 3,
+      judge: null,
+      log2T: null,
     },
   ],
 
   chatSeed: [
     {
       q: "Has anything actually been submitted to HashSmash yet?",
-      a: "Yes — one candidate from ram-03 on SHA3-256 r5 is in HashSmash's own review queue right now, submitted through their intake pipeline. It's marked \"in review,\" not accepted. Everything else on the board is still in progress.",
+      a: "Yes — one candidate from ram-03 on SHA3-256 r5 is in HashSmash's own review queue right now, submitted through their intake pipeline. It's marked \"in review\" (awaiting manual review), not accepted, and has no log₂(T) score yet. Nothing from this herd has ever been accepted. Everything else on the board is still in progress.",
     },
     {
       q: "Does more money in the pool mean faster cracks?",
@@ -146,6 +173,9 @@ const state = {
 
   ideaQueueLength: 14, // how many human-pending ideas are ahead of the next submission, for realism
 };
+
+// The exact words the board writes in the Now column, one per status.
+const STATUS_LABEL = { running: "Running an experiment", thinking: "Thinking", idle: "Idle", submitted: "Submitted" };
 
 function relativeTime(seconds) {
   if (seconds < 60) return `${seconds}s ago`;
@@ -258,8 +288,12 @@ export const RAMherdAPI = {
     return state.agents.map((a) => ({
       ...a,
       trackLabel: trackLabel(a.trackId),
+      roundLabel: `${TRACKS[a.trackId].target} ${TRACKS[a.trackId].round}`, // "SHA-256 r31"
       lanePath: TRACKS[a.trackId].path,
+      statusLabel: STATUS_LABEL[a.status] || a.status,
       updatedLabel: relativeTime(a.updatedSecondsAgo),
+      judge: a.judge ?? null,
+      log2T: a.log2T ?? null,
     }));
   },
 

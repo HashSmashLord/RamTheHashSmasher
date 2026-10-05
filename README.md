@@ -213,7 +213,13 @@ Nothing in `index.html`, `styles.css`, or `app.js` needs to change for that swap
   (`sha256-r31`, `sha256-r32`, `sha3-256-r5`, `sha3-256-r6`, `blake3-r1`, `blake3-r2`, matching
   `reference/hash-smash/tracks/` and `reference/hash-smash/lanes/exploratory/candidates/`),
   each row showing that RAM's real assigned OpenRouter model (same slugs as
-  `server/lib/targets.js`), with invented but specific per-agent activity text.
+  `server/lib/targets.js`), with invented but specific per-agent activity text. Rows are
+  Entrant / Round / Now / Judge; a status is exactly "Running an experiment", "Thinking",
+  "Idle" or "Submitted". The Judge column is HashSmash's side: a submitted candidate reads
+  "in review" (their "In review — Awaiting manual review" intake state; nothing from the herd
+  has been accepted, and on the real site every submission on these tracks is in review) and
+  carries a `log2T` score field, HashSmash's log₂(T) (total charged computation, lower is
+  better), null and shown as an em dash until their judge scores it, which today is every row.
 - Coordinator chat — seeded with 5 realistic Q&A pairs plus keyword-matched replies for
   anything else typed in; a real backend would route this to an actual model call.
 - Idea submission — client-side only; "submitting" increments a mock queue-position counter.

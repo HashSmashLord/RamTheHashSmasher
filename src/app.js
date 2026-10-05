@@ -5,12 +5,21 @@
 import { RAMherdAPI } from "./mock-data.js";
 import { createDeskViewer } from "./sandbox-viewer.js";
 
+// The exact words the Now column writes, one per status. "Submitted" carries its fuller form
+// as a tooltip: the board shows the short word, the key spells it out.
 const STATUS_WORD = { idle: "Idle", thinking: "Thinking", running: "Running an experiment", submitted: "Submitted" };
+const STATUS_FULL = { submitted: "Submitted to HashSmash" };
 
-// Where a handed-in candidate stands with HashSmash's review. Until the feed carries a judge
-// field, a submitted slot is shown as "in review" (HashSmash's intake state); "accepted" /
-// "rejected" only ever come from their judge, never from this page.
+// Where a handed-in candidate stands with HashSmash's review. The feed sends `judge`
+// ("in review" or null); if it does not, a submitted slot falls back to "in review", HashSmash's
+// intake state ("In review — Awaiting manual review" on their results page). "accepted" only
+// ever comes from their judge, never from this page: nothing from the herd has been accepted.
 const JUDGE_WORD = { submitted: "in review" };
+const JUDGE_FULL = { "in review": "In review — Awaiting manual review" };
+
+// HashSmash's score: log₂(T), total charged computation, lower is better. Written only once
+// their judge has scored a candidate; until then an em dash, exactly as their frontier reads.
+const SCORE_TERM = "log₂(T)";
 
 // A row nobody has written to for this long thins its ink.
 const STALE_AFTER_SECONDS = 300;
@@ -28,10 +37,16 @@ const money = (n) => `$${n.toFixed(2)}`;
 const $ = (id) => document.getElementById(id);
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-// "SHA-256 · r31 · exploratory" -> "SHA-256 r31"
-function roundShort(trackLabel) {
-  const [target, round] = String(trackLabel).split(" · ");
-  return round ? `${target} ${round}` : trackLabel;
+// "SHA-256 r31": the feed's roundLabel, or derived from "SHA-256 · r31 · exploratory".
+function roundShort(agent) {
+  if (agent.roundLabel) return agent.roundLabel;
+  const [target, round] = String(agent.trackLabel).split(" · ");
+  return round ? `${target} ${round}` : agent.trackLabel;
+}
+
+// A log₂(T) value as HashSmash prints it (125.99, 41.500001): the number as sent, never rounded.
+function scoreText(log2T) {
+  return log2T == null || log2T === "" ? null : String(log2T);
 }
 
 // "8s ago" / "41m ago" / "1h 2m ago" -> seconds. Fallback when the feed sends no raw number.
@@ -149,6 +164,7 @@ function buildRow() {
     tr,
     seconds: Infinity,
     judge: null,
+    score: undefined,
     id: tr.querySelector(".entrant-id"),
     model: tr.querySelector(".entrant-model"),
     approach: tr.querySelector(".entrant-approach"),
@@ -212,11 +228,15 @@ function updateRow(r, agent, first) {
   write(r.id, agent.id);
   writePath(r.model, agent.model || "");
   write(r.approach, agent.approach);
-  write(r.round, roundShort(agent.trackLabel));
+  write(r.round, roundShort(agent));
   writePath(r.path, agent.lanePath);
 
   const statusChanged = write(r.word, STATUS_WORD[agent.status] || agent.status);
-  if (statusChanged) r.glyphEl.innerHTML = glyph(agent.status);
+  if (statusChanged) {
+    r.glyphEl.innerHTML = glyph(agent.status);
+    if (STATUS_FULL[agent.status]) r.word.title = STATUS_FULL[agent.status];
+    else r.word.removeAttribute("title");
+  }
   const activityChanged = write(r.activity, agent.activity);
   write(r.clock, `written ${agent.updatedLabel}`);
 
@@ -225,12 +245,30 @@ function updateRow(r, agent, first) {
   r.seconds = seconds;
   r.tr.classList.toggle("stale", seconds > STALE_AFTER_SECONDS);
 
-  const judge = JUDGE_WORD[agent.status] || null;
-  if (judge !== r.judge) {
+  // Judge column: HashSmash's review state, then their score. Only a handed-in candidate has
+  // either; every other row leaves the margin blank (an em dash).
+  const judge = agent.judge !== undefined ? agent.judge : JUDGE_WORD[agent.status] || null;
+  const score = scoreText(agent.log2T);
+  if (judge !== r.judge || score !== r.score) {
     r.judge = judge;
-    r.judgeCell.innerHTML = judge
-      ? `<span class="judge-mark">${judge}</span>`
-      : `<span class="judge-none" aria-hidden="true">—</span><span class="sr-only">nothing from the judge yet</span>`;
+    r.score = score;
+    const parts = [];
+    if (judge) {
+      const full = JUDGE_FULL[judge];
+      parts.push(`<span class="judge-mark"${full ? ` title="${full}"` : ""}>${judge}</span>`);
+    } else {
+      parts.push(`<span class="judge-none" aria-hidden="true">—</span><span class="sr-only">nothing from the judge yet</span>`);
+    }
+    if (judge || score) {
+      parts.push(
+        `<span class="judge-score"><span class="judge-score-term">${SCORE_TERM}</span> ` +
+          (score
+            ? `<span class="judge-score-value">${score}</span>`
+            : `<span class="judge-score-value" aria-hidden="true">—</span><span class="sr-only">not scored yet</span>`) +
+          `</span>`
+      );
+    }
+    r.judgeCell.innerHTML = parts.join("");
   }
 
   if (!first && (statusChanged || activityChanged || freshWrite)) {
@@ -242,7 +280,7 @@ function updateRow(r, agent, first) {
 function renderByRound(fleet) {
   const groups = new Map();
   for (const agent of fleet) {
-    const key = roundShort(agent.trackLabel);
+    const key = roundShort(agent);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(agent.id.replace(/^ram-/, ""));
   }
