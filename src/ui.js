@@ -70,7 +70,7 @@ export function secondsOf(agent) {
 }
 
 // Server slots are `slot-0`, `slot-1`, ... in roster order (RAM 1 = slot-0).
-// The mock herd has no slot ids yet, so derive it; a real feed should send `slotId`.
+// The in-browser fallback herd has no slot ids yet, so derive it; a real feed sends `slotId`.
 export function slotIdFor(agent) {
   if (agent.slotId) return agent.slotId;
   const n = Number(String(agent.id).replace(/^ram-/, ""));

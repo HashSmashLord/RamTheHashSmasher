@@ -148,7 +148,7 @@ $("connect-btn").addEventListener("click", connectWallet);
 $("disconnect-btn").addEventListener("click", disconnectWallet);
 
 // ---------------------------------------------------------------------------
-// Parts 2 to 4: choices, built from the config (server's or mock's)
+// Parts 2 to 4: choices, built from the config (the server's, or the fallback's)
 // ---------------------------------------------------------------------------
 
 function choice({ name, value, main, sub, checked = false }) {
