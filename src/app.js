@@ -3,6 +3,7 @@
 // method bodies inside RAMherdAPI do. See the header comment there.
 
 import { RAMherdAPI } from "./mock-data.js";
+import { createDeskViewer } from "./sandbox-viewer.js";
 
 const STATUS_WORD = { idle: "Idle", thinking: "Thinking", running: "Running an experiment", submitted: "Submitted" };
 
@@ -137,7 +138,7 @@ function buildRow() {
   const tr = document.createElement("tr");
   tr.setAttribute("role", "row");
   tr.innerHTML = `
-    <td role="cell" class="c-entrant"><span class="entrant-id"></span><span class="entrant-model"></span><span class="entrant-approach"></span></td>
+    <td role="cell" class="c-entrant"><span class="entrant-id"></span><span class="entrant-model"></span><span class="entrant-approach"></span><button type="button" class="desk-toggle" aria-expanded="false">Watch desk</button></td>
     <td role="cell" class="c-round"><span class="round-id"></span><span class="round-path"></span></td>
     <td role="cell" class="c-now">
       <div class="now-line"><span class="now-glyph"></span><span class="now-word"></span><span class="now-clock"></span></div>
@@ -159,7 +160,52 @@ function buildRow() {
     clock: tr.querySelector(".now-clock"),
     activity: tr.querySelector(".now-activity"),
     judgeCell: tr.querySelector(".c-judge"),
+    deskToggle: tr.querySelector(".desk-toggle"),
+    deskRow: null,
+    desk: null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// A RAM's desk: its live desktop, view-only (sandbox-viewer.js), opened in a
+// ruled row under its board row. Only the server's view-only stream is ever
+// requested; there is no other stream for this page to get.
+// ---------------------------------------------------------------------------
+
+// Server slots are `slot-0`, `slot-1`, ... in roster order (RAM 1 = slot-0).
+// The mock board has no slot ids yet, so derive it; a real feed should send `slotId`.
+function slotIdFor(agent) {
+  if (agent.slotId) return agent.slotId;
+  const n = Number(String(agent.id).replace(/^ram-/, ""));
+  return Number.isInteger(n) && n > 0 ? `slot-${n - 1}` : String(agent.id);
+}
+
+function toggleDesk(r, agent) {
+  if (r.desk) {
+    r.desk.destroy();
+    r.deskRow.remove();
+    r.desk = r.deskRow = null;
+    r.deskToggle.setAttribute("aria-expanded", "false");
+    r.deskToggle.textContent = "Watch desk";
+    return;
+  }
+  const tr = document.createElement("tr");
+  tr.className = "desk-row";
+  tr.setAttribute("role", "row");
+  const td = document.createElement("td");
+  td.setAttribute("role", "cell");
+  td.colSpan = 4;
+  tr.append(td);
+  const desk = createDeskViewer({ ramLabel: agent.id, slotId: slotIdFor(agent) });
+  td.append(desk.el);
+  td.id = `desk-${agent.id}`;
+  r.deskToggle.setAttribute("aria-controls", td.id);
+  r.tr.after(tr);
+  r.deskRow = tr;
+  r.desk = desk;
+  r.deskToggle.setAttribute("aria-expanded", "true");
+  r.deskToggle.textContent = "Close desk";
+  desk.refresh();
 }
 
 function updateRow(r, agent, first) {
@@ -231,11 +277,15 @@ async function renderFleet() {
       r = buildRow();
       rows.set(agent.id, r);
       tbody.appendChild(r.tr);
+      const row = r;
+      row.deskToggle.addEventListener("click", () => toggleDesk(row, row.agent));
     }
+    r.agent = agent;
     updateRow(r, agent, first);
   }
   for (const [id, r] of rows) {
     if (!seen.has(id)) {
+      if (r.desk) toggleDesk(r, r.agent);
       r.tr.remove();
       rows.delete(id);
     }
@@ -340,6 +390,11 @@ async function boot() {
     renderStats();
     renderFleet();
   }, 4000);
+  // An open desk re-checks its stream every 10s (a sandbox may start or stop);
+  // the iframe is only touched when the stream itself changes.
+  setInterval(() => {
+    for (const r of rows.values()) r.desk?.refresh();
+  }, 10_000);
 }
 
 boot();

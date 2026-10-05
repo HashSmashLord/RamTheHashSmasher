@@ -19,8 +19,10 @@ const SECURITY_HEADERS = {
 // The static frontend (src/) is served from the same origin as the API, so one
 // deployable unit answers both. Pages get a CSP that allows same-origin assets only.
 const DEFAULT_STATIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src');
+// frame-src: the only thing a page may embed is an E2B sandbox's noVNC page
+// (https://6080-<id>.e2b.app), the server-side view-only stream; see lib/sandbox.js.
 const PAGE_CSP =
-  "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
+  "default-src 'self'; img-src 'self' data:; frame-src https://*.e2b.app; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
 const STATIC_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -169,6 +171,14 @@ export function createApp(config) {
     const slot = store.slotManager.getSlot(id);
     if (!slot) return sendError(res, 404, 'not_found');
     sendOk(res, { slot });
+  }
+
+  // Public: a RAM's live desktop, view-only enforced by the VNC server itself
+  // (x11vnc -viewonly, see lib/sandbox.js). `stream` is null when none runs.
+  function getSlotStream(req, res, id) {
+    if (!store.slotManager.getSlot(id)) return sendError(res, 404, 'not_found');
+    const stream = store.sandboxManager?.getPublicStream(id) ?? null;
+    sendOk(res, { enabled: Boolean(store.sandboxManager), stream });
   }
 
   function getCoordinatorSummary(req, res) {
@@ -336,6 +346,10 @@ export function createApp(config) {
     if (parts[0] === 'api' && parts[1] === 'slots' && parts.length === 3 && method === 'GET') {
       req.routeLabel = 'api/slots/:id';
       return getSlot(req, res, parts[2]);
+    }
+    if (parts[0] === 'api' && parts[1] === 'slots' && parts.length === 4 && parts[3] === 'stream' && method === 'GET') {
+      req.routeLabel = 'api/slots/:id/stream';
+      return getSlotStream(req, res, parts[2]);
     }
     if (pathname === '/api/coordinator/summary' && method === 'GET') {
       req.routeLabel = 'api/coordinator/summary';

@@ -373,6 +373,27 @@ select.ctl {
 .rules-cols p { font-size: 0.92rem; margin: 0; }
 .mock-note { margin: 1.7rem 0 0; padding-top: 0.8rem; border-top: 1px solid var(--rule); font-size: 0.82rem; color: var(--ink-soft); max-width: none; }
 
+/* a RAM's desk: its live desktop, watch-only, opened in a ruled row under its board row */
+
+.desk-toggle {
+  display: inline-block; margin-top: 0.35rem; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 0.82rem; font-weight: 600; color: var(--pen);
+  text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 0.22em;
+}
+.desk-toggle:hover { text-decoration-color: currentColor; }
+.desk-toggle:focus-visible { outline: 2px solid var(--pen); outline-offset: 3px; border-radius: 2px; }
+.stale .desk-toggle { color: var(--pen-soft); }
+/* the desk cell spans the row: no judge margin here, the red is the judge's alone */
+.results tr.desk-row td,
+.results tr.desk-row td:last-child { border-left: 0; padding: 0 0 1.1rem; }
+.desk { display: flex; flex-direction: column; gap: 0.6rem; }
+.desk-line { margin: 0.2rem 0 0; font-size: 0.82rem; line-height: 1.35; color: var(--ink-soft); max-width: 72ch; }
+.desk.is-live .desk-line { color: var(--pen); }
+.desk-frame { border: 1.5px solid var(--rule-strong); aspect-ratio: 1280 / 800; max-width: 960px; background: var(--paper); }
+.desk-frame[hidden] { display: none; }
+/* watching only: the page does not even pass a click to the frame (the VNC server ignores input anyway) */
+.desk-iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
+
 /* ---------- the one motion: a changed cell is re-inked, left to right ---------- */
 
 @media (prefers-reduced-motion: no-preference) {
@@ -436,6 +457,8 @@ select.ctl {
   .c-round { grid-column: 2; grid-row: 1; }
   .c-judge { grid-column: 3; grid-row: 1; }
   .c-now { grid-column: 1 / -1; grid-row: 2; margin-top: 0.6rem; }
+  .results tr.desk-row { display: block; padding: 0 0 0.9rem; }
+  .results tr.desk-row td { padding: 0; }
   .ask { flex-direction: column; }
   .ask .btn { width: 100%; }
   .fund-row { grid-template-columns: 1fr; }

@@ -3,7 +3,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSandboxManager, sandboxPolicy, estimateCostUsd } from '../server/lib/sandbox.js';
+import {
+  createSandboxManager, sandboxPolicy, estimateCostUsd,
+  viewOnlyX11vncCommand, checkX11vncProcesses, REQUIRED_X11VNC_FLAGS, vncPassword,
+} from '../server/lib/sandbox.js';
 import { createSlotManager } from '../server/lib/slots.js';
 import { createMockLlmProvider } from '../server/lib/llm.js';
 import { createStore } from '../server/store.js';
@@ -12,23 +15,39 @@ import { startApp } from './helpers/harness.js';
 
 const FAKE_KEY = 'e2b_fakekeyfortests0123456789';
 
-/** Minimal stand-in for @e2b/desktop's Sandbox, recording every call. */
-function fakeSdk({ failCreate = false, failStream = false, failKill = false } = {}) {
-  const calls = { create: [], kill: [], staticKill: [], streamStart: [] };
+/**
+ * Minimal stand-in for @e2b/desktop's Sandbox, recording every call. Commands
+ * are recorded per sandbox; `ps -C x11vnc` answers with whatever x11vnc lines
+ * were "launched" (or `psOverride`), so the view-only check runs for real.
+ */
+function fakeSdk({ failCreate = false, failStream = false, failKill = false, psOverride = null } = {}) {
+  const calls = { create: [], kill: [], staticKill: [], streamStart: [], commands: [] };
   let seq = 0;
   class Sandbox {
     constructor(id) {
       this.sandboxId = id;
+      this.display = ':0';
       this.killed = false;
+      this.x11vnc = [];
+      // The SDK's own stream helper must never be used: it starts x11vnc without -viewonly.
       this.stream = {
-        start: async (opts) => {
-          calls.streamStart.push(opts);
-          if (failStream) throw new Error('noVNC did not come up');
-        },
-        getAuthKey: () => 'vncpass123',
-        getUrl: ({ viewOnly, authKey }) =>
-          `https://6080-${id}.e2b.app/vnc.html?autoconnect=true${viewOnly ? '&view_only=true' : ''}&password=${authKey}`,
+        start: async (opts) => { calls.streamStart.push(opts); },
+        getAuthKey: () => 'sdkpass',
+        getUrl: () => `https://6080-${id}.e2b.app/vnc.html?password=sdkpass`,
       };
+      this.commands = {
+        run: async (cmd, opts) => {
+          calls.commands.push({ id, cmd, opts });
+          if (cmd.startsWith('x11vnc -bg')) this.x11vnc.push(cmd);
+          if (cmd.startsWith('pkill -x x11vnc')) this.x11vnc = [];
+          if (cmd.startsWith('ps -C x11vnc')) return { exitCode: 0, stdout: psOverride ?? this.x11vnc.join('\n') + '\n', stderr: '' };
+          if (failStream && cmd.includes('seq 1 75')) throw new Error('noVNC did not come up');
+          return { exitCode: 0, stdout: '', stderr: '' };
+        },
+      };
+    }
+    getHost(port) {
+      return `${port}-${this.sandboxId}.e2b.app`;
     }
     async kill() {
       calls.kill.push(this.sandboxId);
@@ -48,6 +67,8 @@ function fakeSdk({ failCreate = false, failStream = false, failKill = false } = 
   }
   return { Sandbox, calls, loadSdk: async () => ({ Sandbox }) };
 }
+
+const pwFrom = (url) => new URL(url).searchParams.get('password');
 
 function manager(sdk, extra = {}) {
   let t = 1_000_000;
@@ -109,7 +130,7 @@ test('start creates one desktop sandbox with a hard kill timeout and returns pub
   assert.equal(opts.timeoutMs, 10 * 60_000);
   assert.deepEqual(opts.lifecycle, { onTimeout: 'kill', autoResume: false });
   assert.deepEqual(opts.metadata, { app: 'ramherd', slotId: 'slot-0' });
-  assert.deepEqual(sdk.calls.streamStart, [{ requireAuth: true }]);
+  assert.deepEqual(sdk.calls.streamStart, [], 'the SDK stream helper (no -viewonly) is never used');
   assert.equal(info.sessionId, 'sbx1');
   assert.equal(info.provider, 'e2b');
   assert.equal(Date.parse(info.expiresAt) - Date.parse(info.startedAt), 10 * 60_000);
@@ -119,13 +140,82 @@ test('start creates one desktop sandbox with a hard kill timeout and returns pub
   assert.equal(m.count(), 1);
 });
 
-test('getStream returns the view-only URL with its password; it says view-only is client-side', async () => {
+test('getStream returns the stream URL with its password and says view-only is enforced by the server', async () => {
   const m = manager(fakeSdk());
   assert.equal(m.getStream('slot-0'), null);
   await m.start('slot-0');
   const s = m.getStream('slot-0');
-  assert.match(s.streamUrl, /^https:\/\/6080-sbx1\.e2b\.app\/vnc\.html\?.*view_only=true.*password=vncpass123/);
-  assert.equal(s.viewOnly, 'client-side');
+  assert.match(s.streamUrl, /^https:\/\/6080-sbx1\.e2b\.app\/vnc\.html\?.*view_only=true.*password=[A-Za-z0-9]{8}$/);
+  assert.equal(s.viewOnly, 'server');
+  assert.equal(s.enforcedBy, 'x11vnc -viewonly');
+});
+
+// ---- server-side view-only ----
+
+test('the x11vnc command carries -viewonly and the other lock-down flags', () => {
+  const cmd = viewOnlyX11vncCommand(':0');
+  const args = cmd.split(/\s+/);
+  for (const flag of ['-viewonly', '-localhost', '-nosel', '-noremote', '-usepw']) assert.ok(args.includes(flag), flag);
+  assert.ok(args.includes('-rfbport') && args[args.indexOf('-rfbport') + 1] === '5900');
+  assert.equal(args.includes('-nopw'), false);
+  assert.deepEqual([...REQUIRED_X11VNC_FLAGS].sort(), ['-localhost', '-noremote', '-nosel', '-usepw', '-viewonly']);
+});
+
+test('checkX11vncProcesses accepts exactly one fully locked-down x11vnc and nothing else', () => {
+  const good = viewOnlyX11vncCommand();
+  assert.equal(checkX11vncProcesses(`${good}\n`), null);
+  assert.match(checkX11vncProcesses(''), /found 0/);
+  assert.match(checkX11vncProcesses(`${good}\n${good}\n`), /found 2/);
+  assert.match(checkX11vncProcesses(good.replace(' -viewonly', '')), /missing -viewonly/);
+  // a flag that merely contains the text is not the flag
+  assert.match(checkX11vncProcesses(good.replace(' -viewonly', ' -viewonlyX')), /missing -viewonly/);
+});
+
+test('start launches x11vnc -viewonly through the command channel, then noVNC in the background', async () => {
+  const sdk = fakeSdk();
+  const m = manager(sdk);
+  await m.start('slot-0');
+  const cmds = sdk.calls.commands.map((c) => c.cmd);
+  const vnc = cmds.findIndex((c) => c.startsWith('x11vnc -bg'));
+  const check = cmds.findIndex((c) => c.startsWith('ps -C x11vnc'));
+  const novnc = sdk.calls.commands.findIndex((c) => c.cmd.includes('novnc_proxy'));
+  assert.ok(cmds[0].startsWith('pkill -x x11vnc'), 'clears any other VNC server first');
+  assert.ok(vnc > 0 && check > vnc && novnc > check, 'x11vnc, then verify, then noVNC');
+  assert.match(cmds[vnc], / -viewonly /);
+  assert.deepEqual(sdk.calls.commands[novnc].opts, { background: true, timeoutMs: 0 });
+  assert.match(sdk.calls.commands[novnc].cmd, /--vnc localhost:5900 --listen 6080/);
+  // the password stored for x11vnc is the one in the URL
+  const pw = pwFrom(m.getStream('slot-0').streamUrl);
+  assert.ok(cmds.some((c) => c.includes(`x11vnc -storepasswd ${pw} `)));
+});
+
+test('if the running x11vnc is not provably view-only, the sandbox is killed and no stream exists', async () => {
+  for (const ps of ['x11vnc -bg -display :0 -rfbport 5900 -usepw\n', `${viewOnlyX11vncCommand()}\nx11vnc -rfbport 5901 -usepw\n`, '']) {
+    const sdk = fakeSdk({ psOverride: ps });
+    const m = manager(sdk);
+    await assert.rejects(m.start('slot-0'), /view-only not enforced.*sandbox killed|sandbox killed.*view-only not enforced/s);
+    assert.deepEqual(sdk.calls.kill, ['sbx1']);
+    assert.equal(sdk.calls.commands.some((c) => c.cmd.includes('novnc_proxy')), false, 'noVNC never started');
+    assert.equal(m.getStream('slot-0'), null);
+    assert.equal(m.getPublicStream('slot-0'), null);
+  }
+});
+
+test('getPublicStream exposes only the server-enforced view-only stream, nothing internal', async () => {
+  const m = manager(fakeSdk());
+  assert.equal(m.getPublicStream('slot-0'), null);
+  await m.start('slot-0');
+  const p = m.getPublicStream('slot-0');
+  assert.deepEqual(Object.keys(p).sort(), ['expiresAt', 'sessionId', 'streamUrl', 'viewOnly']);
+  assert.equal(p.viewOnly, 'server');
+  assert.equal(p.streamUrl, m.getStream('slot-0').streamUrl, 'the one and only stream is the -viewonly one');
+  assert.equal(JSON.stringify(p).includes(FAKE_KEY), false);
+});
+
+test('vncPassword is 8 unambiguous characters and varies', () => {
+  const seen = new Set(Array.from({ length: 50 }, vncPassword));
+  for (const pw of seen) assert.match(pw, /^[A-Za-z0-9]{8}$/);
+  assert.ok(seen.size > 45);
 });
 
 test('start is idempotent per slot, including concurrent calls', async () => {
@@ -239,9 +329,9 @@ test('startSandbox associates a session id with the slot; snapshot has no stream
   const snap = await m.startSandbox(id);
   assert.equal(snap.sandbox.status, 'running');
   assert.equal(snap.sandbox.sessionId, 'sbx1');
-  assert.equal(JSON.stringify(snap).includes('vncpass123'), false);
+  const pw = pwFrom(m.getSandboxStream(id).streamUrl);
+  assert.equal(JSON.stringify(snap).includes(pw), false);
   assert.deepEqual(snap.feed.slice(-2).map((f) => f.type), ['sandbox-starting', 'sandbox-started']);
-  assert.match(m.getSandboxStream(id).streamUrl, /password=vncpass123/);
 });
 
 test('stopSandbox marks the session stopped and keeps the record', async () => {
@@ -313,9 +403,10 @@ test('API: start/stop are admin-only; public slot shows session id, admin route 
   assert.equal(started.status, 201);
   assert.equal((await started.json()).slot.sandbox.sessionId, 'sbx1');
 
+  const pw = pwFrom(s.store.sandboxManager.getStream('slot-0').streamUrl);
   const pub = await (await s.get('/api/slots/slot-0')).text();
   assert.match(pub, /"sessionId":"sbx1"/);
-  assert.equal(pub.includes('vncpass123'), false, 'public route must not leak the VNC password');
+  assert.equal(pub.includes(pw), false, 'the slot snapshot does not carry the stream URL');
   assert.equal(pub.includes(FAKE_KEY), false);
 
   assert.equal((await s.get('/api/admin/slots/slot-0/sandbox')).status, 401);
@@ -337,4 +428,43 @@ test('API: unknown slot 404s; closing the app kills running sandboxes', async ()
   await s.postJson('/api/admin/slots/slot-0/sandbox/start', {}, { headers: s.adminHeaders() });
   await s.stop();
   assert.deepEqual(sdk.calls.kill, ['sbx1']);
+});
+
+test('API: public /api/slots/:id/stream gives the view-only stream when one runs, null otherwise', async (t) => {
+  const sdk = fakeSdk();
+  const s = await sandboxApp(sdk);
+  t.after(() => s.stop());
+  s.store.slotManager.setSlotCount(1);
+
+  assert.equal((await s.get('/api/slots/nope/stream')).status, 404);
+  let body = await (await s.get('/api/slots/slot-0/stream')).json();
+  assert.deepEqual(body, { ok: true, enabled: true, stream: null });
+
+  await s.postJson('/api/admin/slots/slot-0/sandbox/start', {}, { headers: s.adminHeaders() });
+  const res = await s.get('/api/slots/slot-0/stream');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  body = await res.json();
+  assert.equal(body.stream.viewOnly, 'server');
+  assert.equal(body.stream.sessionId, 'sbx1');
+  assert.match(body.stream.streamUrl, /^https:\/\/6080-sbx1\.e2b\.app\/vnc\.html\?/);
+  assert.equal(JSON.stringify(body).includes(FAKE_KEY), false);
+  // there is exactly one x11vnc and it is -viewonly: that is what this URL reaches
+  const vnc = sdk.calls.commands.filter((c) => c.cmd.startsWith('x11vnc -bg'));
+  assert.equal(vnc.length, 1);
+  assert.match(vnc[0].cmd, / -viewonly /);
+
+  await s.postJson('/api/admin/slots/slot-0/sandbox/stop', {}, { headers: s.adminHeaders() });
+  body = await (await s.get('/api/slots/slot-0/stream')).json();
+  assert.equal(body.stream, null);
+});
+
+test('API: stream route with sandboxes off says disabled and never loads the SDK', async (t) => {
+  let loaded = 0;
+  const s = await startApp({ env: { E2B_API_KEY: FAKE_KEY }, loadSandboxSdk: async () => { loaded++; return {}; } });
+  t.after(() => s.stop());
+  s.store.slotManager.setSlotCount(1);
+  const body = await (await s.get('/api/slots/slot-0/stream')).json();
+  assert.deepEqual(body, { ok: true, enabled: false, stream: null });
+  assert.equal(loaded, 0);
 });

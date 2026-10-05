@@ -15,7 +15,7 @@ and scoring pipeline works.
 | Per-RAM models (OpenRouter) | **done, wired, mock by default.** Each of the six exploratory tracks carries its launch-roster model in `server/lib/targets.js` (RAM 1 `sha256-r31` → `anthropic/claude-opus-5.5`, 2 `sha256-r32` → `anthropic/claude-fable-5.1`, 3 `sha3-256-r5` → `openai/gpt-6.1-sol-pro`, 4 `sha3-256-r6` → `z-ai/glm-5.3-prime`, 5 `blake3-r1` → `deepseek/deepseek-v4-pro`, 6 `blake3-r2` → `qwen/qwen3.8-max-prime`; see `docs/PRD.md` "Decided"). Every slot sends its own model on each LLM call, a 7th+ slot inherits its track's model, and `/api/slots` shows it. Optional `RAMHERD_LLM_MODEL` forces one model on every slot (testing). Calls are still mock unless `RAMHERD_LIVE=true` **and** `OPENROUTER_API_KEY` are both set; no live call to any roster model has been made yet |
 | Frontend dashboard (`src/`) | **built, demoable, mocked.** Real UI/UX against a mock data layer — see "Mock data and the API swap point" below |
 | Solver-agent loop → real HashSmash pipeline (`server/lib/hashsmash.js`) | **pipeline integration working end to end, locally, for `sha256-r31-exploratory`.** A RAM slot clones the vendored repo, writes a clearly labeled harness *draft* (the organizer's own `draft_claim()` template, no attack claimed), and runs HashSmash's real `local_tracks.py check` and `hashsmash_pipeline.py intake`. Result: `check` → `mechanically_valid`, `intake` → `draft_not_submitted` with a real `package_sha256` and evidence file. Opt-in with `RAMHERD_PIPELINE=local`. **Not done:** no research content yet (the LLM doesn't write real candidates), no judge run (paid, gated off), no live submission (not implemented on purpose). The real accepted r31 candidate can't pass local intake here because its experiment needs Docker, which isn't installed. See "Real HashSmash pipeline" below |
-| Live VM view per RAM: E2B desktop sandbox (`server/lib/sandbox.js`) | **backend lifecycle plumbing done, proven once for real, nothing runs inside yet.** A slot can be given one E2B Desktop sandbox (Ubuntu + Xfce, VNC via noVNC) through admin routes; `/api/slots` shows its session id and status, and an admin route returns the embeddable stream URL. Opt-in with `RAMHERD_SANDBOX=e2b` + `E2B_API_KEY`; off by default. One real run on 2026-10-05: created, noVNC page answered HTTP 200, killed after ~8 s, E2B confirmed it gone, cost about $0.001. **Not done:** frontend embedding, running the RAM's real work inside the sandbox, a smaller template (the stock `desktop` one runs at 8 vCPU / 8 GiB, about $0.53/hour each), and server-side view-only. See "E2B desktop sandboxes" below |
+| Live VM view per RAM: E2B desktop sandbox (`server/lib/sandbox.js`, `src/sandbox-viewer.js`) | **view-only now enforced by the VNC server and proven with real input events; frontend viewer built; nothing runs inside the sandbox yet.** The previously flagged gap (noVNC `view_only` was only a page setting, so anyone holding the URL could take control) is **fixed**: x11vnc now runs with `-viewonly`, so it drops every pointer, key and clipboard message from every client, and no full-control VNC listener exists at all. Proven 2026-10-05 on a real sandbox (`scripts/prove-viewonly.mjs`): a raw RFB client authenticated on the public stream and sent moves, a click and keystrokes → pointer unmoved, nothing typed, 0 raw X input events; the same script against a test-only x11vnc *without* `-viewonly` moved the pointer and typed. A public `GET /api/slots/:id/stream` hands out that stream, and each board row has a "Watch desk" viewer that embeds only it. Opt-in with `RAMHERD_SANDBOX=e2b` + `E2B_API_KEY`; off by default; starting one stays admin-only. **Not done:** running the RAM's real work inside the sandbox, a smaller template (stock `desktop` = 8 vCPU / 8 GiB, about $0.53/hour each), and the board is still mock data, so in the demo every desk reads "no desktop running". See "E2B desktop sandboxes" below |
 | Deployment (Fly.io, app `ramherd-app`, region lhr) | **set up, not live yet.** One server serves the API (`/api/*`) and the static frontend (`src/`) on one URL; `Dockerfile` + `fly.toml` (shared-cpu-1x / 256 MB, health check on `/api/health`, no volume: all state is in memory and resets on every deploy). **First launch (operator, once):** `fly apps create ramherd-app --org personal`, then `fly secrets set ADMIN_TOKEN=$(openssl rand -hex 32) -a ramherd-app` (without it the admin routes fall back to the public `dev-admin-token`), then `scripts/deploy.sh`. **Redeploy after every change (no CI/CD):** commit, then run `scripts/deploy.sh`. It deploys the last *commit* only (uncommitted work never ships) and curls `/api/health` on https://ramherd-app.fly.dev when done. Add a Fly volume once launchpad / RAM ownership data must survive restarts |
 | Launchpad: user-created RAMs — tested for real | **built and tested (75 offline tests + an opt-in devnet simulation).** `server/lib/launchpad.js` validation (exactly one hash family of SHA-256 / SHA3-256 / BLAKE3, a track inside it, one of six catalog approaches plus a 20–600 char brief through the idea screen, one of the six roster models, token name/symbol, on-curve owner wallet, unknown fields refused). Ownership model: `rams.js` (draft → awaiting-signature → active, operator confirms + approves the brief), `ramfunds.js` (per-RAM ledger: 0.2 SOL create fee, its token's creator fees, its compute; separate from the shared pool), owned slots in `slots.js` outside the budget roster (a resize never retires them), `payouts.js` (an *accepted* HashSmash win → "wallet X is owed Y, because Z" record, idempotent per candidate). Unsigned launch transaction in `launchtx.js`, encoded by pump.fun's official `@pump-fun/pump-sdk` 2.0.0: transfer 0.2 SOL user→treasury, `create_v2` (creator = user), `create_fee_sharing_config`, `update_fee_shares` (treasury 100%, locked by pump). Only the user and a browser-generated mint sign; the server only sees public keys. Serialization round-trips, both signature slots are empty, and an inspector rejects a changed treasury/fee/creator/shareholder, an extra instruction or a flipped byte. **Devnet:** with `RAMHERD_DEVNET_SIM=1`, every launch instruction is simulated against pump.fun's live devnet programs (err `null`; fee-sharing message 1210 bytes, ~240k CU), in two messages, since the full one doesn't fit without the lookup table |
 | Launchpad — built, not verified | **Not live** (`config.live` is false and `LAUNCHPAD_LIVE = false` in `src/launch.js`). The full atomic launch is ~1300–1334 bytes, over Solana's 1232 limit, so it needs a v0 address lookup table of the launch's 14 static accounts (`launchLookupTableAddresses()`); with one it compiles to ~934 bytes (offline test), but no table exists on chain, so **the full four-instruction message has never been simulated together**. No real Phantom wallet has connected or signed (headless checks used a fake injected provider). The browser signing hand-off (`signAndSendLaunch`) is written but has never run, and the page CSP would need a `connect-src` for the RPC. Launch confirmation is the operator entering the tx signature by hand (`POST /api/admin/launchpad/rams/:id/confirm`); there is no on-chain launch verifier. State is in memory (lost on restart). Prize amount is not decided (admin supplies it per win). Frontend: `src/launch.html` entry slip, mock by default, also checked against the real server |
@@ -67,23 +67,64 @@ this as `environment-blocked` (a setup problem, not a verdict on the candidate).
 ## E2B desktop sandboxes (what's proven, what isn't)
 
 `server/lib/sandbox.js` wraps `@e2b/desktop` (the API shape was read from the installed SDK source, not guessed):
-`Sandbox.create('desktop', { apiKey, timeoutMs, metadata, lifecycle: { onTimeout: 'kill' } })` →
-`stream.start({ requireAuth: true })` → `stream.getUrl({ viewOnly: true, authKey })` → `kill()`.
+`Sandbox.create('desktop', { apiKey, timeoutMs, metadata, lifecycle: { onTimeout: 'kill' } })`, then its
+own view-only VNC launch through `sbx.commands.run(...)` (see below), then `kill()`.
 
-- **Proven (once, by hand, 2026-10-05):** one real sandbox (`desktop` template, 8 vCPU / 8 GiB as
-  E2B reported it) was created and streaming in 7.5 s. Its `https://6080-<id>.e2b.app/vnc.html` page
-  returned HTTP 200 (noVNC). It was killed after 8.1 s, and E2B then reported "not found", with 0
-  sandboxes left running on the account. Estimated cost was about $0.0012.
-- **Mocked:** the whole test suite (`tests/sandbox.test.js`) uses a fake SDK, so no test run ever
-  creates a real sandbox.
+**How view-only is enforced (server side, not by the page).** The stock `desktop` template only
+*installs* x11vnc, noVNC and websockify. It starts none of them at boot (checked against
+e2b-dev/desktop's template definition). The SDK's `stream.start()` launches them at runtime as
+`x11vnc ... -shared -usepw`, with no `-viewonly`, and its `getUrl({ viewOnly: true })` only adds noVNC's
+`view_only=true` page parameter. So this module never calls `stream.start()`. It launches x11vnc
+itself over the same authenticated command channel:
+`x11vnc -bg -forever -shared -wait 50 -display :0 -rfbport 5900 -viewonly -localhost -nosel -noremote -usepw`.
+`-viewonly` makes x11vnc discard all pointer/key input from every client, `-nosel` turns off
+clipboard exchange, and `-noremote` turns off x11vnc's remote-control commands. Then it reads back the
+real process list (`ps -C x11vnc`) and **kills the sandbox** unless exactly one x11vnc is running and it
+carries every one of those flags. Only then does it start noVNC on 6080. There is one stream, it is
+view-only, and it is the only thing the public route or the viewer can get. There is no full-control
+VNC listener: if an admin ever needs to drive a desktop, the server can do it through the SDK's
+authenticated xdotool calls, never through a URL. A custom E2B template (`Template` builder,
+`Template.build(..., { cpuCount, memoryMB })`) was not needed for this, because there is no VNC autostart
+to override. It is still the next step for **cost**.
+
+- **Proven 2026-10-05, real sandboxes, real input** (`RAMHERD_PROVE_VIEWONLY=yes node scripts/prove-viewonly.mjs`).
+  This starts a sandbox through the production `createSandboxManager().start()`, then speaks raw RFB
+  (RFB 3.8, VNC auth with the URL's password) over `wss://6080-<id>.e2b.app/websockify`:
+  - Observers in the sandbox: a focused terminal running `cat > /tmp/keys.txt`, `xinput test-xi2 --root`
+    and `xdotool getmouselocation`. Sanity check: local `xdotool` typing shows up in all three.
+  - **Public (view-only) stream:** auth OK, connection stays open, and it accepts 4 PointerEvents (moves +
+    a button-1 click) and 20 KeyEvents (`viewprobe` + Return). Result: pointer still `20,20`, nothing
+    typed, **0 new raw X input events**.
+  - **Positive control** (test-only, in the proof script, never in app code): the same client against a
+    second x11vnc on the same desktop *without* `-viewonly`. Pointer moved to `640,400`, `ctrlprobe`
+    typed, 28 raw X input events. This shows the client really delivers input when the server allows it.
+  - Other doors: raw RFB port 5900 through E2B's proxy → HTTP 502. The sandbox's envd (command API)
+    without its per-sandbox access token → HTTP 401 (E2B issued a token). Note: E2B forwards
+    localhost ports onto the sandbox interface (5900 also listens on `169.254.x`), so `-localhost` is not
+    the barrier here. `-viewonly` is, because it's the only VNC server on the desktop.
+  - Two runs (the first one's verdict step was cut short by a cleanup bug in the script, but its
+    measurements were identical): 27.4 s + 31.8 s at 8 vCPU / 8 GiB, about **$0.0088**. Each was killed,
+    E2B then reported "not found", and 0 sandboxes were left running.
+  - **End-to-end through the HTTP server** (same day): admin start → `GET /api/slots/slot-0/stream` gave
+    only `{ sessionId, streamUrl, viewOnly: "server", expiresAt }` → the viewer's `loadDesk()` went
+    idle → live → idle. E2B's noVNC page returned 200 with no X-Frame-Options or CSP, so it can be framed.
+    5.7 s, about $0.0008.
+- **Mocked:** the whole test suite (`tests/sandbox.test.js`, `tests/sandbox-viewer.test.js`) uses a fake
+  SDK, so no test run ever creates a real sandbox. The fake records every command, so the tests check the
+  real launch order, the flags, and the kill when the x11vnc process check fails.
 - **Cost rails:** nothing is created unless an admin calls start. Every sandbox has an E2B-side hard
   timeout (it gets killed even if this server dies), there's a concurrency cap, retiring a slot kills
   its sandbox, and server shutdown kills them all.
-- **Not built yet:** frontend VNC embedding, and running the RAM's real work inside the sandbox
-  (the intended content is written up at the top of `sandbox.js`).
-- **Before showing it to the public:** noVNC's `view_only` is client-side only, so anyone who holds
-  the URL (it includes the VNC password) can take control. That's why the URL is admin-only. To
-  enforce view-only on the server, start x11vnc with `-viewonly`, or put a proxy in front.
+- **Frontend viewer** (`src/sandbox-viewer.js`): each board row has a "Watch desk" control that opens a
+  ruled row with the RAM's desktop in a sandboxed iframe (`allow-scripts allow-same-origin` only,
+  no-referrer, `pointer-events: none`). Otherwise it shows a plain "No desktop running" line. It
+  re-checks every 10 s and only shows a stream labelled `viewOnly: "server"` whose URL is
+  `https://6080-<id>.e2b.app/vnc.html`. Pages allow framing of `https://*.e2b.app` only (`frame-src`).
+  The board is still mock data, so it maps `ram-NN` to the server's `slot-(NN-1)` until the real feed
+  sends a `slotId`.
+- **Not built yet:** running the RAM's real work inside the sandbox (the intended content is written up
+  at the top of `sandbox.js`). The stream password is in the public URL, which is fine because it only
+  grants watching.
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -93,7 +134,8 @@ this as `environment-blocked` (a setup problem, not a verdict on the candidate).
 | `RAMHERD_SANDBOX_MAX` | 6 | max concurrent sandboxes from this server (1 to 100) |
 
 Admin routes (`x-admin-token`): `POST /api/admin/slots/:id/sandbox/start`, `POST /api/admin/slots/:id/sandbox/stop`,
-`GET /api/admin/slots/:id/sandbox` (stream URL).
+`GET /api/admin/slots/:id/sandbox` (stream URL plus session details).
+Public route: `GET /api/slots/:id/stream` → `{ enabled, stream: null | { sessionId, streamUrl, viewOnly: "server", expiresAt } }`.
 
 ## Build convention for the real coding work (not the scaffolding/docs)
 
@@ -135,6 +177,7 @@ src/
   styles.css      all styling — light paper on green felt, three inks, self-hosted Archivo
                   variable, no framework; tokens in :root (see DESIGN.md)
   app.js          wires the DOM to the mock data layer; diffs rows by id on every tick
+  sandbox-viewer.js  a RAM's desk: embeds its server-side view-only E2B stream, or "no desktop running"
   mock-data.js    <- the mock-data / real-API swap point, see below
   fonts/          archivo-variable.woff2 (the only face; width + weight axes)
   favicon.svg
