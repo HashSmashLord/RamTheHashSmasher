@@ -1,4 +1,4 @@
-// RAMherd: the idea slip (submit.html). Ideas go to the human review queue, never straight
+// RAMherd: the idea slip (/submit). Ideas go to the human review queue, never straight
 // to a RAM. Data through RAMherdAPI only.
 
 import { RAMherdAPI } from "./mock-data.js";

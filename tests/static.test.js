@@ -22,6 +22,21 @@ test('serves the frontend from src/ on the same origin as the API', async (t) =>
   assert.match(health.headers.get('content-security-policy'), /default-src 'none'/);
 });
 
+test('clean URLs (no .html) serve the same pages, and still work alongside the old .html links', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  for (const path of ['/herd', '/herder', '/submit', '/rules', '/launch']) {
+    const clean = await s.get(path);
+    const withExt = await s.get(`${path}.html`);
+    assert.equal(clean.status, 200, path);
+    assert.match(clean.headers.get('content-type'), /^text\/html/, path);
+    assert.equal(await clean.text(), await withExt.text(), `${path} must serve the identical page as ${path}.html`);
+  }
+  // A real asset or a genuine 404 is never swallowed by the extensionless fallback.
+  assert.equal((await s.get('/styles.css')).status, 200);
+  assert.equal((await s.get('/nope')).status, 404);
+});
+
 test('static serving refuses unknown files, dotfiles and traversal', async (t) => {
   const s = await startApp();
   t.after(() => s.stop());

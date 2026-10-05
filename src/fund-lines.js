@@ -1,4 +1,4 @@
-// RAMherd: the printed fund lines on the banner page (index.html). Fees collected, compute
+// RAMherd: the printed fund lines on the banner page (the home page). Fees collected, compute
 // spent as a 24-block bar, RAMs funded as one block per slot. Data through RAMherdAPI only.
 
 import { RAMherdAPI } from "./mock-data.js";

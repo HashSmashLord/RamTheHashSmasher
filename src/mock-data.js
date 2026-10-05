@@ -413,12 +413,12 @@ export const RAMherdAPI = {
     return startMockLiveFeed(onTick, intervalMs);
   },
 
-  /** "Create a RAM" (launch.html): getConfig / createRam / buildTransaction. Assigned below. */
+  /** "Create a RAM" (/launch): getConfig / createRam / buildTransaction. Assigned below. */
   launchpad: null,
 };
 
 // ---------------------------------------------------------------------------
-// Launchpad ("Create a RAM", launch.html). Same swap rule as above: with API_BASE set,
+// Launchpad ("Create a RAM", /launch). Same swap rule as above: with API_BASE set,
 // each method fetches the backend ("" means same origin, when server/ serves src/); with
 // API_BASE null it answers from the mock below.
 // Every method resolves to `{ status, body, mock }`: `body` is the JSON the backend sent (or

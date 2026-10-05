@@ -71,9 +71,9 @@ export function slotIdFor(agent) {
   return Number.isInteger(n) && n > 0 ? `slot-${n - 1}` : String(agent.id);
 }
 
-// A RAM's page lives on the herd page, over the board: herd.html#ram/<id>. From the herd
+// A RAM's page lives on the herd page, over the board: /herd#ram/<id>. From the herd
 // page itself the hash alone is enough (and keeps the opener for focus restore).
-export const ramHref = (id, { samePage = false } = {}) => `${samePage ? "" : "herd.html"}#ram/${encodeURIComponent(id)}`;
+export const ramHref = (id, { samePage = false } = {}) => `${samePage ? "" : "/herd"}#ram/${encodeURIComponent(id)}`;
 
 // ---------------------------------------------------------------------------
 // The one authored motion: a new or changed line is printed, left to right, in steps.

@@ -408,9 +408,16 @@ export function createApp(config) {
   const staticDir = config.staticDir ?? DEFAULT_STATIC_DIR;
   async function serveStatic(req, res, pathname) {
     const rel = pathname.endsWith('/') ? `${pathname}index.html` : pathname;
-    const file = resolve(staticDir, `.${rel}`);
+    if (rel.split('/').some((p) => p.startsWith('.'))) return false;
+    let file = resolve(staticDir, `.${rel}`);
+    // Clean URLs: a path with no extension at all (/herd, /herder, ...) tries
+    // its .html file. Only a bare segment with no dot qualifies, so a real
+    // asset request (/styles.css, /favicon.svg, a typo'd /nope.css) never
+    // falls through to this. Paths that already say .html keep working too
+    // (already-shared/tweeted links), this is purely an added alias.
+    if (!extname(file)) file = `${file}.html`;
     const type = STATIC_TYPES[extname(file).toLowerCase()];
-    if (!type || !file.startsWith(staticDir + sep) || rel.split('/').some((p) => p.startsWith('.'))) return false;
+    if (!type || !file.startsWith(staticDir + sep)) return false;
     let body;
     try {
       body = await readFile(file);

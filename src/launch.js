@@ -1,4 +1,4 @@
-// RAMherd entry slip ("Create a RAM", launch.html). Data comes through RAMherdAPI.launchpad
+// RAMherd entry slip ("Create a RAM", /launch). Data comes through RAMherdAPI.launchpad
 // (mock-data.js, the only mock/real swap point); rules come from launchpad-rules.js.
 //
 // Signing is gated twice: LAUNCHPAD_LIVE below AND `config.live` from the API must both be

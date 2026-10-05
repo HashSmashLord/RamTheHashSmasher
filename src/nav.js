@@ -1,5 +1,5 @@
-// RAMherd: the top bar, shared by every page. The links are real pages (herd.html,
-// herder.html, submit.html, rules.html, launch.html); the one behaviour here is the
+// RAMherd: the top bar, shared by every page. The links are real pages (/herd,
+// /herder, /submit, /rules, /launch); the one behaviour here is the
 // pixel toggle that opens the menu at narrow widths. Each page's script calls initNav().
 
 export function initNav(doc = document) {

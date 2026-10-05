@@ -1,5 +1,5 @@
 // RAMherd: the banner page. The fund lines and the listing's live count; nothing else
-// on this page moves. The herd itself is on herd.html, the Herder on herder.html.
+// on this page moves. The herd itself is on /herd, the Herder on /herder.
 
 import { RAMherdAPI } from "./mock-data.js";
 import { initNav } from "./nav.js";

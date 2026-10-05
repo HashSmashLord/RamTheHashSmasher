@@ -1,4 +1,4 @@
-// RAMherd: a RAM's full page, herd.html#ram/<id>. Its screen, larger, its facts, its whole
+// RAMherd: a RAM's full page, /herd#ram/<id>. Its screen, larger, its facts, its whole
 // history. Opened over the board (the board stays mounted and keeps ticking underneath);
 // Escape or the Back pill returns to the board with scroll and focus restored.
 // Data through RAMherdAPI only; the desk stream through the board's shared feed.
