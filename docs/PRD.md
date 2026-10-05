@@ -92,17 +92,52 @@ write code for, full stop — not a wording problem, not something to route arou
 
 Everything else — the full orchestration, the frontend, the moderation queue, the actual
 solver-agent loop running against the real HashSmash repo with the operator's own OpenRouter key in
-dev/test mode (his call on using real key spend, default is mocked) — is being built now.
+dev/test mode (operator's call on using real key spend, default is mocked) — is being built now.
 
-## Open product decisions (the operator's call, not blocking the build)
+## Decided
 
-- How many solver agents per $ of compute budget, and what's the floor/ceiling?
-- Does a viewer's approved idea get attached to an existing agent, or spin up a new one?
-- What exactly can viewers ask the coordinator — pure Q&A, or also "nudge" an agent's
-  direction within safe bounds?
+- **The Herder** (renamed from "coordinator"): same read-only Q&A for viewers as before —
+  grounded in real state, never touches a RAM, never reachable by a viewer to direct one.
+  New: the operator can tell the Herder to move funds/compute to a specific RAM, but that
+  still runs through the same deterministic allocator code, not the model's judgment, and
+  that action channel is operator-only — a completely separate door from the public chat.
+- **Per-RAM models, via OpenRouter.** Each RAM gets its own assigned model, shown on its
+  tile. Default roster at launch (one RAM per live HashSmash exploratory track):
+
+  | RAM | Track | Model (OpenRouter slug) |
+  |---|---|---|
+  | 1 | `sha256-r31` | `anthropic/claude-opus-5.5` |
+  | 2 | `sha256-r32` | `anthropic/claude-fable-5.1` |
+  | 3 | `sha3-256-r5` | `openai/gpt-6.1-sol-pro` |
+  | 4 | `sha3-256-r6` | `z-ai/glm-5.3-prime` |
+  | 5 | `blake3-r1` | `deepseek/deepseek-v4-pro` |
+  | 6 | `blake3-r2` | `qwen/qwen3.8-max-prime` |
+
+  Verified real slugs against OpenRouter's own `/api/v1/models` endpoint, not guessed.
+- **Viewers watch, never interact.** No viewer input ever reaches a RAM directly — only
+  through the existing human-moderated idea queue. Confirmed explicitly, not a default.
+- **Live view of a RAM working**, in priority order: (1) a real terminal/log stream of what
+  a RAM's pipeline run actually does (cheap, build first), (2) a full isolated VM + live VNC
+  desktop per RAM (via E2B — needs the operator's own E2B account/API key, real per-second
+  cost), for once a RAM needs to browse rather than just run CLI commands. Build the VM feed
+  wrapped in real UI framing, not a bare remote-desktop window.
+- **Launchpad (later feature) — refined.** 0.2 SOL to create a RAM; a pump.fun token for it
+  is created on the *user's own connected wallet* in one atomic Phantom-signed transaction
+  (same non-custodial shape as the AGENCY reference), with the token's creator fees routed to
+  the operator's treasury wallet (address to be supplied), funding that RAM's compute. A
+  win in HashSmash's own judged review sends a prize to the user's wallet. During creation,
+  the user must **pick exactly one** of the three hash families (SHA-256, SHA3-256, BLAKE3) —
+  a RAM cracks one, not all three — and answer a short follow-up on what approach the RAM
+  should specifically try and which model to run it on. Still blocked on the same real-money
+  wall as everything else here; the unsigned-transaction-building part (user's own wallet
+  signs, we never hold a key) is the piece actually worth trying when this gets built.
+
+## Still open
+
 - Submission cadence to the real HashSmash repo: every candidate result, or only ones that
   pass some internal bar first?
-- Any AGENCY-style feature the operator wants cherry-picked (ask per-feature, don't batch-adopt).
+- Exact $-per-RAM-slot ratio and floor/ceiling slot count.
+- Does a viewer's approved idea get attached to an existing RAM, or spin up a new one?
 
 ## Build plan (today, 4-5 hours, three parallel surfaces)
 
