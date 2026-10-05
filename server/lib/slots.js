@@ -32,8 +32,38 @@
 // side effect of activation or advance(). The public snapshot carries only the
 // session's id/status/times; the VNC stream URL (which holds its password) is
 // only available through `getSandboxStream`, used by an admin route. Retiring a
-// slot stops its sandbox so nothing is left billing. The sandbox does not run
-// the slot's work yet: that still happens on the host as before.
+// slot stops its sandbox so nothing is left billing.
+//
+// A slot's `sandbox` field tells its desk's real, current state apart:
+//   null                 never had a sandbox (the usual case)
+//   status 'starting'    one is being created right now
+//   status 'running'     live; the public stream route hands out its view
+//   status 'stopped'     this server stopped it (admin stop, retire, shutdown)
+//   status 'expired'     E2B ended it without a stop from here; `endedBy` is
+//                        'timeout' (its hard stop was reached: the normal end
+//                        of a visible session) or 'provider' (gone before that)
+//   status 'failed'      creating or starting it failed; `error` says why
+// 'expired' comes from the sandbox manager's reconcile check (sandbox.js asks
+// E2B while anything is live) through `onEnded`, or from a stop that finds the
+// sandbox already gone. Each change is a new feed line; nothing is rewritten.
+//
+// Optional `sandboxTask` (server/lib/sandbox-task.js's runWorkbenchTask, passed
+// by store.js whenever sandboxes are on): right after a sandbox starts, it runs
+// fire-and-forget (startSandbox still returns as soon as the desktop is up) and
+// types the slot's real workbench intro into a visible terminal: clone the real
+// HashSmash repo, open this slot's track and candidate, run the organizer's
+// mechanical check. Each finished command and the outcome land in the feed.
+// `waitForSandboxTask(id)` awaits it deterministically (tests, operators). The
+// slot's research cycle itself still runs on the host as before.
+//
+// Optional `sandboxContext` (server/lib/sandbox-context.js's contextBanner,
+// passed by store.js whenever sandboxes are on): right after a sandbox starts
+// (alongside the workbench task, also fire-and-forget) it puts an always-on
+// banner across the top of the desktop: which RAM this is (track, rounds,
+// approach, model, from the slot's real assignment) and its real status plus
+// latest feed entry. Every later feed entry on a slot with a running sandbox
+// rewrites the banner's text (coalesced: at most one write in flight per slot).
+// `waitForSandboxContext(id)` awaits the start and any pending update.
 //
 // Optional `costLedger` (server/lib/cost.js): when given, every real "thinking"
 // LLM call (the one place `advance()` calls `llmProvider.complete()`) reports
@@ -51,6 +81,7 @@
 // (ramfunds.js), not the shared pool.
 
 import { assignmentForIndex, ACTIVE_TRACKS } from './targets.js';
+import { contextPayload } from './sandbox-context.js';
 
 // 'validated' = the candidate passed HashSmash's real local intake (mechanical
 // checks only). It is not judged, not scored, and not submitted anywhere.
@@ -65,13 +96,15 @@ function freezeCopy(value) {
  *   llmProvider: import('./llm.js').LlmProvider,
  *   pipelineRunner?: ReturnType<typeof import('./hashsmash.js').createHashSmashRunner>,
  *   sandboxManager?: ReturnType<typeof import('./sandbox.js').createSandboxManager>|null,
+ *   sandboxTask?: typeof import('./sandbox-task.js').runWorkbenchTask|null,
+ *   sandboxContext?: typeof import('./sandbox-context.js').contextBanner|null,
  *   costLedger?: ReturnType<typeof import('./cost.js').createCostLedger>|null,
  *   modelOverride?: string|null,
  *   now?: () => string,
  *   idPrefix?: string,
  * }} opts
  */
-export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, costLedger = null, modelOverride = null, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
+export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createSlotManager requires an llmProvider with complete()');
   }
@@ -83,10 +116,15 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
   const slots = new Map();
   let nextAssignmentIndex = 0;
   let nextSlotSeq = 0;
+  /** @type {Map<string, Promise<void>>} slot id -> its latest sandbox task run */
+  const sandboxTasks = new Map();
+  /** @type {Map<string, { sessionId: string, ready: boolean, starting: Promise<void>, inflight: Promise<void>|null, dirty: boolean }>} slot id -> its banner */
+  const contexts = new Map();
 
   function pushFeed(slot, type, message) {
     slot.feed.push({ ts: now(), type, message });
     slot.updatedAt = now();
+    syncContext(slot);
   }
 
   function snapshot(slot) {
@@ -371,6 +409,8 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       const info = await sandboxManager.start(id);
       slot.sandbox = { ...info, status: 'running' };
       pushFeed(slot, 'sandbox-started', `Desktop sandbox ${info.sessionId} running (${info.template}), hard stop at ${info.expiresAt}.`);
+      if (sandboxContext && typeof sandboxManager.runTask === 'function') startContext(slot, info.sessionId);
+      if (sandboxTask && typeof sandboxManager.runTask === 'function') sandboxTasks.set(id, runSandboxTask(slot, info.sessionId));
     } catch (err) {
       slot.sandbox = { provider: sandboxManager.provider, status: 'failed', sessionId: null, error: err.message, failedAt: now() };
       pushFeed(slot, 'sandbox-error', `Desktop sandbox could not start: ${err.message}`);
@@ -380,7 +420,125 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
   }
 
   /**
+   * Fire-and-forget body of the sandbox task: never rejects, reports to the feed.
+   * Feed lines only carry the typed commands, exit codes and values read from
+   * the public HashSmash repo, nothing secret.
+   */
+  async function runSandboxTask(slot, sessionId) {
+    // Yield first so startSandbox's caller sees 'sandbox-started' as the last entry.
+    await Promise.resolve();
+    const { track, editablePath } = slot.assignment;
+    const current = () => slot.sandbox?.sessionId === sessionId && slot.sandbox?.status === 'running';
+    pushFeed(slot, 'sandbox-task-started', `Opening a terminal on desktop ${sessionId}: cloning the real HashSmash repo and opening ${editablePath} for ${track}, typed live.`);
+    try {
+      const result = await sandboxManager.runTask(slot.id, (sbx, { isLive }) => sandboxTask(sbx, slot.assignment, {
+        isLive: () => isLive() && current(),
+        onStep: (st) => pushFeed(slot, 'sandbox-task-step', `Desktop terminal: \`${st.command}\` (exit ${st.exitCode}).`),
+      }));
+      if (!result.ok) {
+        pushFeed(slot, 'sandbox-task-error', `Desktop terminal stopped: "${result.failedStep}" step exited non-zero.`);
+        return;
+      }
+      const parts = [];
+      if (result.repo) parts.push(`cloned ${result.repo.origin ?? 'HashSmash'} at ${result.repo.head.slice(0, 12)}`);
+      const c = result.claim;
+      if (c) parts.push(`${editablePath}/claim.json: ${c.attackClass}, time 2^${c.timeLog2}, memory 2^${c.memoryLog2Bytes} bytes, success ${c.successProbability}, state ${c.submissionState}`);
+      if (result.check) parts.push(`organizer check: ${result.check.status}`);
+      pushFeed(slot, 'sandbox-task-done', `Workbench ready on desktop ${sessionId}: ${parts.join('; ') || 'commands ran'}.`);
+    } catch (err) {
+      pushFeed(slot, 'sandbox-task-error', `Desktop terminal task did not finish: ${err.message}`);
+    }
+  }
+
+  /** Test/operator hook: resolves once the slot's latest sandbox task has finished (or at once if none). */
+  async function waitForSandboxTask(id) {
+    await (sandboxTasks.get(id) || Promise.resolve());
+  }
+
+  function contextFor(slot) {
+    return contextPayload({ slotId: slot.id, ramId: slot.ramId, assignment: slot.assignment, status: slot.status, feed: slot.feed });
+  }
+
+  function contextIsCurrent(slot, ctx) {
+    return contexts.get(slot.id) === ctx && slot.sandbox?.status === 'running' && slot.sandbox?.sessionId === ctx.sessionId;
+  }
+
+  /** Puts the always-on context banner on a freshly started sandbox. Never rejects. */
+  function startContext(slot, sessionId) {
+    const ctx = { sessionId, ready: false, starting: null, inflight: null, dirty: false };
+    contexts.set(slot.id, ctx);
+    ctx.starting = (async () => {
+      await Promise.resolve(); // let startSandbox finish its own feed line first
+      try {
+        await sandboxManager.runTask(slot.id, (sbx) => sandboxContext.start(sbx, contextFor(slot)));
+        if (!contextIsCurrent(slot, ctx)) return;
+        ctx.ready = true;
+        // Feed entries pushed while it was starting are picked up by this line's sync.
+        pushFeed(slot, 'sandbox-context-started', `On-screen context banner is up on desktop ${sessionId}: this RAM's assignment, status and latest feed entry, kept current.`);
+      } catch (err) {
+        if (contextIsCurrent(slot, ctx)) pushFeed(slot, 'sandbox-context-error', `On-screen context banner could not start: ${err.message}`);
+      }
+    })();
+  }
+
+  /**
+   * Rewrites the banner's text from the slot's real state. Coalesced: while a
+   * write is in flight, later calls only mark it dirty and one more write
+   * follows with the newest state. Failures are dropped (the sandbox may have
+   * just stopped); the feed already shows sandbox start/stop/errors.
+   */
+  function syncContext(slot) {
+    const ctx = contexts.get(slot.id);
+    if (!ctx || !ctx.ready || !contextIsCurrent(slot, ctx)) return;
+    if (ctx.inflight) { ctx.dirty = true; return; }
+    ctx.inflight = (async () => {
+      do {
+        ctx.dirty = false;
+        await Promise.resolve(); // batch entries pushed in the same tick
+        if (!contextIsCurrent(slot, ctx)) return;
+        try {
+          await sandboxManager.runTask(slot.id, (sbx) => sandboxContext.update(sbx, contextFor(slot)));
+        } catch { /* sandbox gone or command failed; next entry retries */ }
+      } while (ctx.dirty);
+    })().finally(() => { ctx.inflight = null; });
+  }
+
+  /** Test/operator hook: resolves once the banner has started and any pending text update has been written. */
+  async function waitForSandboxContext(id) {
+    const ctx = contexts.get(id);
+    if (!ctx) return;
+    await ctx.starting;
+    while (ctx.inflight) await ctx.inflight;
+  }
+
+  /**
+   * Records that E2B ended the slot's sandbox on its own (sandbox.js found it
+   * gone: hard timeout, or anything else on E2B's side). Only applies to the
+   * session the slot still believes is running; returns whether it did.
+   * @param {any} slot
+   * @param {{ sessionId: string, endedBy: 'timeout'|'provider', endedAt: string, noticedAt: string, ranSeconds: number }} d
+   */
+  function markSandboxEnded(slot, d) {
+    if (!slot.sandbox || slot.sandbox.sessionId !== d.sessionId || slot.sandbox.status !== 'running') return false;
+    slot.sandbox = { ...slot.sandbox, status: 'expired', endedBy: d.endedBy, endedAt: d.endedAt, noticedAt: d.noticedAt, ranSeconds: d.ranSeconds };
+    const ran = Math.round(d.ranSeconds);
+    pushFeed(slot, 'sandbox-expired', d.endedBy === 'timeout'
+      ? `Desktop sandbox ${d.sessionId} reached its hard stop after ${ran}s; E2B closed it. The RAM's work continues on the host.`
+      : `Desktop sandbox ${d.sessionId} is no longer running on E2B (closed before its hard stop, about ${ran}s in). The RAM's work continues on the host.`);
+    return true;
+  }
+
+  if (sandboxManager && typeof sandboxManager.onEnded === 'function') {
+    sandboxManager.onEnded((slotId, details) => {
+      const slot = slots.get(slotId);
+      if (slot) markSandboxEnded(slot, details);
+    });
+  }
+
+  /**
    * Kills the slot's sandbox, if it has a live one. Works on retired slots too.
+   * If E2B had already ended it, that is what gets recorded (status 'expired'),
+   * not a stop that never happened.
    * @param {string} id
    */
   async function stopSandbox(id) {
@@ -390,6 +548,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     try {
       const result = await sandboxManager.stop(id);
       if (result && slot.sandbox) {
+        if (result.alreadyGone && markSandboxEnded(slot, result)) return snapshot(slot);
         slot.sandbox = { ...slot.sandbox, status: 'stopped', stoppedAt: result.stoppedAt, ranSeconds: result.ranSeconds };
         pushFeed(slot, 'sandbox-stopped', `Desktop sandbox ${result.sessionId} stopped after ${Math.round(result.ranSeconds)}s.`);
       }
@@ -398,6 +557,12 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       throw err;
     }
     return snapshot(slot);
+  }
+
+  /** Asks the sandbox manager to check with E2B now (tests, operators); no-op when sandboxes are off. */
+  async function reconcileSandboxes() {
+    if (!sandboxManager || typeof sandboxManager.reconcile !== 'function') return [];
+    return sandboxManager.reconcile();
   }
 
   /** Admin only: stream URL incl. VNC password, or null. */
@@ -411,6 +576,9 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     startSandbox,
     stopSandbox,
     getSandboxStream,
+    waitForSandboxTask,
+    waitForSandboxContext,
+    reconcileSandboxes,
     setSlotCount,
     createOwnedSlot,
     getSlots,

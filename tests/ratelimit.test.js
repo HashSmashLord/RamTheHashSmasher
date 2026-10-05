@@ -30,3 +30,15 @@ test('the window slides', () => {
   assert.equal(rl.hit('a').allowed, true);
   rl.stop();
 });
+
+test('countDenied:false refuses past max without growing the key\'s history', () => {
+  const clock = { t: 0 };
+  const rl = createRateLimiter({ max: 2, windowMs: 10_000, now: () => clock.t, countDenied: false });
+  assert.equal(rl.hit('g').allowed, true);
+  assert.equal(rl.hit('g').allowed, true);
+  for (let i = 0; i < 1000; i++) assert.equal(rl.hit('g').allowed, false);
+  clock.t += 10_001;
+  // With denied hits not counted, the window frees up as soon as the 2 allowed hits age out.
+  assert.equal(rl.hit('g').allowed, true);
+  rl.stop();
+});

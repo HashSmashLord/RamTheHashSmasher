@@ -11,16 +11,16 @@ and scoring pipeline works.
 | Piece | State |
 |---|---|
 | PRD + HashSmash technical brief | **done** — grounded in the real competition repo, vendored at `reference/hash-smash/` |
-| Orchestration backend (`server/`) | **built, tested, mocked.** Fee ledger, budget→slot allocator, RAM slots, read-only coordinator, moderated idea queue, HTTP API all real; fee numbers and LLM calls are mock by default |
-| Per-RAM compute cost (`server/lib/cost.js`) | **built, tested, backend-only.** Every real "thinking" LLM call (a RAM's or the Herder's) reports its prompt/completion/total tokens and OpenRouter's actual USD `cost` (always present on a real response; left `null`, not coerced to 0, on the rare response that omits it) against that slot, keyed by RAM id for owned (launchpad) slots too — whose own funding account (`ramfunds.js`) is charged automatically from the same entry. No route reads it yet, on purpose: the figures exist before the frontend has anywhere to put them. Tracks tokens and USD, deliberately not SOL — that needs a live price feed this doesn't have. Mock mode records an honest zero, never a fabricated number |
-| Per-RAM models (OpenRouter) | **done, wired, mock by default.** Each of the six exploratory tracks carries its launch-roster model in `server/lib/targets.js` (RAM 1 `sha256-r31` → `anthropic/claude-opus-5.5`, 2 `sha256-r32` → `anthropic/claude-fable-5.1`, 3 `sha3-256-r5` → `openai/gpt-6.1-sol-pro`, 4 `sha3-256-r6` → `z-ai/glm-5.3-prime`, 5 `blake3-r1` → `deepseek/deepseek-v4-pro`, 6 `blake3-r2` → `qwen/qwen3.8-max-prime`; see `docs/PRD.md` "Decided"). Every slot sends its own model on each LLM call, a 7th+ slot inherits its track's model, and `/api/slots` shows it. Optional `RAMHERD_LLM_MODEL` forces one model on every slot (testing). Calls are still mock unless `RAMHERD_LIVE=true` **and** `OPENROUTER_API_KEY` are both set; no live call to any roster model has been made yet |
-| Frontend dashboard (`src/`) | **built, demoable, mocked.** Third visual pass (2026-10-05): pixel-art monochrome, every RAM a screen, the Herder a panel. Split into real pages the same day: the banner page, the Herd (`herd.html`, with a full page per RAM at `herd.html#ram/<id>`), the Herder (`herder.html`), ideas (`submit.html`), what counts (`rules.html`), the entry slip (`launch.html`). Real UI/UX against a mock data layer — see "Frontend structure", "Mock data and the API swap point" and "Design notes" below |
+| Orchestration backend (`server/`) | **built, tested, running on demo data.** Fee ledger, budget→slot allocator, RAM slots, read-only coordinator, moderated idea queue, HTTP API all real; fee numbers are simulated and LLM calls are simulated by default (proven to work for real — see "Going live" below) |
+| Per-RAM compute cost (`server/lib/cost.js`) | **built, tested, backend-only.** Every real "thinking" LLM call (a RAM's or the Herder's) reports its prompt/completion/total tokens and OpenRouter's actual USD `cost` (always present on a real response; left `null`, not coerced to 0, on the rare response that omits it) against that slot, keyed by RAM id for owned (launchpad) slots too — whose own funding account (`ramfunds.js`) is charged automatically from the same entry. No route reads it yet, on purpose: the figures exist before the frontend has anywhere to put them. Tracks tokens and USD, deliberately not SOL — that needs a live price feed this doesn't have. Demo mode records an honest zero, never a fabricated number |
+| Per-RAM models (OpenRouter) | **done, wired, simulated by default.** Each of the six exploratory tracks carries its launch-roster model in `server/lib/targets.js` (RAM 1 `sha256-r31` → `anthropic/claude-opus-5.5`, 2 `sha256-r32` → `anthropic/claude-fable-5.1`, 3 `sha3-256-r5` → `openai/gpt-6.1-sol-pro`, 4 `sha3-256-r6` → `z-ai/glm-5.3-prime`, 5 `blake3-r1` → `deepseek/deepseek-v4-pro`, 6 `blake3-r2` → `qwen/qwen3.8-max-prime`; see `docs/PRD.md` "Decided"). Every slot sends its own model on each LLM call, a 7th+ slot inherits its track's model, and `/api/slots` shows it. Optional `RAMHERD_LLM_MODEL` forces one model on every slot (testing). Calls are still simulated unless `RAMHERD_LIVE=true` **and** `OPENROUTER_API_KEY` are both set — real end-to-end, including the per-RAM model slug, proven working 2026-10-05 (see "Going live" below); the deployed site just doesn't have the flag + key set yet |
+| Frontend dashboard (`src/`) | **built, demoable, running on demo data.** Third visual pass (2026-10-05): pixel-art monochrome, every RAM a screen, the Herder a panel. Split into real pages the same day: the banner page, the Herd (`herd.html`, with a full page per RAM at `herd.html#ram/<id>`), the Herder (`herder.html`), ideas (`submit.html`), what counts (`rules.html`), the entry slip (`launch.html`). Real UI/UX against a demo data layer — see "Frontend structure", "Demo data and the API swap point" and "Design notes" below |
 | Real research content: `sha256-r32` (`research/sha256-r32/`) | **one real, modest, honest result; not judged.** An independent C reimplementation of the existing r32 package's finite construction reproduces every count and both SHA-256 hashes it prints, then measures its weakest premise (average tail yield >= 2^-49) directly: 2^37.6 prefix-tail pairs, trail followed through step 21 at 2^-33.6, **no collision observed**, estimated average yield 2^-44.6 (range 2^-45.5 to 2^-43.8) under one disclosed independence premise. Written up as Section 12 of the package; the claim stays at time 86, memory 39, success 0.9, nothing rounded up. A RAM on `sha256-r32-exploratory` now runs this package through the real `check` (exit 0, `mechanically_valid`) and `intake` (exit 0, `mechanically_valid`); the judge stays gated off. See "Real HashSmash pipeline" below |
 | Solver-agent loop → real HashSmash pipeline (`server/lib/hashsmash.js`) | **pipeline integration working end to end, locally, for `sha256-r31-exploratory`.** A RAM slot clones the vendored repo, writes a clearly labeled harness *draft* (the organizer's own `draft_claim()` template, no attack claimed), and runs HashSmash's real `local_tracks.py check` and `hashsmash_pipeline.py intake`. Result: `check` → `mechanically_valid`, `intake` → `draft_not_submitted` with a real `package_sha256` and evidence file. Opt-in with `RAMHERD_PIPELINE=local`. **Not done:** the LLM doesn't write candidates (the one research package, r32, was written by hand by a Claude session), no judge run (paid, gated off), no live submission (not implemented on purpose). The real accepted r31 candidate can't pass local intake here because its experiment needs Docker, which isn't installed. See "Real HashSmash pipeline" below |
-| Live VM view per RAM: E2B desktop sandbox (`server/lib/sandbox.js`, `src/sandbox-viewer.js`) | **view-only now enforced by the VNC server and proven with real input events; frontend viewer built; nothing runs inside the sandbox yet.** The previously flagged gap (noVNC `view_only` was only a page setting, so anyone holding the URL could take control) is **fixed**: x11vnc now runs with `-viewonly`, so it drops every pointer, key and clipboard message from every client, and no full-control VNC listener exists at all. Proven 2026-10-05 on a real sandbox (`scripts/prove-viewonly.mjs`): a raw RFB client authenticated on the public stream and sent moves, a click and keystrokes → pointer unmoved, nothing typed, 0 raw X input events; the same script against a test-only x11vnc *without* `-viewonly` moved the pointer and typed. A public `GET /api/slots/:id/stream` hands out that stream, and each board row has a "Watch desk" viewer that embeds only it. Opt-in with `RAMHERD_SANDBOX=e2b` + `E2B_API_KEY`; off by default; starting one stays admin-only. **Not done:** running the RAM's real work inside the sandbox, a smaller template (stock `desktop` = 8 vCPU / 8 GiB, about $0.53/hour each), and the board is still mock data, so in the demo every desk reads "no desktop running". See "E2B desktop sandboxes" below |
+| Live VM view per RAM: E2B desktop sandbox (`server/lib/sandbox.js`, `src/sandbox-viewer.js`) | **view-only now enforced by the VNC server and proven with real input events; frontend viewer built; nothing runs inside the sandbox yet.** The previously flagged gap (noVNC `view_only` was only a page setting, so anyone holding the URL could take control) is **fixed**: x11vnc now runs with `-viewonly`, so it drops every pointer, key and clipboard message from every client, and no full-control VNC listener exists at all. Proven 2026-10-05 on a real sandbox (`scripts/prove-viewonly.mjs`): a raw RFB client authenticated on the public stream and sent moves, a click and keystrokes → pointer unmoved, nothing typed, 0 raw X input events; the same script against a test-only x11vnc *without* `-viewonly` moved the pointer and typed. A public `GET /api/slots/:id/stream` hands out that stream, and each board row has a "Watch desk" viewer that embeds only it. Opt-in with `RAMHERD_SANDBOX=e2b` + `E2B_API_KEY`; off by default; starting one stays admin-only. **Not done:** running the RAM's real work inside the sandbox, a smaller template (stock `desktop` = 8 vCPU / 8 GiB, about $0.53/hour each), and the board is still demo data, so every desk reads "no desktop running" for now. See "E2B desktop sandboxes" below |
 | Deployment (Fly.io, app `ramherd-app`, region lhr) | **live**, at [hashrammers.com](https://hashrammers.com) and [hashsmashers.com](https://hashsmashers.com) (both custom domains, Fly certs on apex+www) and `ramherd-app.fly.dev`. One server serves the API (`/api/*`) and the static frontend (`src/`) on one URL; `Dockerfile` + `fly.toml` (shared-cpu-1x / 256 MB, health check on `/api/health`, no volume: all state is in memory and resets on every deploy). Redeployed after every change, same day: commit, then `scripts/deploy.sh` — it deploys the last *commit* only (uncommitted work never ships) and curls `/api/health` when done. `ADMIN_TOKEN` and `PINATA_JWT` are set as Fly secrets (`fly secrets list -a ramherd-app`), never in the Dockerfile/fly.toml. Add a Fly volume once launchpad / RAM ownership data must survive restarts |
 | Launchpad: user-created RAMs — tested for real | **built and tested (75 offline tests + an opt-in devnet simulation).** `server/lib/launchpad.js` validation (exactly one hash family of SHA-256 / SHA3-256 / BLAKE3, a track inside it, one of six catalog approaches plus a 20–600 char brief through the idea screen, one of the six roster models, token name/symbol, on-curve owner wallet, unknown fields refused). Ownership model: `rams.js` (draft → awaiting-signature → active, operator confirms + approves the brief), `ramfunds.js` (per-RAM ledger: 0.2 SOL create fee, its token's creator fees, its compute; separate from the shared pool), owned slots in `slots.js` outside the budget roster (a resize never retires them), `payouts.js` (an *accepted* HashSmash win → "wallet X is owed Y, because Z" record, idempotent per candidate). Unsigned launch transaction in `launchtx.js`, encoded by pump.fun's official `@pump-fun/pump-sdk` 2.0.0: transfer 0.2 SOL user→treasury, `create_v2` (creator = user), `create_fee_sharing_config`, `update_fee_shares` (treasury 100%, locked by pump). Only the user and a browser-generated mint sign; the server only sees public keys. Serialization round-trips, both signature slots are empty, and an inspector rejects a changed treasury/fee/creator/shareholder, an extra instruction or a flipped byte. **Devnet:** with `RAMHERD_DEVNET_SIM=1`, every launch instruction is simulated against pump.fun's live devnet programs (err `null`; fee-sharing message 1210 bytes, ~240k CU), in two messages, since the full one doesn't fit without the lookup table |
-| Launchpad — built, not verified | **Not live** (`config.live` is false and `LAUNCHPAD_LIVE = false` in `src/launch.js`). The full atomic launch is ~1300–1334 bytes, over Solana's 1232 limit, so it needs a v0 address lookup table of the launch's 14 static accounts (`launchLookupTableAddresses()`); with one it compiles to ~934 bytes (offline test), but no table exists on chain, so **the full four-instruction message has never been simulated together**. No real Phantom wallet has connected or signed (headless checks used a fake injected provider). The browser signing hand-off (`signAndSendLaunch`) is written but has never run, and the page CSP would need a `connect-src` for the RPC. Launch confirmation is the operator entering the tx signature by hand (`POST /api/admin/launchpad/rams/:id/confirm`); there is no on-chain launch verifier. State is in memory (lost on restart). Prize amount is not decided (admin supplies it per win). Frontend: `src/launch.html` entry slip, mock by default, also checked against the real server |
+| Launchpad — built, not verified | **Not live** (`config.live` is false and `LAUNCHPAD_LIVE = false` in `src/launch.js`). The full atomic launch is ~1300–1334 bytes, over Solana's 1232 limit, so it needs a v0 address lookup table of the launch's 14 static accounts (`launchLookupTableAddresses()`); with one it compiles to ~934 bytes (offline test), but no table exists on chain, so **the full four-instruction message has never been simulated together**. No real Phantom wallet has connected or signed (headless checks used a fake injected provider). The browser signing hand-off (`signAndSendLaunch`) is written but has never run, and the page CSP would need a `connect-src` for the RPC. Launch confirmation is the operator entering the tx signature by hand (`POST /api/admin/launchpad/rams/:id/confirm`); there is no on-chain launch verifier. State is in memory (lost on restart). Prize amount is not decided (admin supplies it per win). Frontend: `src/launch.html` entry slip, simulated by default, also checked against the real server |
 | Launchpad — out of scope (blocked capability) | Creating the lookup table on chain, signing or broadcasting any launch, sending any payout (only the owed record exists), claiming creator fees. No code path here can do any of these, and none needs the treasury's private key |
 | Real pump.fun token / real fee claiming / real compute spend | **blocked**, same as every real-money action this workspace runs into — needs the operator to do those parts directly |
 | GitHub | **live and public**: [HashSmashLord/RamTheHashSmasher](https://github.com/HashSmashLord/RamTheHashSmasher). Pushed as it goes, real-authored-only (no rewritten/misattributed history) |
@@ -69,7 +69,7 @@ HashSmash's own `bash .yukon/setup.sh` passes with no pip installs (168 tests, 5
 
 | Env var | Default | Effect |
 |---|---|---|
-| `RAMHERD_PIPELINE=local` | off | sha256-r31 slots (harness draft) and sha256-r32 slots (research package) run the real local pipeline (free, credential-free) instead of the mock step |
+| `RAMHERD_PIPELINE=local` | off | sha256-r31 slots (harness draft) and sha256-r32 slots (research package) run the real local pipeline (free, credential-free) instead of the simulated step |
 | `RAMHERD_HASHSMASH_JUDGE=true` | off | allows the paid `judge`/`score` stages, **only** when `RAMHERD_LIVE=true` and `OPENROUTER_API_KEY` are also set |
 | `RAMHERD_HASHSMASH_SUBMIT=true` | off | recorded only. Live submission to the HashSmash/Yukon competition is **not implemented**; `submitLive()` always refuses |
 
@@ -123,12 +123,30 @@ to override. It is still the next step for **cost**.
     only `{ sessionId, streamUrl, viewOnly: "server", expiresAt }` → the viewer's `loadDesk()` went
     idle → live → idle. E2B's noVNC page returned 200 with no X-Frame-Options or CSP, so it can be framed.
     5.7 s, about $0.0008.
-- **Mocked:** the whole test suite (`tests/sandbox.test.js`, `tests/sandbox-viewer.test.js`) uses a fake
+- **Simulated:** the whole test suite (`tests/sandbox.test.js`, `tests/sandbox-viewer.test.js`) uses a fake
   SDK, so no test run ever creates a real sandbox. The fake records every command, so the tests check the
   real launch order, the flags, and the kill when the x11vnc process check fails.
 - **Cost rails:** nothing is created unless an admin calls start. Every sandbox has an E2B-side hard
   timeout (it gets killed even if this server dies), there's a concurrency cap, retiring a slot kills
   its sandbox, and server shutdown kills them all.
+- **The server learns when E2B ends a sandbox on its own.** Nothing tells this process when E2B's hard
+  timeout kills a sandbox, so while any is live the manager asks E2B every `RAMHERD_SANDBOX_RECONCILE_SEC`
+  (default 15 s) with `Sandbox.getInfo(id)`: once it answers "not found" (HTTP 404) or a state other than
+  `running`, the slot goes to `sandbox.status: "expired"` with `endedBy: "timeout"` (its hard stop was
+  reached: the normal end of a visible session) or `"provider"` (gone earlier), a `sandbox-expired` line
+  lands in the feed, and the public stream route stops handing out the dead URL. An admin stop that finds
+  the sandbox already gone records the same, never a stop that did not happen. Before 2026-10-05 a
+  timeout-killed sandbox stayed "running" here forever. Proven that day on real sandboxes (a 1-minute hard
+  stop): E2B ended it at 21:19:12.2, the server had it as expired/timeout at 21:19:13.3 without any call
+  from an admin, `getInfo` independently threw `SandboxNotFoundError`, and the RAM's page read "ran its
+  full time and closed" 8 s later.
+- **Why there is no desk, said plainly.** A slot's `sandbox` field tells the cases apart (`null` never
+  started; `starting`; `running`; `stopped` by this server; `expired` by E2B; `failed`, with the scrubbed
+  error on the slot only, never on the stream route). `src/sandbox-viewer.js` (`deskWhy`) turns that into one
+  line and badge per case, the same facts in the house voice: "No desk running" (never, the usual case),
+  "Desk starting", "Desk session done" (stopped or ran its full time), "Desk session closed" (ended early on
+  E2B's side), "Desk did not start" (a real failure, named, not dressed up). Demo pages have no slot record
+  and keep the plain idle line.
 - **Frontend viewer** (`src/sandbox-viewer.js`): every RAM's tile on the Herd page (`herd.html`) is a
   screen, and the RAM's full page (`herd.html#ram/<id>`) has the same screen larger. A screen embeds the RAM's desktop in a
   sandboxed iframe (`allow-scripts allow-same-origin` only, no-referrer, `pointer-events: none`, never
@@ -141,7 +159,7 @@ to override. It is still the next step for **cost**.
   feed, so the screens idle and `/api/` is never asked. With the feed, one `GET /api/slots` per 10 s
   (`createDeskDirectory()`, always 200) says which slots exist and whose sandbox is `running`, and only
   those slots get a `GET /api/slots/:id/stream`. The iframe is only touched when the stream itself
-  changes, so a poll never reloads a live desk. The board is still mock data, so it maps `ram-NN` to
+  changes, so a poll never reloads a live desk. The board is still demo data, so it maps `ram-NN` to
   the server's `slot-(NN-1)` until the real feed sends a `slotId`. Verified 2026-10-05 against the
   real server (no slots, sandboxes off): HEAD, then `/api/slots` at 0 s and 10 s, 0 console errors.
 - **Not built yet:** running the RAM's real work inside the sandbox (the intended content is written up
@@ -154,10 +172,12 @@ to override. It is still the next step for **cost**.
 | `RAMHERD_SANDBOX_TEMPLATE` | `desktop` | template name/id (a smaller custom template is the next cost step) |
 | `RAMHERD_SANDBOX_TIMEOUT_MIN` | 15 | E2B-side hard kill timeout per sandbox (1 to 1440) |
 | `RAMHERD_SANDBOX_MAX` | 6 | max concurrent sandboxes from this server (1 to 100) |
+| `RAMHERD_SANDBOX_RECONCILE_SEC` | 15 | how often, while any sandbox is live, to ask E2B whether each still runs (0 turns the check off) |
 
 Admin routes (`x-admin-token`): `POST /api/admin/slots/:id/sandbox/start`, `POST /api/admin/slots/:id/sandbox/stop`,
 `GET /api/admin/slots/:id/sandbox` (stream URL plus session details).
-Public route: `GET /api/slots/:id/stream` → `{ enabled, stream: null | { sessionId, streamUrl, viewOnly: "server", expiresAt } }`.
+Public route: `GET /api/slots/:id/stream` → `{ enabled, stream: null | { sessionId, streamUrl, viewOnly: "server", expiresAt }, sandbox: null | { status, endedBy } }`
+(`sandbox` says why there is no desk: see "Why there is no desk" above).
 
 ## Build convention for the real coding work (not the scaffolding/docs)
 
@@ -221,7 +241,7 @@ src/
   idea-slip.js      the idea form (submit)
   sandbox-viewer.js a RAM's screen: embeds its server-side view-only E2B stream, or "no desk
                     running"; the feed probe and the slot directory that keep it request-clean
-  mock-data.js      <- the mock-data / real-API swap point, see below
+  mock-data.js      <- the demo-data / real-API swap point, see below
   styles.css        all styling — black screen, white pixel ink on a 4px unit, one amber for
                     what is live, inverse video for the judge; tokens in :root (see DESIGN.md)
   brand/            ram-smashing-hash-main.png (the operator's pixel ram, source of truth),
@@ -238,16 +258,16 @@ be scrolled past to reach the other. A RAM's page stays a hash route on the Herd
 keeps ticking underneath, and closing it restores the board's scroll position and focus;
 the Herder's per-RAM lines deep-link to it.
 
-## Mock data and the API swap point
+## Demo data and the API swap point
 
-`src/mock-data.js` is the **only** file that knows whether data is mocked or real. Every
+`src/mock-data.js` is the **only** file that knows whether data is simulated or real. Every
 render in the page modules (`fund-lines.js`, `board.js`, `ram-page.js`, `herder-panel.js`,
 `idea-slip.js`) calls through the `RAMherdAPI` object exported from that file —
 `getStats()`, `getFleet()`, `getRamDetail(id)` (a RAM plus its whole history, for its page),
 `getHerderSummary()` (the Herder's one-paragraph summary of the herd), `getChatSeed()`,
 `askCoordinator(question)`, `submitIdea(payload)`, `subscribeLive(onTick)`. Nothing else in the
-frontend touches mock data directly. The desk streams are the one exception by design: they are
-never mocked, `sandbox-viewer.js` only ever asks the same-origin API server (see "E2B desktop
+frontend touches demo data directly. The desk streams are the one exception by design: they are
+never simulated, `sandbox-viewer.js` only ever asks the same-origin API server (see "E2B desktop
 sandboxes").
 
 To swap in the real backend once it's up:
@@ -259,15 +279,15 @@ To swap in the real backend once it's up:
    `/api/coordinator/summary`, `/api/coordinator/ask`, `/api/ideas`). The shapes the frontend already expects are documented in the comments
    above each method — keep them, or adjust the render functions in the page modules to
    match whatever the real response actually looks like.
-3. Delete `startMockLiveFeed` / `tickMockState` at the bottom of `mock-data.js` — the real
+3. Delete `startMockLiveFeed` / `tickMockState` (the demo-drift functions) at the bottom of `mock-data.js` — the real
    backend updates this state itself; the frontend should poll or subscribe to it instead of
    simulating drift locally.
 
 Nothing in the pages, `styles.css`, or the page modules needs to change for that swap.
 
-## What's mocked right now, specifically
+## What's simulated right now, specifically
 
-- Fees collected, compute budget/spend, and active-slot counts — a small live-drifting mock
+- Fees collected, compute budget/spend, and active-slot counts — a small live-drifting demo
   state (`tickMockState`), not real pump.fun data.
 - The 6-RAM herd on `herd.html`: the launch roster, one RAM per real HashSmash track
   (`sha256-r31`, `sha256-r32`, `sha3-256-r5`, `sha3-256-r6`, `blake3-r1`, `blake3-r2`, matching
@@ -285,9 +305,9 @@ Nothing in the pages, `styles.css`, or the page modules needs to change for that
   realistic Q&A pairs plus keyword-matched replies for anything else typed in; a real backend
   would route this to an actual model call.
 - Every RAM's screen reads "no desk running": true today (nothing runs inside a sandbox
-  yet), and not mocked; see "E2B desktop sandboxes" for what makes a screen come alive.
-- Idea submission — client-side only; "submitting" increments a mock queue-position counter.
-  The real version posts to the backend's human-review queue.
+  yet), and not simulated; see "E2B desktop sandboxes" for what makes a screen come alive.
+- Idea submission — client-side only; "submitting" increments a placeholder queue-position
+  counter. The real version posts to the backend's human-review queue.
 
 ## Design notes
 

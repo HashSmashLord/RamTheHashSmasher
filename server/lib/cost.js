@@ -11,7 +11,8 @@
 // a real SOL figure needs a price oracle wired in deliberately, later.
 //
 // Entries are append-only (same transparency norm as slots.js's feed):
-// nothing here edits or removes a past entry, only adds one. In mock mode
+// nothing here edits a past entry, only adds one (the oldest raw entries age
+// out past MAX_COST_ENTRIES; see below). In mock mode
 // every call records zero tokens and a null cost (llm.js never fabricates
 // usage for a call it didn't actually make), so totals stay honestly zero
 // until RAMHERD_LIVE is on.
@@ -36,12 +37,36 @@ function addInto(totals, usage) {
   }
 }
 
+// Bounded memory: the public Herder-ask route records one entry per call, so
+// the raw entry list keeps only the most recent MAX_COST_ENTRIES (same
+// bounding as ledger.js's mock fee history) and an old entry is dropped, never
+// edited. Totals are NOT lost when that happens: totals(), forSlot(),
+// forRam() and byModel() read running all-time aggregates updated on every
+// record(), so they stay exact; only the per-entry detail is windowed.
+// Aggregate maps are keyed by slot id, RAM id and model, all server-chosen
+// (never request text), so they stay small.
+export const MAX_COST_ENTRIES = 1000;
+
 /**
- * @param {{ now?: () => string }} [opts]
+ * @param {{ now?: () => string, maxEntries?: number }} [opts]
  */
-export function createCostLedger({ now = () => new Date().toISOString() } = {}) {
+export function createCostLedger({ now = () => new Date().toISOString(), maxEntries = MAX_COST_ENTRIES } = {}) {
+  if (!Number.isInteger(maxEntries) || maxEntries <= 0) throw new RangeError('maxEntries must be a positive integer');
   /** @type {Array<{ seq: number, ts: string, slotId: string, ramId: string|null, model: string|null, usage: import('./llm.js').LlmUsage, ref: string|null }>} */
   const entries = [];
+  let nextSeq = 0;
+  const allTotals = emptyTotals();
+  /** @type {Map<string, ReturnType<typeof emptyTotals>>} */
+  const perSlot = new Map();
+  /** @type {Map<string, ReturnType<typeof emptyTotals>>} */
+  const perRam = new Map();
+  /** @type {Map<string, ReturnType<typeof emptyTotals>>} */
+  const perModel = new Map();
+
+  function bump(map, key, usage) {
+    if (!map.has(key)) map.set(key, emptyTotals());
+    addInto(map.get(key), usage);
+  }
 
   /**
    * Records one LLM call's usage against the slot (and, if it's an owned
@@ -52,8 +77,8 @@ export function createCostLedger({ now = () => new Date().toISOString() } = {}) 
   function record({ slotId, ramId = null, model, usage, ref = null }) {
     if (typeof slotId !== 'string' || !slotId) throw new TypeError('slotId is required');
     if (!usage || typeof usage !== 'object') throw new TypeError('usage is required');
-    entries.push({
-      seq: entries.length,
+    const entry = {
+      seq: nextSeq++,
       ts: now(),
       slotId,
       ramId,
@@ -65,47 +90,34 @@ export function createCostLedger({ now = () => new Date().toISOString() } = {}) 
         costUsd: typeof usage.costUsd === 'number' && Number.isFinite(usage.costUsd) ? usage.costUsd : null,
       },
       ref,
-    });
+    };
+    entries.push(entry);
+    if (entries.length > maxEntries) entries.shift();
+    addInto(allTotals, entry.usage);
+    bump(perSlot, slotId, entry.usage);
+    if (ramId !== null && ramId !== undefined) bump(perRam, ramId, entry.usage);
+    bump(perModel, entry.model || 'unknown', entry.usage);
   }
 
+  const copyEntry = (e) => ({ ...e, usage: { ...e.usage } });
+
   function totals() {
-    const t = emptyTotals();
-    for (const e of entries) addInto(t, e.usage);
-    return t;
+    return { ...allTotals };
   }
 
   function forSlot(slotId) {
-    const t = emptyTotals();
-    const matched = [];
-    for (const e of entries) {
-      if (e.slotId !== slotId) continue;
-      addInto(t, e.usage);
-      matched.push({ ...e, usage: { ...e.usage } });
-    }
-    return { slotId, totals: t, entries: matched };
+    const t = perSlot.get(slotId);
+    return { slotId, totals: t ? { ...t } : emptyTotals(), entries: entries.filter((e) => e.slotId === slotId).map(copyEntry) };
   }
 
   function forRam(ramId) {
-    const t = emptyTotals();
-    const matched = [];
-    for (const e of entries) {
-      if (e.ramId !== ramId) continue;
-      addInto(t, e.usage);
-      matched.push({ ...e, usage: { ...e.usage } });
-    }
-    return { ramId, totals: t, entries: matched };
+    const t = perRam.get(ramId);
+    return { ramId, totals: t ? { ...t } : emptyTotals(), entries: entries.filter((e) => e.ramId === ramId).map(copyEntry) };
   }
 
   function byModel() {
-    /** @type {Map<string, ReturnType<typeof emptyTotals>>} */
-    const perModel = new Map();
-    for (const e of entries) {
-      const key = e.model || 'unknown';
-      if (!perModel.has(key)) perModel.set(key, emptyTotals());
-      addInto(perModel.get(key), e.usage);
-    }
-    return [...perModel.entries()].map(([model, t]) => ({ model, totals: t }));
+    return [...perModel.entries()].map(([model, t]) => ({ model, totals: { ...t } }));
   }
 
-  return { record, totals, forSlot, forRam, byModel, list: () => entries.map((e) => ({ ...e, usage: { ...e.usage } })) };
+  return { record, totals, forSlot, forRam, byModel, list: () => entries.map(copyEntry) };
 }

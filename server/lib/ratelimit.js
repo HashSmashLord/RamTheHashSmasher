@@ -1,10 +1,15 @@
-// Small sliding-window rate limiter, used only on the public idea-submission
-// endpoint so it can't be used to spam the moderation queue.
+// Small sliding-window rate limiter: per-client on the public idea, Herder-ask
+// and launchpad routes, and with one fixed key as a global cap on Pinata pins.
+//
+// `countDenied` (default true): a denied hit still counts against the window,
+// so a client that keeps hammering stays blocked. Set it false for a global
+// fixed-key cap, where denied hits only need refusing: that keeps the key's
+// timestamp array at most `max` long no matter how much traffic is refused.
 
 /**
- * @param {{ max: number, windowMs: number, now?: () => number }} opts
+ * @param {{ max: number, windowMs: number, now?: () => number, countDenied?: boolean }} opts
  */
-export function createRateLimiter({ max, windowMs, now = () => Date.now() }) {
+export function createRateLimiter({ max, windowMs, now = () => Date.now(), countDenied = true }) {
   if (!Number.isInteger(max) || max <= 0) throw new RangeError('max must be a positive integer');
   if (!Number.isInteger(windowMs) || windowMs <= 0) throw new RangeError('windowMs must be a positive integer');
 
@@ -25,6 +30,10 @@ export function createRateLimiter({ max, windowMs, now = () => Date.now() }) {
     const t = now();
     const cutoff = t - windowMs;
     const times = (hits.get(key) || []).filter((x) => x > cutoff);
+    if (!countDenied && times.length >= max) {
+      hits.set(key, times);
+      return { allowed: false, remaining: 0, retryAfterSec: Math.max(1, Math.ceil((times[0] + windowMs - t) / 1000)) };
+    }
     times.push(t);
     hits.set(key, times);
     const allowed = times.length <= max;

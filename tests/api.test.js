@@ -202,3 +202,58 @@ test('invalid JSON body is a 400, not a crash', async (t) => {
   });
   assert.equal(res.status, 400);
 });
+
+test('POST /api/coordinator/ask is rate limited per client', async (t) => {
+  const s = await startApp({ coordinatorAskRateLimit: { max: 2, windowMs: 60_000 } });
+  t.after(() => s.stop());
+  assert.equal((await s.postJson('/api/coordinator/ask', { question: 'one?' })).status, 200);
+  assert.equal((await s.postJson('/api/coordinator/ask', { question: 'two?' })).status, 200);
+  const third = await s.postJson('/api/coordinator/ask', { question: 'three?' });
+  assert.equal(third.status, 429);
+  assert.equal((await third.json()).error, 'rate_limited');
+  assert.ok(third.headers.get('retry-after'));
+  // Refused asks never reach the coordinator, so they add nothing to the cost ledger.
+  assert.equal(s.store.costLedger.totals().calls, 2);
+});
+
+test('the ask route has a default rate limit configured', async () => {
+  const { loadConfig } = await import('../server/config.js');
+  const c = loadConfig({});
+  assert.ok(Number.isInteger(c.coordinatorAskRateLimit.max) && c.coordinatorAskRateLimit.max > 0);
+});
+
+test('admin token check: right token passes; wrong tokens of the same or a different size are a 401, never a crash', async (t) => {
+  const s = await startApp({ adminToken: 'correct-horse-battery-staple' });
+  t.after(() => s.stop());
+  const tryToken = (token) => s.postJson('/api/admin/fees', { amountUsd: 1 }, { headers: { 'x-admin-token': token } });
+  assert.equal((await tryToken('correct-horse-battery-staple')).status, 200);
+  assert.equal((await tryToken('correct-horse-battery-stapl3')).status, 401); // same length
+  assert.equal((await tryToken('x')).status, 401); // shorter
+  assert.equal((await tryToken('correct-horse-battery-staple-and-more')).status, 401); // longer
+  assert.equal((await tryToken('')).status, 401);
+});
+
+test('tokenMatches is constant-time-safe across lengths', async () => {
+  const { tokenMatches } = await import('../server/app.js');
+  assert.equal(tokenMatches('abc', 'abc'), true);
+  assert.equal(tokenMatches('abd', 'abc'), false);
+  assert.equal(tokenMatches('a', 'abc'), false);
+  assert.equal(tokenMatches('abcdef', 'abc'), false);
+  assert.equal(tokenMatches(undefined, 'abc'), false);
+  assert.equal(tokenMatches(['abc'], 'abc'), false);
+});
+
+test('a %0A/%0D in the URL cannot inject a fake log line', async (t) => {
+  const lines = [];
+  const s = await startApp({ log: (line) => lines.push(line) });
+  t.after(() => s.stop());
+  await s.get('/api/launchpad/x%0A2026-01-01T00:00:00.000Z%20GET%20api/health%20200%201ms');
+  await s.get('/api/admin/fees%0D%0Aforged');
+  for (let i = 0; i < 50 && lines.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(lines.length, 2);
+  for (const line of lines) {
+    assert.doesNotMatch(line, /[\r\n]/, `raw control char in log line: ${JSON.stringify(line)}`);
+  }
+  assert.match(lines[0], /api\/launchpad\/x\\x0a2026/, 'still readable, newline shown escaped');
+  assert.match(lines[1], /\\x0d\\x0aforged/);
+});

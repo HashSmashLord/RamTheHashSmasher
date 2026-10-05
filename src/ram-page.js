@@ -7,9 +7,17 @@ import { RAMherdAPI } from "./mock-data.js";
 import { createDeskViewer } from "./sandbox-viewer.js";
 import { $, JUDGE_FULL, JUDGE_WORD, SCORE_TERM, STATUS_WORD, glyph, print, roundShort, scoreText, slotIdFor, writeNowLine, writePath } from "./ui.js";
 
+// One line per desk state (sandbox-viewer.js deskWhy), the full version: this page has
+// room. `idle` is the usual case: never had a desk. The others say what its last desk
+// session did, as a plain fact; "failed" stays a failure, said calmly.
 const PAGE_COPY = {
   checking: (label) => `Checking ${label}'s desk…`,
   idle: (label) => `No desk running for ${label}. Its work runs on the host right now; when a sandbox is started for it, its screen shows here, watch-only.`,
+  starting: (label) => `${label}'s desk is starting. Its screen shows here, watch-only, as soon as the desktop is up.`,
+  stopped: (label) => `${label} finished its visible desk session and is back to working on the host. When a desk is started for it again, its screen shows here, watch-only.`,
+  expired: (label) => `${label}'s desk session ran its full time and closed; it is back to working on the host. When a desk is started for it again, its screen shows here, watch-only.`,
+  ended: (label) => `${label}'s desk session closed before its scheduled stop; it is back to working on the host. When a desk is started for it again, its screen shows here, watch-only.`,
+  failed: (label) => `${label}'s desk could not start this time; it is still working on the host. When a desk is started for it again, its screen shows here, watch-only.`,
   unreachable: (label) => `${label}'s desk feed could not be reached just now.`,
 };
 

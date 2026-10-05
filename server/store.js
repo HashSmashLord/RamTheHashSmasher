@@ -11,6 +11,8 @@ import { createIdeaQueue } from './lib/moderation.js';
 import { createLlmProvider, modelOverride } from './lib/llm.js';
 import { createHashSmashRunner, pipelinePolicy } from './lib/hashsmash.js';
 import { createSandboxManager, sandboxPolicy } from './lib/sandbox.js';
+import { runWorkbenchTask } from './lib/sandbox-task.js';
+import { contextBanner } from './lib/sandbox-context.js';
 import { createCostLedger } from './lib/cost.js';
 import { createRamFunds } from './lib/ramfunds.js';
 import { createPayoutBook } from './lib/payouts.js';
@@ -47,6 +49,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
         template: sandbox.template,
         timeoutMs: sandbox.timeoutMs,
         maxConcurrent: sandbox.maxConcurrent,
+        reconcileMs: sandbox.reconcileMs,
         ...(loadSandboxSdk ? { loadSdk: loadSandboxSdk } : {}),
       })
     : null;
@@ -81,7 +84,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
 
   // Each slot calls its own roster model unless RAMHERD_LLM_MODEL forces one
   // model on all of them. Mock vs live is still only llm.js's decision.
-  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, costLedger, modelOverride: modelOverride(env) });
+  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, costLedger, modelOverride: modelOverride(env) });
   const ideaQueue = createIdeaQueue();
   // Pinata, opt-in with PINATA_JWT: a launchpad RAM's token metadata gets
   // pinned to IPFS instead of only living at this server's own endpoint.

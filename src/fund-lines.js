@@ -29,14 +29,24 @@ export async function renderFundLines() {
   const fees = $("stat-fees");
   if (write(fees, money(s.feesCollectedLifetime)) && !first) print(fees);
 
+  // The real server sends null for the spend (no route measures it per epoch yet —
+  // see getStats() in mock-data.js). Then the line says so in words, "of" becomes
+  // "budget" so it still reads, and the bar is hidden: an empty bar would say "nothing
+  // spent", which is not what null means.
   const spent = $("stat-budget");
-  if (write(spent, money(s.computeSpentEpoch)) && !first) print(spent);
+  const tracked = s.computeSpentEpoch != null;
+  if (write(spent, tracked ? money(s.computeSpentEpoch) : "not tracked yet") && !first) print(spent);
+  write(spent.parentElement.querySelector(".fund-of").firstChild, tracked ? "of " : "budget ");
   write($("stat-budget-total"), money(s.computeBudgetEpoch));
   write($("stat-epoch"), s.epochLabel);
 
   // The budget as a block bar: 24 blocks, the spent share filled from the left.
-  const share = Math.min(1, s.computeSpentEpoch / s.computeBudgetEpoch);
-  writeBlocks($("budget-blocks"), 24, Math.round(share * 24));
+  const budgetBlocks = $("budget-blocks");
+  budgetBlocks.hidden = !tracked;
+  if (tracked) {
+    const share = Math.min(1, s.computeSpentEpoch / s.computeBudgetEpoch);
+    writeBlocks(budgetBlocks, 24, Math.round(share * 24));
+  }
 
   write($("stat-slots"), `${s.slotsActive} of ${s.slotsMax}`);
   writeBlocks($("slot-blocks"), s.slotsMax, s.slotsActive);

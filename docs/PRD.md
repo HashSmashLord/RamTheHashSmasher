@@ -81,8 +81,8 @@ Fee ledger  ──funds──▶  Compute budget (USD)
 These need either the operator doing them by hand, or a capability this harness will not let me
 write code for, full stop — not a wording problem, not something to route around:
 
-1. **Creating the real pump.fun token.** Same as DotsBook/FIX6900/etc. The operator creates it
-   directly; hand me the mint address and I wire it in same-day.
+1. **Creating the real pump.fun token.** Same wall as every other real-money action in this
+   workspace. The operator creates it directly; hand me the mint address and I wire it in same-day.
 2. **Claiming/collecting real creator fees.** Reading a public fee balance is fine; signing a
    claim transaction that moves real money is the blocked part.
 3. **Spending real money on OpenRouter/compute credits.** The fee-ledger → compute-budget →

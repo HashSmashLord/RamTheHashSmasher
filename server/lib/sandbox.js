@@ -3,8 +3,8 @@
 // What this module does: create ONE E2B Desktop sandbox (template `desktop`:
 // Ubuntu + Xfce, VNC via x11vnc, browser view via noVNC on port 6080) for a
 // given RAM slot, start its VNC stream with a per-sandbox password, hand back
-// what a frontend needs to embed it, and kill it. Nothing runs inside the
-// sandbox yet; see "What will run inside" below.
+// what a frontend needs to embed it, and kill it. What runs inside is
+// server/lib/sandbox-task.js; see "What runs inside today" below.
 //
 // API shape (from @e2b/desktop 2.4.0's own source, not guessed):
 //   const sbx = await Sandbox.create(template, { apiKey, timeoutMs, metadata, lifecycle, resolution })
@@ -55,6 +55,22 @@
 //     the obvious next step before running sandboxes for real; set its name via
 //     RAMHERD_SANDBOX_TEMPLATE.
 //
+// Knowing when E2B ended a sandbox on its own (its hard timeout, or anything
+// else on E2B's side): nothing tells this process when that happens, so while
+// any sandbox is live the manager asks E2B every `reconcileMs` (default 15 s)
+// whether each one still exists. `Sandbox.getInfo(id)` (e2b SDK, GET
+// /sandboxes/{id}) answers with the sandbox's state, or throws
+// SandboxNotFoundError (HTTP 404) once it is gone. A sandbox that is gone, or
+// no longer `running`, is dropped from `live` and reported through
+// `onEnded(listener)` with `endedBy: 'timeout'` when its hard stop had been
+// reached, else `'provider'`. stop() does the same when it finds the sandbox
+// already gone (the SDK's kill returns false on 404): its result then carries
+// `alreadyGone: true` and the same `endedBy`. Before this (2026-10-05) a
+// timeout-killed sandbox stayed "running" here forever and the public stream
+// route kept handing out its dead URL. A transient getInfo error (network,
+// 5xx) changes nothing; the next tick asks again. The timer only runs while
+// something is live and never keeps the process alive (unref).
+//
 // Secrets: the API key is read from the env object passed in and handed to the
 // SDK. It is never logged, never stored on a returned object, and scrubbed out
 // of any error message before that message is surfaced.
@@ -64,7 +80,10 @@
 // grants control), so the view-only URL may be handed to the public frontend via
 // getPublicStream(). It is still kept out of the slot snapshot itself.
 //
-// What will run inside (target for the next piece of work, NOT built here):
+// What runs inside today: on start, slots.js runs server/lib/sandbox-task.js
+// through runTask(): a visible terminal that clones the real HashSmash repo,
+// opens this slot's track and candidate, and runs the organizer's mechanical
+// check, typed live. What will run inside next (NOT built here):
 // the sandbox becomes the RAM's actual workbench. Its slot's research cycle
 // (today in slots.js / hashsmash.js on the host) would run in a visible
 // terminal on the sandbox desktop: clone the HashSmash repo, write/iterate a
@@ -82,6 +101,9 @@ const DEFAULT_TIMEOUT_MIN = 15;
 const MAX_TIMEOUT_MIN = 24 * 60; // Pro plan session cap
 const DEFAULT_MAX_CONCURRENT = 6;
 const PLAN_MAX_CONCURRENT = 100;
+const DEFAULT_RECONCILE_MS = 15_000;
+// A sandbox found gone this close to (or after) its hard stop ended by that timeout.
+const TIMEOUT_SLACK_MS = 30_000;
 
 // E2B published usage rates (e2b.dev/pricing, checked 2026-10-05).
 export const E2B_RATES = Object.freeze({ usdPerVcpuSecond: 0.000014, usdPerGibSecond: 0.0000045 });
@@ -157,6 +179,8 @@ export function sandboxPolicy(env = process.env) {
     template: env.RAMHERD_SANDBOX_TEMPLATE?.trim() || DEFAULT_TEMPLATE,
     timeoutMs: intInRange(env.RAMHERD_SANDBOX_TIMEOUT_MIN, DEFAULT_TIMEOUT_MIN, 1, MAX_TIMEOUT_MIN) * 60_000,
     maxConcurrent: intInRange(env.RAMHERD_SANDBOX_MAX, DEFAULT_MAX_CONCURRENT, 1, PLAN_MAX_CONCURRENT),
+    // How often (seconds) to ask E2B whether live sandboxes still run; 0 turns the check off.
+    reconcileMs: intInRange(env.RAMHERD_SANDBOX_RECONCILE_SEC, DEFAULT_RECONCILE_MS / 1000, 0, 3600) * 1000,
   });
 }
 
@@ -173,6 +197,7 @@ function scrub(message, apiKey) {
  *   timeoutMs?: number,
  *   maxConcurrent?: number,
  *   resolution?: [number, number],
+ *   reconcileMs?: number,
  *   loadSdk?: () => Promise<{ Sandbox: any }>,
  *   now?: () => number,
  * }} opts
@@ -183,6 +208,7 @@ export function createSandboxManager({
   timeoutMs = DEFAULT_TIMEOUT_MIN * 60_000,
   maxConcurrent = DEFAULT_MAX_CONCURRENT,
   resolution = [1280, 800],
+  reconcileMs = DEFAULT_RECONCILE_MS,
   loadSdk = () => import('@e2b/desktop'),
   now = () => Date.now(),
 }) {
@@ -192,15 +218,68 @@ export function createSandboxManager({
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MIN * 60_000) {
     throw new RangeError('timeoutMs must be a positive integer of at most 24h');
   }
+  if (!Number.isInteger(reconcileMs) || reconcileMs < 0) {
+    throw new RangeError('reconcileMs must be a non-negative integer (0 disables the periodic check)');
+  }
 
   /** slotId -> { sbx, info, streamUrl } */
   const live = new Map();
   /** slotId -> in-flight start promise (prevents double creates for one slot) */
   const starting = new Map();
+  /** listeners told when E2B ended a sandbox that this manager did not stop */
+  const endedListeners = new Set();
   let sdkPromise = null;
+  let watch = null;
+  let reconciling = null;
 
   const sdk = () => (sdkPromise ??= loadSdk());
   const iso = (ms) => new Date(ms).toISOString();
+
+  /** The periodic E2B check runs only while a sandbox is live. */
+  function syncWatch() {
+    if (live.size > 0 && !watch && reconcileMs > 0) {
+      watch = setInterval(() => { reconcile().catch(() => {}); }, reconcileMs);
+      watch.unref?.();
+    } else if (live.size === 0 && watch) {
+      clearInterval(watch);
+      watch = null;
+    }
+  }
+
+  /** How a sandbox that E2B ended on its own went, given when it was found gone. */
+  function endedDetails(entry, noticedMs) {
+    const startedMs = Date.parse(entry.info.startedAt);
+    const expiresMs = Date.parse(entry.info.expiresAt);
+    const byTimeout = noticedMs >= expiresMs - TIMEOUT_SLACK_MS;
+    const endedMs = byTimeout ? Math.min(expiresMs, noticedMs) : noticedMs;
+    return {
+      sessionId: entry.info.sessionId,
+      endedBy: byTimeout ? 'timeout' : 'provider',
+      endedAt: iso(endedMs),
+      noticedAt: iso(noticedMs),
+      ranSeconds: Math.max(0, (endedMs - startedMs) / 1000),
+    };
+  }
+
+  /** Asks E2B about one sandbox: 'running', 'gone', or 'unknown' (could not tell this time). */
+  async function checkOne(entry) {
+    const { Sandbox } = await sdk();
+    if (typeof Sandbox.getInfo !== 'function') return 'unknown';
+    try {
+      const info = await Sandbox.getInfo(entry.info.sessionId, { apiKey });
+      return info?.state === 'running' ? 'running' : 'gone';
+    } catch (err) {
+      return err?.name === 'SandboxNotFoundError' || /not found/i.test(String(err?.message)) ? 'gone' : 'unknown';
+    }
+  }
+
+  function dropEnded(slotId, entry, details) {
+    live.delete(slotId);
+    syncWatch();
+    for (const listener of endedListeners) {
+      try { listener(slotId, details); } catch { /* a listener's error is its own */ }
+    }
+  }
 
   async function createFor(slotId) {
     const { Sandbox } = await sdk();
@@ -227,6 +306,7 @@ export function createSandboxManager({
         expiresAt: iso(startedMs + timeoutMs),
       });
       live.set(slotId, { sbx, info, streamUrl });
+      syncWatch();
       return info;
     } catch (err) {
       // Never leave a half-started (or not-provably-view-only) sandbox billing.
@@ -278,6 +358,9 @@ export function createSandboxManager({
 
   /**
    * Kills the slot's sandbox. Returns stop details, or null if it had none.
+   * If E2B had already ended it (hard timeout), the result says so:
+   * `alreadyGone: true` plus the same `endedBy`/`endedAt`/`ranSeconds` the
+   * reconcile check reports, instead of counting the dead time as a run.
    * @param {string} slotId
    */
   async function stop(slotId) {
@@ -286,22 +369,27 @@ export function createSandboxManager({
     const entry = live.get(slotId);
     if (!entry) return null;
     live.delete(slotId);
+    syncWatch();
     const stoppedMs = now();
+    // The SDK's kill answers false (no throw) when E2B no longer has the sandbox.
+    let found;
     try {
-      await entry.sbx.kill();
+      found = await entry.sbx.kill();
     } catch (err) {
       // Fall back to the static API kill by id before giving up.
       try {
         const { Sandbox } = await sdk();
-        await Sandbox.kill(entry.info.sessionId, { apiKey });
+        found = await Sandbox.kill(entry.info.sessionId, { apiKey });
       } catch {
         throw new Error(`E2B sandbox kill failed for ${entry.info.sessionId}: ${scrub(err?.message, apiKey)}`);
       }
     }
+    if (found === false) return { ...endedDetails(entry, stoppedMs), stoppedAt: iso(stoppedMs), alreadyGone: true };
     return {
       sessionId: entry.info.sessionId,
       stoppedAt: iso(stoppedMs),
       ranSeconds: Math.max(0, (stoppedMs - Date.parse(entry.info.startedAt)) / 1000),
+      alreadyGone: false,
     };
   }
 
@@ -309,6 +397,39 @@ export function createSandboxManager({
     const ids = [...new Set([...live.keys(), ...starting.keys()])];
     const results = await Promise.allSettled(ids.map((id) => stop(id)));
     return results.map((r, i) => ({ slotId: ids[i], ok: r.status === 'fulfilled', ...(r.status === 'rejected' ? { error: r.reason.message } : r.value) }));
+  }
+
+  /**
+   * Asks E2B whether every live sandbox still runs; drops the ones that do
+   * not and tells the `onEnded` listeners. Runs on the timer while anything is
+   * live; callable directly (tests, operators). Concurrent calls share one run.
+   * Resolves with what ended this time: `[{ slotId, ...details }]`.
+   */
+  function reconcile() {
+    if (reconciling) return reconciling;
+    reconciling = (async () => {
+      const ended = [];
+      for (const [slotId, entry] of [...live]) {
+        const verdict = await checkOne(entry);
+        if (verdict !== 'gone' || live.get(slotId) !== entry) continue; // still there, unknown, or stopped meanwhile
+        const details = endedDetails(entry, now());
+        dropEnded(slotId, entry, details);
+        ended.push({ slotId, ...details });
+      }
+      return ended;
+    })().finally(() => { reconciling = null; });
+    return reconciling;
+  }
+
+  /**
+   * Subscribes to sandboxes that E2B ended without a stop() from here.
+   * `listener(slotId, { sessionId, endedBy: 'timeout'|'provider', endedAt, noticedAt, ranSeconds })`.
+   * Returns the unsubscribe function.
+   */
+  function onEnded(listener) {
+    if (typeof listener !== 'function') throw new TypeError('onEnded needs a function');
+    endedListeners.add(listener);
+    return () => endedListeners.delete(listener);
   }
 
   /** Public session info for a slot, or null. */
@@ -339,5 +460,26 @@ export function createSandboxManager({
     return live.size;
   }
 
-  return Object.freeze({ provider: 'e2b', start, stop, stopAll, get, getStream, getPublicStream, count });
+  /**
+   * Runs `task(sbx, { isLive })` against the slot's live sandbox. The SDK
+   * instance never leaves this module otherwise; `isLive()` turns false once
+   * the slot's sandbox is stopped, so a long task can bail out. Errors are
+   * scrubbed of the API key like every other surfaced message.
+   *
+   * @template T
+   * @param {string} slotId
+   * @param {(sbx: any, ctx: { isLive: () => boolean }) => Promise<T>} task
+   * @returns {Promise<T>}
+   */
+  async function runTask(slotId, task) {
+    const entry = live.get(slotId);
+    if (!entry) throw new Error(`no running sandbox for slot ${slotId}`);
+    try {
+      return await task(entry.sbx, { isLive: () => live.get(slotId) === entry });
+    } catch (err) {
+      throw new Error(scrub(err?.message, apiKey));
+    }
+  }
+
+  return Object.freeze({ provider: 'e2b', start, stop, stopAll, get, getStream, getPublicStream, count, runTask, reconcile, onEnded, get watching() { return watch !== null; } });
 }

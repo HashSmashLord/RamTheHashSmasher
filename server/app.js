@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve, dirname, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,6 +79,24 @@ function readBody(req, limit) {
   });
 }
 
+// Constant-time admin-token check. Both sides are SHA-256 hashed first, so the
+// buffers handed to timingSafeEqual are always 32 bytes: a wrong token of a
+// different length is simply rejected (timingSafeEqual would throw on unequal
+// lengths) and the compare time doesn't reveal the real token's length.
+export function tokenMatches(given, expected) {
+  if (typeof given !== 'string' || !given || typeof expected !== 'string' || !expected) return false;
+  const a = createHash('sha256').update(given, 'utf8').digest();
+  const b = createHash('sha256').update(expected, 'utf8').digest();
+  return timingSafeEqual(a, b);
+}
+
+// Request-derived text (route labels are built from the decoded URL path)
+// must not be able to forge log lines: control characters such as a decoded
+// %0A or %0D are escaped to a visible \xNN form instead of written raw.
+export function safeLogField(value) {
+  return String(value).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
+}
+
 function parseJson(raw) {
   const text = raw.toString('utf8').trim();
   if (text === '') return {};
@@ -98,6 +117,9 @@ export function createApp(config) {
     launchpad: { publicBaseUrl: config.launchpad.publicBaseUrl, treasury: config.launchpad.treasury },
   });
   const ideaLimiter = createRateLimiter(config.ideaRateLimit);
+  // Public and unauthenticated; each ask is a (paid, once live) LLM call and a
+  // cost-ledger entry, so it is limited per client like /api/ideas.
+  const askLimiter = createRateLimiter(config.coordinatorAskRateLimit ?? { max: 10, windowMs: 10 * 60 * 1000 });
   const log = config.log || (() => {});
 
   function send(res, status, payload, headers = {}) {
@@ -143,7 +165,7 @@ export function createApp(config) {
 
   function requireAdmin(req, res) {
     const token = req.headers['x-admin-token'];
-    if (!token || token !== config.adminToken) {
+    if (!tokenMatches(token, config.adminToken)) {
       sendError(res, 401, 'unauthorized');
       return false;
     }
@@ -174,11 +196,15 @@ export function createApp(config) {
   }
 
   // Public: a RAM's live desktop, view-only enforced by the VNC server itself
-  // (x11vnc -viewonly, see lib/sandbox.js). `stream` is null when none runs.
+  // (x11vnc -viewonly, see lib/sandbox.js). `stream` is null when none runs;
+  // `sandbox` then says why (never started / starting / stopped / expired /
+  // failed, see lib/slots.js), status and how it ended only, no error text.
   function getSlotStream(req, res, id) {
-    if (!store.slotManager.getSlot(id)) return sendError(res, 404, 'not_found');
+    const slot = store.slotManager.getSlot(id);
+    if (!slot) return sendError(res, 404, 'not_found');
     const stream = store.sandboxManager?.getPublicStream(id) ?? null;
-    sendOk(res, { enabled: Boolean(store.sandboxManager), stream });
+    const sandbox = slot.sandbox ? { status: slot.sandbox.status, endedBy: slot.sandbox.endedBy ?? null } : null;
+    sendOk(res, { enabled: Boolean(store.sandboxManager), stream, sandbox });
   }
 
   function getCoordinatorSummary(req, res) {
@@ -186,6 +212,11 @@ export function createApp(config) {
   }
 
   async function postCoordinatorAsk(req, res) {
+    const verdict = askLimiter.hit(clientAddress(req, config.trustProxy));
+    if (!verdict.allowed) {
+      req.resume();
+      return sendError(res, 429, 'rate_limited', 'Too many questions from here. Please try again later.', { 'Retry-After': String(verdict.retryAfterSec) });
+    }
     const body = await readJsonBody(req, res);
     if (body === undefined) return;
     if (typeof body.question !== 'string' || !body.question.trim()) {
@@ -439,13 +470,13 @@ export function createApp(config) {
     const started = performance.now();
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     res.on('finish', () => {
-      log(`${new Date().toISOString()} ${req.method} ${req.routeLabel || '-'} ${res.statusCode} ${Math.round(performance.now() - started)}ms`);
+      log(`${new Date().toISOString()} ${safeLogField(req.method)} ${safeLogField(req.routeLabel || '-')} ${res.statusCode} ${Math.round(performance.now() - started)}ms`);
     });
     try {
       await route(req, res);
     } catch (err) {
       req.routeLabel = 'error';
-      log(`${new Date().toISOString()} error ${err.code || err.name}: ${err.message}`);
+      log(`${new Date().toISOString()} error ${safeLogField(err.code || err.name)}: ${safeLogField(err.message)}`);
       if (!res.headersSent) {
         try {
           sendError(res, 500, 'server_error');
@@ -477,6 +508,8 @@ export function createApp(config) {
       if (store.sandboxManager) await store.sandboxManager.stopAll().catch(() => {});
       return new Promise((resolve) => {
         ideaLimiter.stop();
+        askLimiter.stop();
+        store.rams?.stop?.();
         launchpad.stop();
         server.closeAllConnections?.();
         server.close(() => resolve());

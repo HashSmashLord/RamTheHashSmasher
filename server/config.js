@@ -35,6 +35,9 @@ export function loadConfig(env = process.env, overrides = {}) {
       maxSlots: int(env.RAMHERD_MAX_SLOTS, 12),
     },
     ideaRateLimit: { max: 5, windowMs: 10 * 60 * 1000 },
+    // POST /api/coordinator/ask: public, and a real paid LLM call once
+    // RAMHERD_LIVE is on, so it gets the same per-client limit pattern.
+    coordinatorAskRateLimit: { max: 10, windowMs: 10 * 60 * 1000 },
     maxBodyBytes: 8192,
     trustProxy: int(env.TRUST_PROXY, 0, { max: 10 }),
     // Launchpad (user-created RAMs). Public addresses and URLs only: this

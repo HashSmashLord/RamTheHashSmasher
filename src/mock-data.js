@@ -339,6 +339,122 @@ function startMockLiveFeed(onTick, intervalMs = 4000) {
   return () => clearInterval(mockInterval);
 }
 
+// Real backend: no local state to tick, just re-render on a timer. onTick()
+// re-fetches through getFleet()/getStats()/etc, same as the demo path.
+let realPollInterval = null;
+function startRealPoll(onTick, intervalMs = 4000) {
+  if (realPollInterval) clearInterval(realPollInterval);
+  realPollInterval = setInterval(onTick, intervalMs);
+  return () => clearInterval(realPollInterval);
+}
+
+// ---------------------------------------------------------------------------
+// Real backend, auto-detected. When this page is served BY the real API server
+// (not a bare static server), every method below fetches real data instead of
+// reading the simulated `state` above. Detected once, the same way
+// sandbox-viewer.js already detects the desk feed (deskFeedAvailable): a HEAD
+// of the page itself, checking for the API server's distinguishing CSP header.
+// A bare `python3 -m http.server` has no such header, so it always falls back
+// to the demo state below with zero failed requests.
+//
+// This only changes what this PAGE shows. It does not touch any admin action
+// (resizing slots, adding fees, starting a sandbox) — those still need the
+// admin token, same as always; this is read-only, same boundary as the real
+// Herder.
+// ---------------------------------------------------------------------------
+
+import { deskFeedAvailable } from "./sandbox-viewer.js";
+
+export const backendReady = deskFeedAvailable();
+
+// Every page prints a ".mock-note" admitting its data is simulated. Once a real
+// backend is actually behind the page, that line is no longer true — this swaps
+// it for the real one (or removes it, when `realText` is null/omitted) instead
+// of leaving a page honestly built to disclose simulated data quietly lying
+// once the data it's disclosing isn't simulated anymore.
+export async function updateDemoNote(realText) {
+  const el = document.querySelector(".mock-note");
+  if (!el || !(await backendReady)) return;
+  if (realText) el.textContent = realText;
+  else el.remove();
+}
+
+async function realFetch(path, opts) {
+  const res = await fetch(path, { credentials: "omit", ...opts });
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  return res.json();
+}
+
+// A real feed-entry `type` (slots.js pushFeed) -> the demo's four-ish status words.
+// Some entries don't change the slot's status at all (suggestion-attached, sandbox-*):
+// for those `fallback` is the status in force just before the entry was written,
+// which the caller carries forward through the feed in order. Never the slot's
+// CURRENT status: a history line is meant to say what was true at that time, and
+// an hour-old sandbox line labelled "Failed" because the slot failed later would lie.
+function feedEntryStatus(type, fallback) {
+  const exact = {
+    activated: "idle", thinking: "thinking", "running-experiment": "running",
+    submitted: "submitted", failed: "failed", validated: "validated",
+    "cycle-reset": "idle", retired: "idle",
+  };
+  if (type in exact) return exact[type];
+  if (type === "pipeline-validated") return "validated";
+  if (type.startsWith("pipeline-") && /blocked|error|precheck/.test(type)) return "failed";
+  if (type.startsWith("pipeline-")) return "running";
+  return fallback;
+}
+
+function secondsSince(iso) {
+  return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+}
+
+// Real /api/slots row -> the same enriched shape getFleet()/getRamDetail() already
+// return from demo state, so board.js / ram-page.js / herder-panel.js need no changes.
+function realSlotToAgent(slot, { withHistory = false } = {}) {
+  const { track, hashFunction, rounds, lane, editablePath, model, approach } = slot.assignment;
+  const status = slot.status === "running-experiment" ? "running" : slot.status;
+  const last = slot.feed[slot.feed.length - 1] || null;
+  const updatedSecondsAgo = secondsSince(slot.updatedAt);
+  const agent = {
+    id: slot.id, // real slot id (e.g. "slot-0"); ramHref/slotIdFor pass an unrecognised id through unchanged
+    trackId: track,
+    model,
+    approach,
+    status,
+    activity: last ? last.message : "No activity logged yet.",
+    updatedSecondsAgo,
+    // Nothing automated here has reached HashSmash's actual review queue yet
+    // (even a "submitted" status today means a package was drafted, not sent —
+    // see server/lib/slots.js), so this never claims "in review" on its own.
+    judge: null,
+    log2T: null,
+    trackLabel: `${hashFunction} · r${rounds} · ${lane}`,
+    roundLabel: `${hashFunction} r${rounds}`,
+    lanePath: `${editablePath}/`,
+    statusLabel: STATUS_LABEL[status] || status,
+    updatedLabel: relativeTime(updatedSecondsAgo),
+    liveLabel: duration(secondsSince(slot.createdAt)),
+  };
+  if (withHistory) {
+    // The feed is chronological; walk it that way, carrying each line's status into
+    // the next, then flip to newest-first for the page. A slot is born idle (its
+    // first entry is always `activated`, which maps to idle anyway).
+    let carried = "idle";
+    agent.history = slot.feed
+      .map((entry) => {
+        carried = feedEntryStatus(entry.type, carried);
+        return {
+          secondsAgo: secondsSince(entry.ts),
+          status: carried,
+          text: entry.message,
+          label: relativeTime(secondsSince(entry.ts)),
+        };
+      })
+      .reverse();
+  }
+  return agent;
+}
+
 // ---------------------------------------------------------------------------
 // Public API. This is the only thing the page modules import and call — the single
 // swap point once the real backend exists. Keep the method names and return
@@ -346,8 +462,33 @@ function startMockLiveFeed(onTick, intervalMs = 4000) {
 // ---------------------------------------------------------------------------
 
 export const RAMherdAPI = {
-  /** Returns the live stats-bar numbers. Real version: GET `${API_BASE}/stats`. */
+  /** Returns the live stats-bar numbers. Real: GET /api/ledger + /api/allocation + /api/slots. */
   async getStats() {
+    if (await backendReady) {
+      const [{ ledger }, { allocation }, { slots }] = await Promise.all([
+        realFetch("/api/ledger"), realFetch("/api/allocation"), realFetch("/api/slots"),
+      ]);
+      const active = slots.filter((s) => s.active);
+      const breakdown = { idle: 0, thinking: 0, running: 0, submitted: 0, validated: 0, failed: 0 };
+      for (const s of active) {
+        const st = s.status === "running-experiment" ? "running" : s.status;
+        if (st in breakdown) breakdown[st] += 1;
+      }
+      return {
+        feesCollectedLifetime: ledger.totalUsd,
+        computeBudgetEpoch: allocation.budgetUsd,
+        // No route exposes real per-epoch spend yet (server/lib/cost.js tracks
+        // lifetime, and no route serves even that). Real spend IS happening when
+        // RAMHERD_LIVE is on, so a "$0.00" here would read as a measurement that
+        // says nothing was spent. null means "not tracked": fund-lines.js says so
+        // in words instead of printing a dollar figure.
+        computeSpentEpoch: null,
+        epochLabel: "this 24h epoch",
+        slotsActive: active.length,
+        slotsMax: allocation.maxSlots,
+        breakdown,
+      };
+    }
     await simulatedLatency();
     const { feesCollectedLifetime, computeBudgetEpoch, computeSpentEpoch, epochLabel, slotsActive, slotsMax } = state.stats;
     const breakdown = {
@@ -355,6 +496,11 @@ export const RAMherdAPI = {
       thinking: state.agents.filter((a) => a.status === "thinking").length,
       running: state.agents.filter((a) => a.status === "running").length,
       submitted: state.agents.filter((a) => a.status === "submitted").length,
+      // The demo roster never reaches either of these (only the real pipeline
+      // produces them), but writeCounts() lists every status in STATUS_ORDER, so
+      // they must exist here: a genuine zero, not "undefined" on the page.
+      validated: 0,
+      failed: 0,
     };
     return {
       feesCollectedLifetime,
@@ -367,8 +513,12 @@ export const RAMherdAPI = {
     };
   },
 
-  /** Returns the fleet grid. Real version: GET `${API_BASE}/agents`. */
+  /** Returns the fleet grid. Real: GET /api/slots (active slots only). */
   async getFleet() {
+    if (await backendReady) {
+      const { slots } = await realFetch("/api/slots");
+      return slots.filter((s) => s.active).map((s) => realSlotToAgent(s));
+    }
     await simulatedLatency();
     return state.agents.map((a) => ({
       ...a,
@@ -385,10 +535,16 @@ export const RAMherdAPI = {
 
   /**
    * One RAM in full: the board row plus its whole history (newest first, each line with a
-   * relative label). Real version: GET `${API_BASE}/api/slots/:id` (plus its feed).
-   * Resolves to null for an unknown id.
+   * relative label). Real: GET /api/slots/:id. Resolves to null for an unknown id.
    */
   async getRamDetail(id) {
+    if (await backendReady) {
+      const res = await fetch(`/api/slots/${encodeURIComponent(id)}`, { credentials: "omit" });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`/api/slots/${id} -> ${res.status}`);
+      const { slot } = await res.json();
+      return realSlotToAgent(slot, { withHistory: true });
+    }
     await simulatedLatency();
     const a = state.agents.find((x) => x.id === id);
     if (!a) return null;
@@ -407,10 +563,25 @@ export const RAMherdAPI = {
   },
 
   /**
-   * The Herder's summary of the herd right now. Real version: GET `${API_BASE}/api/coordinator/summary`.
-   * Shape: { summary, updatedSecondsAgo, updatedLabel }.
+   * The Herder's summary of the herd right now. Real: GET /api/coordinator/summary —
+   * the server's own read-only view, grounded in real slot state, not composed here.
    */
   async getHerderSummary() {
+    if (await backendReady) {
+      const { summary } = await realFetch("/api/coordinator/summary");
+      const byStatus = summary.slotCount.byStatus || {};
+      const n = (s) => byStatus[s] || 0;
+      const running = n("running-experiment") + n("running");
+      const parts = [
+        `${running} of ${summary.slotCount.active} RAMs are running an experiment, ${n("thinking")} ${n("thinking") === 1 ? "is" : "are"} thinking, ${n("idle")} ${n("idle") === 1 ? "is" : "are"} idle.`,
+        "Nothing has reached HashSmash's real review queue yet in this session, and nothing from the herd has ever been accepted.",
+        // ledger.totalUsd is the lifetime fee total (server/lib/ledger.js), not an
+        // epoch's — so the sentence says "lifetime", not "this epoch".
+        `Lifetime: $${cents(summary.ledger.totalUsd)} of fees funding $${cents(summary.allocation.budgetUsd)} of compute budget, $${cents(summary.allocation.usdPerSlot)}/slot.`,
+      ];
+      const updatedSecondsAgo = secondsSince(summary.generatedAt);
+      return { summary: parts.join(" "), updatedSecondsAgo, updatedLabel: relativeTime(updatedSecondsAgo) };
+    }
     await simulatedLatency();
     const n = (s) => state.agents.filter((a) => a.status === s).length;
     const inReview = state.agents.filter((a) => a.judge === "in review").map((a) => a.id);
@@ -425,20 +596,46 @@ export const RAMherdAPI = {
     return { summary: parts.join(" "), updatedSecondsAgo: state.herder.updatedSecondsAgo, updatedLabel: relativeTime(state.herder.updatedSecondsAgo) };
   },
 
-  /** Seeds the chat panel with realistic prior Q&A. Real version: GET `${API_BASE}/coordinator/history`. */
+  /** Seeds the chat panel with realistic prior Q&A. Real backend: no history endpoint yet, starts empty. */
   async getChatSeed() {
+    if (await backendReady) return [];
     await simulatedLatency();
     return state.chatSeed;
   },
 
-  /** Sends a viewer question to the coordinator. Real version: POST `${API_BASE}/coordinator/ask`. */
+  /** Sends a viewer question to the coordinator. Real: POST /api/coordinator/ask — a real LLM call when RAMHERD_LIVE is on. */
   async askCoordinator(question) {
+    if (await backendReady) {
+      const { result } = await realFetch("/api/coordinator/ask", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }),
+      });
+      return { answer: result.ok ? result.answer : "That question couldn't be answered — try asking something else." };
+    }
     await simulatedLatency(500, 900);
     return { answer: coordinatorReply(question) };
   },
 
-  /** Submits a viewer idea into the human-review queue. Real version: POST `${API_BASE}/ideas`. */
+  /** Submits a viewer idea into the human-review queue. Real: POST /api/ideas. */
   async submitIdea(payload) {
+    if (await backendReady) {
+      // Real /api/ideas wants {text, author}; the slip's form gives {track, idea, contact} —
+      // translated here so idea-slip.js stays the same either way.
+      const text = [payload.track ? `[${payload.track}] ` : "", payload.idea || ""].join("");
+      // Not through realFetch: the server answers a screened-out idea with 422 and a
+      // real body ({ ok: true, result: { ok: false, reason } } — server/app.js postIdea),
+      // and realFetch throws on any non-2xx, which would turn "rejected, here's why"
+      // into a generic "it did not go through" and lose the reason. 201 (queued) and
+      // 422 (screened out) are both answers; anything else is a genuine failure.
+      const res = await fetch("/api/ideas", {
+        method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, author: payload.contact || undefined }),
+      });
+      if (!res.ok && res.status !== 422) throw new Error(`/api/ideas -> ${res.status}`);
+      const { result } = await res.json();
+      // The real queue has no position concept yet (server/lib/moderation.js) —
+      // null rather than inventing a number; idea-slip.js shows no position when it's null.
+      return { status: result.ok ? "queued_for_human_review" : "rejected", queuePosition: null, reason: result.reason || null };
+    }
     await simulatedLatency(300, 600);
     state.ideaQueueLength += 1;
     return {
@@ -447,8 +644,9 @@ export const RAMherdAPI = {
     };
   },
 
-  /** Starts the mock "live" drift and calls `onTick` after every update. Delete with the mock. */
-  subscribeLive(onTick, intervalMs) {
+  /** Real: polls the real endpoints; demo: the simulated drift. Either way, calls onTick(). */
+  async subscribeLive(onTick, intervalMs) {
+    if (await backendReady) return startRealPoll(onTick, intervalMs);
     return startMockLiveFeed(onTick, intervalMs);
   },
 

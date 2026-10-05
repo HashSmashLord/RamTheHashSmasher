@@ -22,11 +22,27 @@
 import bs58 from 'bs58';
 import { PublicKey } from '@solana/web3.js';
 import { CREATE_FEE_LAMPORTS, DEFAULT_TREASURY } from './launchtx.js';
+import { createRateLimiter } from './ratelimit.js';
 
 export const RAM_STATUSES = Object.freeze(['draft', 'awaiting-signature', 'active', 'cancelled']);
 
 /** pump.fun's create_v2 metadata URI limit. */
 export const MAX_URI_LENGTH = 200;
+
+// Global (all clients together, one fixed key) cap on Pinata pins. Every draft
+// would otherwise pin attacker-chosen text to the operator's real Pinata
+// account, limited only per IP. 20 per hour is far above real use today (the
+// launchpad isn't live; a real launch is a 0.2 SOL, wallet-signed action) but
+// stops an IP-rotating flood from burning the account's pin quota. A draft
+// over the cap is still created; it just keeps its self-hosted metadata URI,
+// exactly as when a pin fails.
+export const DEFAULT_PIN_RATE_LIMIT = Object.freeze({ max: 20, windowMs: 60 * 60 * 1000 });
+
+// Cap on non-active RAM records held in memory (drafts cost nothing to make).
+// Past it, the oldest non-active record is evicted: draft/cancelled first,
+// awaiting-signature only if nothing else is left; an `active` RAM (launched,
+// paid for, has a slot and funding account) is never evicted.
+export const DEFAULT_MAX_INACTIVE_RAMS = 1000;
 
 function isSignature(value) {
   if (typeof value !== 'string') return false;
@@ -48,9 +64,11 @@ function isSignature(value) {
  *   now?: () => string,
  *   idPrefix?: string,
  *   pinata?: ReturnType<typeof import('./pinata.js').createPinataClient>|null,
+ *   pinRateLimit?: { max: number, windowMs: number, now?: () => number },
+ *   maxInactiveRams?: number,
  * }} opts
  */
-export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram', pinata = null }) {
+export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram', pinata = null, pinRateLimit = DEFAULT_PIN_RATE_LIMIT, maxInactiveRams = DEFAULT_MAX_INACTIVE_RAMS }) {
   if (typeof publicBaseUrl !== 'string' || !/^https?:\/\//.test(publicBaseUrl)) throw new TypeError('publicBaseUrl must be an http(s) URL');
   const base = publicBaseUrl.replace(/\/+$/, '');
   /** @type {Map<string, any>} */
@@ -59,6 +77,9 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
   /** @type {Map<string, Promise<void>>} test-awaitable: see waitForMetadataPin() */
   const pinPromises = new Map();
   let seq = 0;
+  if (!Number.isInteger(maxInactiveRams) || maxInactiveRams <= 0) throw new RangeError('maxInactiveRams must be a positive integer');
+  // countDenied:false keeps this one global key's timestamp list at most `max` long under a flood.
+  const pinLimiter = pinata ? createRateLimiter({ ...pinRateLimit, countDenied: false }) : null;
 
   const copy = (r) => JSON.parse(JSON.stringify(r));
 
@@ -72,6 +93,30 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     ram.history.push({ ts: now(), from: ram.status, to: status });
     ram.status = status;
     ram.updatedAt = now();
+  }
+
+  function evict(ram) {
+    if (ram.token.mint && mintsInUse.get(ram.token.mint) === ram.id) mintsInUse.delete(ram.token.mint);
+    pinPromises.delete(ram.id);
+    rams.delete(ram.id);
+  }
+
+  /** Makes room for one more non-active record, never touching an active RAM. */
+  function evictForNewDraft() {
+    let inactive = 0;
+    for (const r of rams.values()) if (r.status !== 'active') inactive++;
+    while (inactive >= maxInactiveRams) {
+      let victim = null;
+      let fallback = null;
+      for (const r of rams.values()) {
+        if (r.status === 'draft' || r.status === 'cancelled') { victim = r; break; }
+        if (!fallback && r.status === 'awaiting-signature') fallback = r;
+      }
+      victim = victim || fallback;
+      if (!victim) break;
+      evict(victim);
+      inactive--;
+    }
   }
 
   /** @param {ReturnType<typeof import('./launchpad.js').validateCreateRequest>['value']} value - already validated */
@@ -99,6 +144,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
       createdAt: now(),
       updatedAt: now(),
     };
+    evictForNewDraft();
     rams.set(id, ram);
     // Pinata, if configured: pin the real metadata JSON to IPFS and swap the
     // token's uri from this server's own endpoint to the pinned gateway URL.
@@ -107,7 +153,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     // limit, network) never blocks or fails a draft: the self-hosted URI it
     // already has keeps working. waitForMetadataPin(id) lets a test or an
     // operator await the real outcome deterministically instead of racing it.
-    if (pinata) {
+    if (pinata && pinLimiter.hit('pinata').allowed) {
       const pinned = pinata
         .pinJson(metadata(id), { name: `${ram.token.symbol}-${id}-metadata` })
         .then(({ cid, uri }) => {
@@ -236,5 +282,5 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     return [...rams.values()].filter((r) => !owner || r.owner === owner).map(copy);
   }
 
-  return { createDraft, prepareLaunch, confirmLaunch, cancel, recordCreatorFees, recordWin, metadata, waitForMetadataPin, get, list };
+  return { createDraft, prepareLaunch, confirmLaunch, cancel, recordCreatorFees, recordWin, metadata, waitForMetadataPin, get, list, stop: () => pinLimiter?.stop() };
 }

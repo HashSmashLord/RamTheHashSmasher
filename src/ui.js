@@ -5,9 +5,13 @@
 
 // The exact words the herd writes, one per status. "Submitted" carries its fuller form as a
 // tooltip: the screen shows the short word, the key spells it out.
-export const STATUS_WORD = { idle: "Idle", thinking: "Thinking", running: "Running an experiment", submitted: "Submitted" };
-export const STATUS_FULL = { submitted: "Submitted to HashSmash" };
-export const STATUS_ORDER = ["running", "thinking", "idle", "submitted"];
+export const STATUS_WORD = { idle: "Idle", thinking: "Thinking", running: "Running an experiment", submitted: "Submitted", validated: "Validated", failed: "Failed" };
+export const STATUS_FULL = {
+  submitted: "Submitted to HashSmash",
+  validated: "Passed HashSmash's real local intake (mechanical checks only) — not judged, not submitted",
+  failed: "This attempt did not produce a usable result",
+};
+export const STATUS_ORDER = ["running", "thinking", "idle", "submitted", "validated", "failed"];
 
 // Where a handed-in candidate stands with HashSmash's review. The feed sends `judge`
 // ("in review" or null); if it does not, a submitted slot falls back to "in review", HashSmash's
@@ -23,7 +27,7 @@ export const SCORE_TERM = "log₂(T)";
 // A RAM nobody has heard from for this long dims. A submitted RAM is waiting on HashSmash's
 // judge, not silent, so it never dims however long the review takes.
 export const STALE_AFTER_SECONDS = 300;
-export const isStale = (agent, seconds) => seconds > STALE_AFTER_SECONDS && agent.status !== "submitted";
+export const isStale = (agent, seconds) => seconds > STALE_AFTER_SECONDS && agent.status !== "submitted" && agent.status !== "validated";
 
 // Pixel status glyphs on an 8×8 grid. Running has two frames (the burst) and blinks between them.
 const GLYPH = {
@@ -32,6 +36,8 @@ const GLYPH = {
   idle: '<path d="M1 1h6v1h-6zM1 6h6v1h-6zM1 2h1v4h-1zM6 2h1v4h-1z"/>',
   submitted: '<path d="M0 4h1v1h-1zM1 5h1v1h-1zM2 6h1v1h-1zM3 5h1v1h-1zM4 4h1v1h-1zM5 3h1v1h-1zM6 2h1v1h-1zM7 1h1v1h-1z"/>',
 };
+GLYPH.validated = GLYPH.submitted; // passed a real mechanical check, same "checkmark" shape
+GLYPH.failed = GLYPH.idle; // distinguished by its word and dim state, not a bespoke glyph yet
 export const glyph = (status) =>
   `<svg class="glyph${status === "running" ? " glyph-run" : ""}" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true">${GLYPH[status] || GLYPH.idle}</svg>`;
 

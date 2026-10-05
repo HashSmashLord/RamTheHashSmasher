@@ -154,26 +154,19 @@ test('the real accepted sha256-r31 candidate passes our precheck and the real `c
   assert.equal(res.parsed[0].submission_state, 'ready');
 });
 
-test('real intake on the accepted candidate: passes with Docker, fails closed as environment-blocked without it', { skip: SKIP }, async () => {
-  // This candidate declares a python-message-pairs-v1 experiment, which
-  // HashSmash only runs inside its pinned Docker sandbox (no host fallback).
+test('real intake on the accepted candidate succeeds (unconditional analytic construction, no experiment, no Docker needed)', { skip: SKIP }, async () => {
+  // As of the real organizer repo (Layr-Labs/hash-smash, corrected from the
+  // stale mooselumph mirror this was originally written against): the
+  // sha256-r31-exploratory accepted candidate declares heuristics: [] and no
+  // experiments/manifest.json, so intake never touches Docker at all. If the
+  // organizer ever swaps in a heuristic candidate that DOES declare a
+  // python-message-pairs-v1 experiment, this would need the Docker-gated
+  // branch back (see git history for that version of this test).
   const r = runner();
   const ws = await r.prepareWorkspace('accepted-intake');
   const res = await r.intake(ws.dir, TRACK);
-  let docker = false;
-  try {
-    execFileSync('docker', ['info'], { stdio: 'ignore' });
-    docker = true;
-  } catch { /* no docker */ }
-  if (docker) {
-    // Docker present but pinned image may not be pulled; either way the
-    // pipeline must give a real verdict, never a silent pass.
-    assert.ok(['ok', 'environment-blocked'].includes(res.outcome), JSON.stringify(res));
-  } else {
-    assert.equal(res.outcome, 'environment-blocked');
-    assert.equal(res.exitCode, 3);
-    assert.match(res.detail, /Docker is unavailable/);
-  }
+  assert.equal(res.outcome, 'ok', JSON.stringify(res));
+  assert.equal(res.status, 'mechanically_valid');
 });
 
 test('harness draft: organizer template, labeled, passes real check and real intake stops it as a draft', { skip: SKIP }, async () => {

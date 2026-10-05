@@ -308,3 +308,68 @@ test('list filters by owner', () => {
   assert.equal(ctx.rams.list().length, 2);
   assert.equal(ctx.rams.list({ owner: v.owner }).length, 1);
 });
+
+function capped({ pinata = null, ...opts } = {}) {
+  const slotManager = createSlotManager({ llmProvider: { complete: async () => ({ text: 'x' }) } });
+  const rams = createRamRegistry({ slotManager, funds: createRamFunds(), payouts: createPayoutBook(), publicBaseUrl: 'https://ramherd.example', pinata, ...opts });
+  return { slotManager, rams };
+}
+
+test('Pinata pins are capped globally (not per client): past the cap, drafts keep the self-hosted URI', async () => {
+  const pin = fakePinata();
+  pin.release();
+  const { rams } = capped({ pinata: pin.client, pinRateLimit: { max: 3, windowMs: 60 * 60 * 1000 } });
+  const made = [];
+  for (let i = 0; i < 10; i++) made.push(rams.createDraft(draftValue())); // 10 different owner wallets
+  for (const r of made) await rams.waitForMetadataPin(r.id);
+  assert.equal(pin.calls.length, 3, 'only 3 pins reached Pinata across all owners');
+  assert.equal(rams.get(made[0].id).token.uri, 'https://gateway.pinata.cloud/ipfs/bafyTestCid');
+  for (const r of made.slice(3)) {
+    assert.equal(rams.get(r.id).token.uri, `https://ramherd.example/api/launchpad/rams/${r.id}/metadata.json`);
+  }
+  assert.equal(rams.list().length, 10, 'drafts over the pin cap are still created');
+  rams.stop();
+});
+
+test('the default pin cap is a conservative hourly global limit', async () => {
+  const { DEFAULT_PIN_RATE_LIMIT } = await import('../server/lib/rams.js');
+  assert.equal(DEFAULT_PIN_RATE_LIMIT.windowMs, 60 * 60 * 1000);
+  assert.ok(DEFAULT_PIN_RATE_LIMIT.max > 0 && DEFAULT_PIN_RATE_LIMIT.max <= 50);
+});
+
+test('in-memory non-active RAM records are capped: oldest drafts evicted, active RAMs never', () => {
+  const ctx = capped({ maxInactiveRams: 3 });
+  const active = activeRam(ctx);
+  const drafts = [];
+  for (let i = 0; i < 50; i++) drafts.push(ctx.rams.createDraft(draftValue()));
+  const ids = ctx.rams.list().map((r) => r.id);
+  assert.equal(ids.length, 4, '3 non-active + the 1 active');
+  assert.ok(ids.includes(active.id), 'the active RAM survives');
+  assert.equal(ctx.rams.get(active.id).status, 'active');
+  assert.deepEqual(ids.filter((id) => id !== active.id), drafts.slice(-3).map((d) => d.id), 'the newest drafts are kept');
+  assert.equal(ctx.rams.get(drafts[0].id), undefined);
+});
+
+test('eviction takes drafts/cancelled before an in-progress (awaiting-signature) launch, and frees evicted mints', () => {
+  const { rams } = capped({ maxInactiveRams: 2 });
+  const signing = rams.createDraft(draftValue());
+  const mint = wallet();
+  rams.prepareLaunch(signing.id, mint);
+  const d1 = rams.createDraft(draftValue());
+  const d2 = rams.createDraft(draftValue()); // over cap: d1 (a plain draft) goes, not the older signing one
+  assert.ok(rams.get(signing.id));
+  assert.equal(rams.get(d1.id), undefined);
+  const d3 = rams.createDraft(draftValue()); // only signing + d2 left: d2 is a draft, so d2 goes
+  assert.ok(rams.get(signing.id));
+  assert.equal(rams.get(d2.id), undefined);
+  rams.cancel(d3.id);
+  rams.createDraft(draftValue()); // d3 is cancelled -> evicted ahead of the signing one
+  assert.ok(rams.get(signing.id));
+  // When only awaiting-signature records remain, the oldest one goes, and its mint is released.
+  const other = rams.list().find((r) => r.id !== signing.id);
+  rams.prepareLaunch(other.id, wallet());
+  rams.createDraft(draftValue());
+  assert.equal(rams.get(signing.id), undefined);
+  const reuse = rams.list().find((r) => r.status === 'draft');
+  assert.equal(rams.prepareLaunch(reuse.id, mint).token.mint, mint, 'the evicted RAM\'s mint is free again');
+});

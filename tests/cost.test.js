@@ -85,3 +85,32 @@ test('mock-mode usage (all zero, cost null) sums to an honest zero, not a fabric
   assert.equal(totals.costUsd, 0);
   assert.equal(totals.costUnknownCalls, 1);
 });
+
+test('entries stay bounded under heavy load, while totals stay exact (all-time)', async () => {
+  const { MAX_COST_ENTRIES } = await import('../server/lib/cost.js');
+  const ledger = createCostLedger();
+  const N = MAX_COST_ENTRIES * 20 + 7;
+  for (let i = 0; i < N; i++) {
+    ledger.record({ slotId: i % 2 ? 'herder' : 'slot-0', ramId: i % 2 ? null : 'ram-0001', model: 'm', usage: usage({ costUsd: 0.001 }) });
+  }
+  const list = ledger.list();
+  assert.equal(list.length, MAX_COST_ENTRIES, 'raw entries are capped');
+  assert.equal(list[list.length - 1].seq, N - 1, 'seq keeps counting past the cap');
+  assert.equal(list[0].seq, N - MAX_COST_ENTRIES, 'the oldest entries are the ones dropped');
+  const t = ledger.totals();
+  assert.equal(t.calls, N, 'totals still count every call ever recorded');
+  assert.equal(t.totalTokens, 15 * N);
+  assert.equal(t.costUsd, Math.round(0.001 * N * 1e6) / 1e6);
+  assert.equal(ledger.forSlot('herder').totals.calls, Math.floor(N / 2));
+  assert.equal(ledger.forRam('ram-0001').totals.calls, Math.ceil(N / 2));
+  assert.ok(ledger.forSlot('herder').entries.length <= MAX_COST_ENTRIES);
+  assert.equal(ledger.byModel()[0].totals.calls, N);
+});
+
+test('maxEntries is configurable and validated', () => {
+  const ledger = createCostLedger({ maxEntries: 3 });
+  for (let i = 0; i < 10; i++) ledger.record({ slotId: 'slot-0', model: 'm', usage: usage() });
+  assert.deepEqual(ledger.list().map((e) => e.seq), [7, 8, 9]);
+  assert.equal(ledger.totals().calls, 10);
+  assert.throws(() => createCostLedger({ maxEntries: 0 }), RangeError);
+});

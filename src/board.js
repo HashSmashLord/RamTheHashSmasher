@@ -30,9 +30,16 @@ export async function createDeskFeed() {
   };
 }
 
+// One line per desk state (sandbox-viewer.js deskWhy); short, this is a tile. `idle` is
+// the usual case: never had a desk. The others say what its last desk session did.
 const TILE_COPY = {
   checking: (label) => `Checking ${label}'s desk…`,
   idle: (label) => `No desktop running for ${label}. It works on the host right now; when a sandbox is started for it, its screen shows here, watch-only.`,
+  starting: (label) => `${label}'s desk is starting; its screen shows here, watch-only, once it is up.`,
+  stopped: (label) => `${label} finished its visible desk session; back to working on the host.`,
+  expired: (label) => `${label}'s desk session ran its full time; back to working on the host.`,
+  ended: (label) => `${label}'s desk session closed before its scheduled stop; back to working on the host.`,
+  failed: (label) => `${label}'s desk could not start this time; it is still working on the host.`,
   unreachable: (label) => `${label}'s desk feed could not be reached just now.`,
 };
 

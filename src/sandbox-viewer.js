@@ -10,8 +10,29 @@
 // Defence in depth on this side too: a stream is shown only if the server
 // labels it `viewOnly: "server"` AND its URL is an https noVNC page on an E2B
 // sandbox host (6080-<id>.e2b.app). Anything else is treated as "no desk".
+//
+// When there is no desk, the server's slot record says why (`sandbox.status`,
+// see server/lib/slots.js) and the words say the same, plainly: never started
+// (the usual case), starting, finished (stopped from the server, or its hard
+// stop reached), closed early on E2B's side, or could not start. Each is a
+// fact about the RAM's lifecycle, not an error page; a real failure is still
+// named as one. Demo pages have no slot record, so they keep the default line.
 
 const HOST_RE = /^6080-[a-z0-9]+\.e2b\.app$/;
+
+/**
+ * Why a slot has no desk right now, from its public `sandbox` record:
+ * "never" | "starting" | "stopped" | "expired" | "ended" | "failed".
+ * @param {any} sandbox - the slot's `sandbox` field (null when it never had one)
+ */
+export function deskWhy(sandbox) {
+  const status = sandbox?.status;
+  if (status === "starting") return "starting";
+  if (status === "stopped") return "stopped";
+  if (status === "expired") return sandbox.endedBy === "provider" ? "ended" : "expired";
+  if (status === "failed") return "failed";
+  return "never";
+}
 
 /**
  * Returns a safe URL string, or null if `stream` is not a server-enforced
@@ -38,7 +59,7 @@ export function safeStreamUrl(stream) {
  * slot, sandboxes off) reads as "no desk running", never as an error page.
  * @param {string} slotId
  * @param {{ base?: string, fetchImpl?: typeof fetch }} [opts]
- * @returns {Promise<{ state: "live", url: string, expiresAt: string|null, sessionId: string } | { state: "idle", enabled: boolean } | { state: "unreachable" }>}
+ * @returns {Promise<{ state: "live", url: string, expiresAt: string|null, sessionId: string } | { state: "idle", enabled: boolean, why?: string } | { state: "unreachable" }>}
  */
 export async function loadDesk(slotId, { base = "", fetchImpl = globalThis.fetch } = {}) {
   let body;
@@ -55,7 +76,11 @@ export async function loadDesk(slotId, { base = "", fetchImpl = globalThis.fetch
     return { state: "unreachable" };
   }
   const url = safeStreamUrl(body?.stream);
-  if (!url) return { state: "idle", enabled: Boolean(body?.enabled) };
+  if (!url) {
+    const idle = { state: "idle", enabled: Boolean(body?.enabled) };
+    // The stream route also says why there is no desk (`sandbox`, null when it never had one).
+    return body && typeof body === "object" && "sandbox" in body ? { ...idle, why: deskWhy(body.sandbox) } : idle;
+  }
   return { state: "live", url, expiresAt: body.stream.expiresAt ?? null, sessionId: String(body.stream.sessionId ?? "") };
 }
 
@@ -111,7 +136,8 @@ export function createDeskDirectory({ base = "", fetchImpl = globalThis.fetch, l
   async function loadSlot(slotId) {
     if (!reachable) return { state: "unreachable" };
     const slot = slots.get(slotId);
-    if (!slot || slot.sandbox?.status !== "running") return { state: "idle", enabled };
+    if (!slot) return { state: "idle", enabled };
+    if (slot.sandbox?.status !== "running") return { state: "idle", enabled, why: deskWhy(slot.sandbox) };
     return load(slotId, { base, fetchImpl });
   }
 
@@ -125,14 +151,31 @@ const clockTime = (iso) => {
 
 // The words a desk shows in each state. A page may pass its own `copy` (shorter for a tile,
 // fuller for a RAM's page); the state logic and the embed rules never change with it.
+// `idle` is the no-desk default (never had one, or no record to go on); the other no-desk
+// states (deskWhy) fall back to it when a page's copy has no line for them.
 const DEFAULT_COPY = {
   checking: (label) => `Checking ${label}'s desk…`,
   idle: (label) => `No desktop running for ${label}. Its work runs on the host right now; when a sandbox is started for it, its screen shows here, watch-only.`,
+  starting: (label) => `${label}'s desk is starting. Its screen shows here, watch-only, as soon as the desktop is up.`,
+  stopped: (label) => `${label} finished its visible desk session and is back to working on the host. When a desk is started for it again, its screen shows here, watch-only.`,
+  expired: (label) => `${label}'s desk session ran its full time and closed; it is back to working on the host. When a desk is started for it again, its screen shows here, watch-only.`,
+  ended: (label) => `${label}'s desk session closed before its scheduled stop; it is back to working on the host. When a desk is started for it again, its screen shows here, watch-only.`,
+  failed: (label) => `${label}'s desk could not start this time; it is still working on the host. When a desk is started for it again, its screen shows here, watch-only.`,
   unreachable: (label) => `${label}'s desk feed could not be reached just now.`,
   live: (label, until) => `Watching ${label}'s desk. View only: the desktop's VNC server ignores every click and key${until ? `. Hard stop at ${until}` : ""}.`,
 };
 // The short badge drawn on the screen itself, one per state.
-const BADGE = { checking: "checking", idle: "No desk running", unreachable: "feed unreachable", live: "Live · view only" };
+const BADGE = {
+  checking: "checking",
+  idle: "No desk running",
+  starting: "Desk starting",
+  stopped: "Desk session done",
+  expired: "Desk session done",
+  ended: "Desk session closed",
+  failed: "Desk did not start",
+  unreachable: "feed unreachable",
+  live: "Live · view only",
+};
 
 /**
  * Builds the desk viewer for one RAM. Call `refresh()` to (re)load; it only
@@ -199,7 +242,11 @@ export function createDeskViewer({ ramLabel, slotId, doc = document, load = load
     if (destroyed) return;
     if (desk.state === "live") showLive(desk);
     else if (desk.state === "unreachable") showIdle(words.unreachable(ramLabel), "unreachable");
-    else showIdle(words.idle(ramLabel), "idle");
+    else {
+      // "never" (and anything without a line of its own) reads as the plain idle state.
+      const why = desk.why && desk.why !== "never" && typeof words[desk.why] === "function" && BADGE[desk.why] ? desk.why : "idle";
+      showIdle(words[why](ramLabel), why);
+    }
   }
 
   function destroy() {

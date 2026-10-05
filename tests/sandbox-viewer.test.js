@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { safeStreamUrl, loadDesk, createDeskViewer } from '../src/sandbox-viewer.js';
+import { safeStreamUrl, loadDesk, createDeskViewer, createDeskDirectory, deskWhy } from '../src/sandbox-viewer.js';
 import { startApp } from './helpers/harness.js';
 
 const GOOD = 'https://6080-ivvmlcp84hvtvuqqb4pvo.e2b.app/vnc.html?autoconnect=true&view_only=true&resize=scale&password=Ab3dEf7h';
@@ -117,6 +117,105 @@ test('desk viewer: idle text with no sandbox, a sandboxed iframe for the live st
   next = { state: 'live', url: GOOD };
   await desk.refresh();
   assert.equal(frame.children.length, 0, 'a destroyed viewer never embeds anything');
+});
+
+// --- why there is no desk: one honest line per real state ---
+
+test('deskWhy reads the slot record: never / starting / stopped / expired / ended / failed', () => {
+  assert.equal(deskWhy(null), 'never');
+  assert.equal(deskWhy(undefined), 'never');
+  assert.equal(deskWhy({ status: 'running' }), 'never', 'a running desk is shown, not explained');
+  assert.equal(deskWhy({ status: 'starting' }), 'starting');
+  assert.equal(deskWhy({ status: 'stopped' }), 'stopped');
+  assert.equal(deskWhy({ status: 'expired', endedBy: 'timeout' }), 'expired');
+  assert.equal(deskWhy({ status: 'expired', endedBy: 'provider' }), 'ended');
+  assert.equal(deskWhy({ status: 'expired' }), 'expired');
+  assert.equal(deskWhy({ status: 'failed', error: 'E2B sandbox create failed: ...' }), 'failed');
+  assert.equal(deskWhy({ status: 'something-new' }), 'never', 'unknown states fall back to the plain line');
+});
+
+test('loadDesk carries the stream route\'s why; without one (demo, older server) it stays the plain idle', async () => {
+  const failed = await loadDesk('slot-1', { fetchImpl: async () => res(200, { ok: true, enabled: true, stream: null, sandbox: { status: 'failed', endedBy: null } }) });
+  assert.deepEqual(failed, { state: 'idle', enabled: true, why: 'failed' });
+  const expired = await loadDesk('slot-0', { fetchImpl: async () => res(200, { ok: true, enabled: true, stream: null, sandbox: { status: 'expired', endedBy: 'timeout' } }) });
+  assert.deepEqual(expired, { state: 'idle', enabled: true, why: 'expired' });
+  const never = await loadDesk('slot-0', { fetchImpl: async () => res(200, { ok: true, enabled: true, stream: null, sandbox: null }) });
+  assert.deepEqual(never, { state: 'idle', enabled: true, why: 'never' });
+  const old = await loadDesk('slot-0', { fetchImpl: async () => res(200, { ok: true, enabled: true, stream: null }) });
+  assert.deepEqual(old, { state: 'idle', enabled: true });
+});
+
+test('the desk directory says why from one /api/slots listing and asks for a stream only when one runs', async () => {
+  const slots = [
+    { id: 'slot-0', sandbox: null },
+    { id: 'slot-1', sandbox: { status: 'stopped' } },
+    { id: 'slot-2', sandbox: { status: 'expired', endedBy: 'timeout' } },
+    { id: 'slot-3', sandbox: { status: 'failed', error: 'x' } },
+    { id: 'slot-4', sandbox: { status: 'running', sessionId: 'sbx9' } },
+    { id: 'slot-5', sandbox: { status: 'starting' } },
+  ];
+  const asked = [];
+  const dir = createDeskDirectory({
+    fetchImpl: async (url) => { asked.push(url); return res(200, { ok: true, slots, sandboxes: { enabled: true } }); },
+    load: async (id) => ({ state: 'live', url: GOOD, expiresAt: null, sessionId: id }),
+  });
+  await dir.refresh();
+  assert.deepEqual(await dir.load('slot-0'), { state: 'idle', enabled: true, why: 'never' });
+  assert.deepEqual(await dir.load('slot-1'), { state: 'idle', enabled: true, why: 'stopped' });
+  assert.deepEqual(await dir.load('slot-2'), { state: 'idle', enabled: true, why: 'expired' });
+  assert.deepEqual(await dir.load('slot-3'), { state: 'idle', enabled: true, why: 'failed' });
+  assert.deepEqual(await dir.load('slot-5'), { state: 'idle', enabled: true, why: 'starting' });
+  assert.deepEqual(await dir.load('nope'), { state: 'idle', enabled: true }, 'an unknown slot has no record to read');
+  assert.equal((await dir.load('slot-4')).state, 'live');
+  assert.deepEqual(asked, ['/api/slots'], 'one listing; the stream fetch is the injected load');
+});
+
+test('desk viewer: each no-desk state gets its own honest line and badge; the demo path is unchanged', async () => {
+  let next = { state: 'idle', enabled: false };
+  const copy = { stopped: (l) => `${l} finished its visible desk session; back to working on the host.` };
+  const desk = createDeskViewer({ ramLabel: 'ram-01', slotId: 'slot-0', doc: fakeDoc(), load: async () => next, copy });
+  const [line, , badge] = desk.el.children;
+
+  await desk.refresh(); // demo mode: no why at all
+  assert.match(line.textContent, /No desktop running for ram-01/);
+  assert.equal(badge.textContent, 'No desk running');
+
+  next = { state: 'idle', enabled: true, why: 'never' };
+  await desk.refresh();
+  assert.match(line.textContent, /No desktop running for ram-01/);
+  assert.equal(badge.textContent, 'No desk running');
+
+  next = { state: 'idle', enabled: true, why: 'stopped' };
+  await desk.refresh();
+  assert.equal(line.textContent, 'ram-01 finished its visible desk session; back to working on the host.', 'a page\'s own copy wins');
+  assert.equal(badge.textContent, 'Desk session done');
+
+  next = { state: 'idle', enabled: true, why: 'expired' };
+  await desk.refresh();
+  assert.match(line.textContent, /ran its full time/);
+  assert.equal(badge.textContent, 'Desk session done');
+
+  next = { state: 'idle', enabled: true, why: 'ended' };
+  await desk.refresh();
+  assert.match(line.textContent, /closed before its scheduled stop/);
+  assert.equal(badge.textContent, 'Desk session closed');
+
+  next = { state: 'idle', enabled: true, why: 'failed' };
+  await desk.refresh();
+  assert.match(line.textContent, /could not start this time; it is still working on the host/);
+  assert.equal(badge.textContent, 'Desk did not start');
+
+  next = { state: 'idle', enabled: true, why: 'starting' };
+  await desk.refresh();
+  assert.match(line.textContent, /desk is starting/);
+  assert.equal(badge.textContent, 'Desk starting');
+
+  next = { state: 'idle', enabled: true, why: 'not-a-state' };
+  await desk.refresh();
+  assert.match(line.textContent, /No desktop running for ram-01/, 'unknown why falls back to idle');
+  assert.equal(badge.textContent, 'No desk running');
+  for (const el of [line, badge]) assert.equal(el.textContent.includes('!'), false);
+  assert.equal(desk.el.classList.contains('is-live'), false);
 });
 
 test('pages are allowed to frame only E2B sandbox hosts', async (t) => {

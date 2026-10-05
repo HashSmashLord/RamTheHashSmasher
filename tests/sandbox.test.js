@@ -20,9 +20,11 @@ const FAKE_KEY = 'e2b_fakekeyfortests0123456789';
  * are recorded per sandbox; `ps -C x11vnc` answers with whatever x11vnc lines
  * were "launched" (or `psOverride`), so the view-only check runs for real.
  */
-function fakeSdk({ failCreate = false, failStream = false, failKill = false, psOverride = null } = {}) {
-  const calls = { create: [], kill: [], staticKill: [], streamStart: [], commands: [] };
+function fakeSdk({ failCreate = false, failStream = false, failKill = false, psOverride = null, infoFails = false } = {}) {
+  const calls = { create: [], kill: [], staticKill: [], streamStart: [], commands: [], getInfo: [] };
   let seq = 0;
+  /** sandbox ids E2B "no longer has" (killed by its hard timeout, or otherwise gone) */
+  const gone = new Set();
   class Sandbox {
     constructor(id) {
       this.sandboxId = id;
@@ -53,7 +55,18 @@ function fakeSdk({ failCreate = false, failStream = false, failKill = false, psO
       calls.kill.push(this.sandboxId);
       if (failKill) throw new Error('network down');
       this.killed = true;
-      return true;
+      return !gone.has(this.sandboxId); // the real SDK answers false on a 404
+    }
+    // Real SDK: GET /sandboxes/{id}; 404 -> SandboxNotFoundError, else info with `state`.
+    static async getInfo(id, opts) {
+      calls.getInfo.push({ id, hasKey: Boolean(opts?.apiKey) });
+      if (infoFails) throw new Error('503 service unavailable');
+      if (gone.has(id)) {
+        const err = new Error(`Sandbox ${id} not found`);
+        err.name = 'SandboxNotFoundError';
+        throw err;
+      }
+      return { sandboxId: id, state: 'running', cpuCount: 8, memoryMB: 8192 };
     }
     static async create(template, opts) {
       calls.create.push({ template, opts });
@@ -65,7 +78,7 @@ function fakeSdk({ failCreate = false, failStream = false, failKill = false, psO
       return true;
     }
   }
-  return { Sandbox, calls, loadSdk: async () => ({ Sandbox }) };
+  return { Sandbox, calls, loadSdk: async () => ({ Sandbox }), vanish: (id) => gone.add(id) };
 }
 
 const pwFrom = (url) => new URL(url).searchParams.get('password');
@@ -292,6 +305,99 @@ test('stopAll kills every running sandbox, including one still starting', async 
   assert.equal(m.count(), 0);
 });
 
+// ---- learning that E2B ended a sandbox on its own (hard timeout) ----
+
+test('reconcile asks E2B about every live sandbox and leaves the ones that still run alone', async () => {
+  const sdk = fakeSdk();
+  const m = manager(sdk, { reconcileMs: 0 });
+  await m.start('a');
+  await m.start('b');
+  assert.deepEqual(await m.reconcile(), []);
+  assert.deepEqual(sdk.calls.getInfo.map((c) => c.id).sort(), ['sbx1', 'sbx2']);
+  assert.ok(sdk.calls.getInfo.every((c) => c.hasKey));
+  assert.equal(m.count(), 2);
+});
+
+test('a sandbox E2B killed at its hard stop is dropped, reported as ended by timeout, and its stream is gone', async () => {
+  const sdk = fakeSdk();
+  let t = 1_000_000;
+  const m = createSandboxManager({ apiKey: FAKE_KEY, loadSdk: sdk.loadSdk, timeoutMs: 60_000, reconcileMs: 0, now: () => t });
+  await m.start('slot-0');
+  const heard = [];
+  m.onEnded((slotId, d) => heard.push({ slotId, ...d }));
+  // E2B's clock reaches the hard stop and kills it; this process is not told.
+  sdk.vanish('sbx1');
+  t += 70_000;
+  assert.equal(m.getPublicStream('slot-0')?.sessionId, 'sbx1', 'until it asks, the manager still believes it runs');
+  const ended = await m.reconcile();
+  assert.equal(ended.length, 1);
+  assert.equal(ended[0].slotId, 'slot-0');
+  assert.equal(ended[0].endedBy, 'timeout');
+  assert.equal(ended[0].sessionId, 'sbx1');
+  assert.equal(ended[0].ranSeconds, 60, 'the run is counted up to the hard stop, not up to when it was noticed');
+  assert.deepEqual(heard, ended.map(({ slotId, ...d }) => ({ slotId, ...d })));
+  assert.equal(m.get('slot-0'), null);
+  assert.equal(m.getPublicStream('slot-0'), null);
+  assert.equal(m.count(), 0);
+  assert.deepEqual(sdk.calls.kill, [], 'nothing to kill: it was already gone');
+  assert.deepEqual(await m.reconcile(), [], 'reported once');
+});
+
+test('a sandbox gone well before its hard stop is reported as ended by the provider', async () => {
+  const sdk = fakeSdk();
+  let t = 1_000_000;
+  const m = createSandboxManager({ apiKey: FAKE_KEY, loadSdk: sdk.loadSdk, timeoutMs: 15 * 60_000, reconcileMs: 0, now: () => t });
+  await m.start('slot-0');
+  sdk.vanish('sbx1');
+  t += 120_000;
+  const [ended] = await m.reconcile();
+  assert.equal(ended.endedBy, 'provider');
+  assert.equal(ended.ranSeconds, 120);
+});
+
+test('a transient error asking E2B changes nothing; the next check decides', async () => {
+  const sdk = fakeSdk({ infoFails: true });
+  const m = manager(sdk, { reconcileMs: 0 });
+  await m.start('slot-0');
+  sdk.vanish('sbx1');
+  assert.deepEqual(await m.reconcile(), []);
+  assert.equal(m.count(), 1);
+  assert.equal(m.getPublicStream('slot-0')?.sessionId, 'sbx1');
+});
+
+test('the periodic check runs only while something is live and never keeps the process alive', async () => {
+  const sdk = fakeSdk();
+  const m = manager(sdk, { reconcileMs: 10 });
+  assert.equal(m.watching, false);
+  await m.start('slot-0');
+  assert.equal(m.watching, true);
+  sdk.vanish('sbx1');
+  const ended = await new Promise((resolve) => m.onEnded((slotId, d) => resolve({ slotId, ...d })));
+  assert.equal(ended.slotId, 'slot-0');
+  assert.equal(m.watching, false, 'nothing live, nothing to check');
+  await m.start('slot-1');
+  assert.equal(m.watching, true);
+  await m.stop('slot-1');
+  assert.equal(m.watching, false);
+});
+
+test('stop on a sandbox E2B already ended says so instead of counting a stop that never happened', async () => {
+  const sdk = fakeSdk();
+  let t = 1_000_000;
+  const m = createSandboxManager({ apiKey: FAKE_KEY, loadSdk: sdk.loadSdk, timeoutMs: 60_000, reconcileMs: 0, now: () => t });
+  await m.start('slot-0');
+  sdk.vanish('sbx1');
+  t += 300_000;
+  const r = await m.stop('slot-0');
+  assert.equal(r.alreadyGone, true);
+  assert.equal(r.endedBy, 'timeout');
+  assert.equal(r.ranSeconds, 60);
+  assert.equal(m.count(), 0);
+  const normal = manager(fakeSdk(), { reconcileMs: 0 });
+  await normal.start('x');
+  assert.equal((await normal.stop('x')).alreadyGone, false);
+});
+
 test('estimateCostUsd uses E2B per-second rates', () => {
   // 2 vCPU + 4 GiB for one hour
   const usd = estimateCostUsd({ seconds: 3600, cpuCount: 2, memoryMB: 4096 });
@@ -357,6 +463,54 @@ test('a failed start is recorded on the slot and in its feed', async () => {
   assert.equal(snap.sandbox.status, 'failed');
   assert.equal(snap.feed.at(-1).type, 'sandbox-error');
   assert.equal(JSON.stringify(snap).includes(FAKE_KEY), false);
+});
+
+test('a slot learns its sandbox expired: status, endedBy and a feed line, never a fake "stopped"', async () => {
+  const sdk = fakeSdk();
+  let t = 1_000_000;
+  const mgr = createSandboxManager({ apiKey: FAKE_KEY, loadSdk: sdk.loadSdk, timeoutMs: 60_000, reconcileMs: 0, now: () => t });
+  const m = createSlotManager({ llmProvider: createMockLlmProvider(), sandboxManager: mgr });
+  m.setSlotCount(1);
+  const id = m.getSlots()[0].id;
+  await m.startSandbox(id);
+  sdk.vanish('sbx1');
+  t += 90_000;
+  assert.equal(m.getSlot(id).sandbox.status, 'running', 'nothing noticed yet');
+  const ended = await m.reconcileSandboxes();
+  assert.equal(ended.length, 1);
+  const snap = m.getSlot(id);
+  assert.equal(snap.sandbox.status, 'expired');
+  assert.equal(snap.sandbox.endedBy, 'timeout');
+  assert.equal(snap.sandbox.sessionId, 'sbx1');
+  assert.equal(snap.sandbox.ranSeconds, 60);
+  assert.equal(snap.feed.at(-1).type, 'sandbox-expired');
+  assert.match(snap.feed.at(-1).message, /hard stop after 60s/);
+  assert.equal(m.getSandboxStream(id), null);
+  // a later admin stop is a no-op on the record: the sandbox manager has nothing to stop
+  const after = await m.stopSandbox(id);
+  assert.equal(after.sandbox.status, 'expired');
+  assert.equal(after.feed.at(-1).type, 'sandbox-expired');
+  // and it can start a fresh one
+  await m.startSandbox(id);
+  assert.equal(m.getSlot(id).sandbox.status, 'running');
+  assert.equal(m.getSlot(id).sandbox.sessionId, 'sbx2');
+});
+
+test('stopping a sandbox E2B already ended records it as expired, not stopped', async () => {
+  const sdk = fakeSdk();
+  let t = 1_000_000;
+  const mgr = createSandboxManager({ apiKey: FAKE_KEY, loadSdk: sdk.loadSdk, timeoutMs: 60_000, reconcileMs: 0, now: () => t });
+  const m = createSlotManager({ llmProvider: createMockLlmProvider(), sandboxManager: mgr });
+  m.setSlotCount(1);
+  const id = m.getSlots()[0].id;
+  await m.startSandbox(id);
+  sdk.vanish('sbx1');
+  t += 200_000;
+  const snap = await m.stopSandbox(id);
+  assert.equal(snap.sandbox.status, 'expired');
+  assert.equal(snap.sandbox.endedBy, 'timeout');
+  assert.equal(snap.feed.at(-1).type, 'sandbox-expired');
+  assert.equal(snap.feed.some((f) => f.type === 'sandbox-stopped'), false);
 });
 
 test('retiring a slot kills its sandbox', async () => {
@@ -438,7 +592,7 @@ test('API: public /api/slots/:id/stream gives the view-only stream when one runs
 
   assert.equal((await s.get('/api/slots/nope/stream')).status, 404);
   let body = await (await s.get('/api/slots/slot-0/stream')).json();
-  assert.deepEqual(body, { ok: true, enabled: true, stream: null });
+  assert.deepEqual(body, { ok: true, enabled: true, stream: null, sandbox: null });
 
   await s.postJson('/api/admin/slots/slot-0/sandbox/start', {}, { headers: s.adminHeaders() });
   const res = await s.get('/api/slots/slot-0/stream');
@@ -457,6 +611,34 @@ test('API: public /api/slots/:id/stream gives the view-only stream when one runs
   await s.postJson('/api/admin/slots/slot-0/sandbox/stop', {}, { headers: s.adminHeaders() });
   body = await (await s.get('/api/slots/slot-0/stream')).json();
   assert.equal(body.stream, null);
+  assert.deepEqual(body.sandbox, { status: 'stopped', endedBy: null }, 'the route says why there is no desk');
+});
+
+test('API: the public routes tell a never-started, failed and expired desk apart, without error text', async (t) => {
+  const sdk = fakeSdk();
+  const s = await sandboxApp(sdk, { RAMHERD_SANDBOX: 'e2b', E2B_API_KEY: FAKE_KEY, RAMHERD_SANDBOX_MAX: '1', RAMHERD_SANDBOX_TIMEOUT_MIN: '1', RAMHERD_SANDBOX_RECONCILE_SEC: '0' });
+  t.after(() => s.stop());
+  s.store.slotManager.setSlotCount(2);
+
+  let body = await (await s.get('/api/slots/slot-0/stream')).json();
+  assert.deepEqual(body, { ok: true, enabled: true, stream: null, sandbox: null }, 'never started');
+
+  await s.postJson('/api/admin/slots/slot-0/sandbox/start', {}, { headers: s.adminHeaders() });
+  const failed = await s.postJson('/api/admin/slots/slot-1/sandbox/start', {}, { headers: s.adminHeaders() });
+  assert.equal(failed.status, 502, 'the concurrency cap is a real start failure');
+  body = await (await s.get('/api/slots/slot-1/stream')).json();
+  assert.deepEqual(body.sandbox, { status: 'failed', endedBy: null });
+  assert.equal(JSON.stringify(body).includes('limit reached'), false, 'the public stream route carries no error text');
+  const pub = await (await s.get('/api/slots')).json();
+  assert.equal(pub.slots[1].sandbox.status, 'failed');
+
+  sdk.vanish('sbx1');
+  await s.store.slotManager.reconcileSandboxes();
+  body = await (await s.get('/api/slots/slot-0/stream')).json();
+  assert.equal(body.stream, null);
+  assert.equal(body.sandbox.status, 'expired');
+  assert.equal(body.sandbox.endedBy, 'provider', 'gone long before its 1 min hard stop');
+  assert.equal((await (await s.get('/api/slots')).json()).slots[0].sandbox.status, 'expired');
 });
 
 test('API: stream route with sandboxes off says disabled and never loads the SDK', async (t) => {
@@ -465,6 +647,6 @@ test('API: stream route with sandboxes off says disabled and never loads the SDK
   t.after(() => s.stop());
   s.store.slotManager.setSlotCount(1);
   const body = await (await s.get('/api/slots/slot-0/stream')).json();
-  assert.deepEqual(body, { ok: true, enabled: false, stream: null });
+  assert.deepEqual(body, { ok: true, enabled: false, stream: null, sandbox: null });
   assert.equal(loaded, 0);
 });
