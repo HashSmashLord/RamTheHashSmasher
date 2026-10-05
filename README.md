@@ -13,7 +13,7 @@ and scoring pipeline works.
 | PRD + HashSmash technical brief | **done** — grounded in the real competition repo, vendored at `reference/hash-smash/` |
 | Orchestration backend (`server/`) | **built, tested (154 tests), mocked.** Fee ledger, budget→slot allocator, RAM slots, read-only coordinator, moderated idea queue, HTTP API all real; fee numbers and LLM calls are mock by default |
 | Per-RAM models (OpenRouter) | **done, wired, mock by default.** Each of the six exploratory tracks carries its launch-roster model in `server/lib/targets.js` (RAM 1 `sha256-r31` → `anthropic/claude-opus-5.5`, 2 `sha256-r32` → `anthropic/claude-fable-5.1`, 3 `sha3-256-r5` → `openai/gpt-6.1-sol-pro`, 4 `sha3-256-r6` → `z-ai/glm-5.3-prime`, 5 `blake3-r1` → `deepseek/deepseek-v4-pro`, 6 `blake3-r2` → `qwen/qwen3.8-max-prime`; see `docs/PRD.md` "Decided"). Every slot sends its own model on each LLM call, a 7th+ slot inherits its track's model, and `/api/slots` shows it. Optional `RAMHERD_LLM_MODEL` forces one model on every slot (testing). Calls are still mock unless `RAMHERD_LIVE=true` **and** `OPENROUTER_API_KEY` are both set; no live call to any roster model has been made yet |
-| Frontend dashboard (`src/`) | **built, demoable, mocked.** Third visual pass (2026-10-05): pixel-art monochrome, every RAM a screen, the Herder a panel, a full page per RAM at `#ram/<id>`. Real UI/UX against a mock data layer — see "Mock data and the API swap point" and "Design notes" below |
+| Frontend dashboard (`src/`) | **built, demoable, mocked.** Third visual pass (2026-10-05): pixel-art monochrome, every RAM a screen, the Herder a panel. Split into real pages the same day: the banner page, the Herd (`herd.html`, with a full page per RAM at `herd.html#ram/<id>`), the Herder (`herder.html`), ideas (`submit.html`), what counts (`rules.html`), the entry slip (`launch.html`). Real UI/UX against a mock data layer — see "Frontend structure", "Mock data and the API swap point" and "Design notes" below |
 | Real research content: `sha256-r32` (`research/sha256-r32/`) | **one real, modest, honest result; not judged.** An independent C reimplementation of the existing r32 package's finite construction reproduces every count and both SHA-256 hashes it prints, then measures its weakest premise (average tail yield >= 2^-49) directly: 2^37.6 prefix-tail pairs, trail followed through step 21 at 2^-33.6, **no collision observed**, estimated average yield 2^-44.6 (range 2^-45.5 to 2^-43.8) under one disclosed independence premise. Written up as Section 12 of the package; the claim stays at time 86, memory 39, success 0.9, nothing rounded up. A RAM on `sha256-r32-exploratory` now runs this package through the real `check` (exit 0, `mechanically_valid`) and `intake` (exit 0, `mechanically_valid`); the judge stays gated off. See "Real HashSmash pipeline" below |
 | Solver-agent loop → real HashSmash pipeline (`server/lib/hashsmash.js`) | **pipeline integration working end to end, locally, for `sha256-r31-exploratory`.** A RAM slot clones the vendored repo, writes a clearly labeled harness *draft* (the organizer's own `draft_claim()` template, no attack claimed), and runs HashSmash's real `local_tracks.py check` and `hashsmash_pipeline.py intake`. Result: `check` → `mechanically_valid`, `intake` → `draft_not_submitted` with a real `package_sha256` and evidence file. Opt-in with `RAMHERD_PIPELINE=local`. **Not done:** the LLM doesn't write candidates (the one research package, r32, was written by hand by a Claude session), no judge run (paid, gated off), no live submission (not implemented on purpose). The real accepted r31 candidate can't pass local intake here because its experiment needs Docker, which isn't installed. See "Real HashSmash pipeline" below |
 | Live VM view per RAM: E2B desktop sandbox (`server/lib/sandbox.js`, `src/sandbox-viewer.js`) | **view-only now enforced by the VNC server and proven with real input events; frontend viewer built; nothing runs inside the sandbox yet.** The previously flagged gap (noVNC `view_only` was only a page setting, so anyone holding the URL could take control) is **fixed**: x11vnc now runs with `-viewonly`, so it drops every pointer, key and clipboard message from every client, and no full-control VNC listener exists at all. Proven 2026-10-05 on a real sandbox (`scripts/prove-viewonly.mjs`): a raw RFB client authenticated on the public stream and sent moves, a click and keystrokes → pointer unmoved, nothing typed, 0 raw X input events; the same script against a test-only x11vnc *without* `-viewonly` moved the pointer and typed. A public `GET /api/slots/:id/stream` hands out that stream, and each board row has a "Watch desk" viewer that embeds only it. Opt-in with `RAMHERD_SANDBOX=e2b` + `E2B_API_KEY`; off by default; starting one stays admin-only. **Not done:** running the RAM's real work inside the sandbox, a smaller template (stock `desktop` = 8 vCPU / 8 GiB, about $0.53/hour each), and the board is still mock data, so in the demo every desk reads "no desktop running". See "E2B desktop sandboxes" below |
@@ -124,8 +124,8 @@ to override. It is still the next step for **cost**.
 - **Cost rails:** nothing is created unless an admin calls start. Every sandbox has an E2B-side hard
   timeout (it gets killed even if this server dies), there's a concurrency cap, retiring a slot kills
   its sandbox, and server shutdown kills them all.
-- **Frontend viewer** (`src/sandbox-viewer.js`): every RAM's tile on the board is a screen, and the
-  RAM's full page (`#ram/<id>`) has the same screen larger. A screen embeds the RAM's desktop in a
+- **Frontend viewer** (`src/sandbox-viewer.js`): every RAM's tile on the Herd page (`herd.html`) is a
+  screen, and the RAM's full page (`herd.html#ram/<id>`) has the same screen larger. A screen embeds the RAM's desktop in a
   sandboxed iframe (`allow-scripts allow-same-origin` only, no-referrer, `pointer-events: none`, never
   focusable) only for a stream labelled `viewOnly: "server"` whose URL is
   `https://6080-<id>.e2b.app/vnc.html`; anything else reads as "no desk running": the intact pixel
@@ -186,30 +186,58 @@ env (see `AGENTS.md`); the frontend stays out of its way and the two can run sid
 
 ## Frontend structure
 
+The site is six static pages sharing one top bar, one stylesheet and one data layer. Each
+page has its own small bootstrap script that calls into the shared modules for just what that
+page needs; nothing is a long scroll, and the only in-page route is a RAM's page over the
+Herd.
+
 ```
 src/
-  index.html      the banner page (hook, pills, the brand plate, printed fund lines), the
-                  Herder's panel (summary, the herd by status, one line per RAM, the chat),
-                  the board (one screen per RAM), idea slip + review notice, "what counts",
-                  and the RAM page shell that #ram/<id> fills
-  styles.css      all styling — black screen, white pixel ink on a 4px unit, one amber for
-                  what is live, inverse video for the judge; tokens in :root (see DESIGN.md)
-  app.js          wires the DOM to the mock data layer; diffs tiles by id on every tick;
-                  the #ram/<id> route; one desk poll for every screen
-  sandbox-viewer.js  a RAM's screen: embeds its server-side view-only E2B stream, or "no desk
-                  running"; the feed probe and the slot directory that keep it request-clean
-  mock-data.js    <- the mock-data / real-API swap point, see below
-  launch.html / launch.css / launch.js / launchpad-rules.js   the entry slip (not live)
-  brand/          ram-smashing-hash-main.png (the operator's pixel ram, source of truth),
-                  ram-hero.png (its transparent 1-bit crop, the banner plate), ram-mark.png (40px)
-  fonts/          jersey10.woff2 (display), silkscreen.woff2 (labels), archivo-variable.woff2 (reading)
-  favicon.png
+  index.html + index.js    the banner page: hook, pills, the brand plate, the printed fund
+                           lines, then the listing (one line per page, with the herd's live
+                           counts on the Herd line)
+  herd.html + herd.js      the Herd, live: one screen per RAM (the board), the key, and the
+                           RAM page shell that herd.html#ram/<id> fills, over the board
+  herder.html + herder.js  the Herder's panel: summary, the herd by status, one line per RAM
+                           (each linking to herd.html#ram/<id>), the chat
+  submit.html + submit.js  the idea slip and the human-review notice
+  rules.html + rules.js    what this can and can't claim (nothing dynamic but the menu)
+  launch.html + launch.js + launch.css + launchpad-rules.js   the entry slip (not live)
+
+  nav.js            the top bar's menu toggle, called by every page
+  ui.js             the listing's primitives: status words, pixel glyphs, the judge's column,
+                    the print (the one motion), the diffing writers, herd-counts, RAM hrefs
+  fund-lines.js     the fund lines and block bars (index)
+  board.js          the tiles, diffed by id on every tick; the shared desk feed (one probe,
+                    one slot directory, one poll for every screen on the page) (herd)
+  ram-page.js       the #ram/<id> route: facts, history, the larger screen; Escape / Back
+                    restore scroll and focus (herd)
+  herder-panel.js   the Herder's summary, counts, lines and chat (herder)
+  idea-slip.js      the idea form (submit)
+  sandbox-viewer.js a RAM's screen: embeds its server-side view-only E2B stream, or "no desk
+                    running"; the feed probe and the slot directory that keep it request-clean
+  mock-data.js      <- the mock-data / real-API swap point, see below
+  styles.css        all styling — black screen, white pixel ink on a 4px unit, one amber for
+                    what is live, inverse video for the judge; tokens in :root (see DESIGN.md)
+  brand/            ram-smashing-hash-main.png (the operator's pixel ram, source of truth),
+                    ram-hero.png (its transparent 1-bit crop, the banner plate), ram-mark.png (40px)
+  fonts/            jersey10.woff2 (display), silkscreen.woff2 (labels), archivo-variable.woff2 (reading)
+  favicon.png / favicon.svg
 ```
+
+The nav is the same markup on every page (The Herd / The Herder / Ideas / What counts, then
+X / GitHub / HashSmash and the "Enter a RAM" pill; the current page's link is in full ink via
+`aria-current="page"`). The Herd and the Herder are separate pages on purpose: neither has to
+be scrolled past to reach the other. A RAM's page stays a hash route on the Herd page
+(`herd.html#ram/<id>`) rather than a seventh file, because it opens over the board, which
+keeps ticking underneath, and closing it restores the board's scroll position and focus;
+the Herder's per-RAM lines deep-link to it.
 
 ## Mock data and the API swap point
 
 `src/mock-data.js` is the **only** file that knows whether data is mocked or real. Every
-render in `app.js` calls through the `RAMherdAPI` object exported from that file —
+render in the page modules (`fund-lines.js`, `board.js`, `ram-page.js`, `herder-panel.js`,
+`idea-slip.js`) calls through the `RAMherdAPI` object exported from that file —
 `getStats()`, `getFleet()`, `getRamDetail(id)` (a RAM plus its whole history, for its page),
 `getHerderSummary()` (the Herder's one-paragraph summary of the herd), `getChatSeed()`,
 `askCoordinator(question)`, `submitIdea(payload)`, `subscribeLive(onTick)`. Nothing else in the
@@ -224,19 +252,19 @@ To swap in the real backend once it's up:
 2. Replace each `RAMherdAPI` method body with a `fetch()` call to the matching endpoint
    (`/api/ledger`, `/api/slots`, `/api/slots/:id` plus its feed for `getRamDetail`,
    `/api/coordinator/summary`, `/api/coordinator/ask`, `/api/ideas`). The shapes the frontend already expects are documented in the comments
-   above each method — keep them, or adjust `app.js`'s render functions to match whatever
-   the real response actually looks like.
+   above each method — keep them, or adjust the render functions in the page modules to
+   match whatever the real response actually looks like.
 3. Delete `startMockLiveFeed` / `tickMockState` at the bottom of `mock-data.js` — the real
    backend updates this state itself; the frontend should poll or subscribe to it instead of
    simulating drift locally.
 
-Nothing in `index.html`, `styles.css`, or `app.js` needs to change for that swap.
+Nothing in the pages, `styles.css`, or the page modules needs to change for that swap.
 
 ## What's mocked right now, specifically
 
 - Fees collected, compute budget/spend, and active-slot counts — a small live-drifting mock
   state (`tickMockState`), not real pump.fun data.
-- The 6-RAM results board: the launch roster, one RAM per real HashSmash track
+- The 6-RAM herd on `herd.html`: the launch roster, one RAM per real HashSmash track
   (`sha256-r31`, `sha256-r32`, `sha3-256-r5`, `sha3-256-r6`, `blake3-r1`, `blake3-r2`, matching
   `reference/hash-smash/tracks/` and `reference/hash-smash/lanes/exploratory/candidates/`),
   each tile showing that RAM's real assigned OpenRouter model (same slugs as
@@ -305,9 +333,45 @@ appear.
 when one runs; the intact HASH block and NO DESK RUNNING otherwise), clicking a screen opens
 the RAM's full page at `#ram/<id>` (its screen larger, its facts, its whole history, newest
 first; Escape or the back pill returns to the board with scroll and focus restored), and the
-Herder has a full-width panel above the board, visibly bigger than any tile (1104×644 against
-347×450 at 1440), with its summary, the herd by status, one line per RAM and the chat. The
-sandbox discipline is unchanged and request-clean; see "E2B desktop sandboxes".
+Herder has a full-width panel, visibly bigger than any tile (1104×644 against 347×450 at
+1440), with its summary, the herd by status, one line per RAM and the chat. The sandbox
+discipline is unchanged and request-clean; see "E2B desktop sandboxes".
+
+**The pages (2026-10-05, same day).** The operator wanted real pages instead of one long
+scroll, so the single page was split without touching the visual system: `index.html` keeps the
+banner and gains the listing (one printed line per page, the Herd's line carrying the live
+counts); the board became `herd.html` under the heading "The Herd, live" (renamed from "The
+board, live"); the Herder's panel became `herder.html`, so neither it nor the board has to be
+scrolled past to reach the other; the slip is `submit.html` and the rules are `rules.html`. The
+one script became shared modules (`ui.js`, `nav.js`, `fund-lines.js`, `board.js`,
+`ram-page.js`, `herder-panel.js`, `idea-slip.js`) with a few-line bootstrap per page, and the
+entry slip's duplicated menu code now calls the same `nav.js`. A RAM's page is still the hash
+route, now `herd.html#ram/<id>`; the sandbox viewer and its view-only discipline were not
+touched. The operator also found the site too narrow and tall, so the same change widens the
+framing without changing the language: the column is 1440px (was 1200), and above 1000px every
+row that can be a column of a wider row is one (the banner's copy beside the plate, the three
+fund lines across one row, the four listing entries across one row, each section's heading
+beside its lead); above 1200px a tile lays its screen beside its printed lines in two columns,
+so six RAMs are three short rows instead of two tall ones, and a RAM's page puts its facts
+beside its screen. The narrow layouts are unchanged. `impeccable detect` over the eight page
+and style files: 0 findings, 0 advisories. In
+browser mode at 1440 and 390 it flagged the Herder's lines truncating with an ellipsis (they now
+wrap; nothing is hidden) and read the Herder's blinking live dot, now in the first viewport of
+its own page, as a fake typing cursor; that rule is scoped off for `herder.html` only in
+`.impeccable/config.json` (two globs: `src/herder.html` for file scans and `**/herder.html` for
+browser-mode scans, which see the page by URL path), because the dot is the design system's
+one live marker (DESIGN.md, "Live Amber"), not a cursor. After that: 0 anti-patterns in
+browser mode at 1440 and 390. Its remaining advisory is em-dash density on the Herd page, which
+comes from the mock activity text and the judge column's em-dash placeholders, both
+deliberate. Verified on a static server at 4712 with Playwright's headless Chromium at 1440,
+1024 and 390: all six pages load, every nav, pill, listing and foot link resolves, no console
+errors, no horizontal scroll anywhere (the RAM page included), the mobile menu opens inside the
+viewport on every page, the fund lines and listing counts fill, the Herder prints six lines and
+its seeded chat, the slip hands in, `herd.html#ram/<id>` opens from a tile (focus to the id),
+closes on Escape with focus back on the tile, and opens from a fresh deep link. The one
+`requestfailed` Playwright reports is the page's own HEAD probe under `python3 -m http.server`
+(a body-less HEAD that Chromium books as aborted), identical on the pre-split page, with no
+console message either way.
 
 **What `detect` found and what was fixed.** `impeccable detect` over the six changed files,
 first run (against the second pass's DESIGN.md): 0 anti-patterns, 29 advisories, all

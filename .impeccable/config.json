@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "blinking-cursor",
+        "value": "*",
+        "files": [
+          "src/herder.html"
+        ],
+        "createdAt": "2026-10-05T18:09:59.679Z",
+        "reason": "The Herder's amber live dot (DESIGN.md: Live Amber, blinks on frame-a) heads its own page now; it marks a live feed, it is not a typing cursor"
+      },
+      {
+        "rule": "blinking-cursor",
+        "value": "*",
+        "files": [
+          "**/herder.html"
+        ],
+        "createdAt": "2026-10-05T18:15:32.003Z",
+        "reason": "same waiver for browser-mode scans, which see the page by URL path"
+      }
+    ]
+  }
+}

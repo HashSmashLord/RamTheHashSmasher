@@ -1,13 +1,13 @@
 // RAMherd — mock data layer.
 //
 // Everything a real backend would eventually serve lives behind the `RAMherdAPI` object
-// at the bottom of this file. Every page module (app.js) calls through that object and
+// at the bottom of this file. Every page module (index.js, herd.js, herder.js, submit.js, launch.js) calls through that object and
 // never touches the mock arrays directly. When the real backend lands:
 //
 //   1. Set API_BASE to its URL (or read it from an env-injected <meta> tag / build step).
 //   2. Replace each RAMherdAPI method body with a fetch() call to the matching endpoint.
 //      The shapes below are the contract the frontend already expects — keep them, or
-//      update app.js's render functions to match whatever the real API actually returns.
+//      update the render functions in board.js / herder-panel.js / fund-lines.js to match whatever the real API actually returns.
 //   3. Delete the setInterval-driven mock mutation at the bottom of this file
 //      (`startMockLiveFeed`) — the real backend pushes/updates this state itself.
 //
@@ -49,7 +49,7 @@ function trackLabel(trackId) {
 
 // ---------------------------------------------------------------------------
 // Mutable mock state. Treat this block as "what the backend holds" — the rest
-// of the file reads and nudges it; app.js only ever sees it through RAMherdAPI.
+// of the file reads and nudges it; the page modules only ever see it through RAMherdAPI.
 // ---------------------------------------------------------------------------
 
 const state = {
@@ -303,7 +303,7 @@ function startMockLiveFeed(onTick, intervalMs = 4000) {
 }
 
 // ---------------------------------------------------------------------------
-// Public API. This is the only thing app.js imports and calls — the single
+// Public API. This is the only thing the page modules import and call — the single
 // swap point once the real backend exists. Keep the method names and return
 // shapes; change the bodies.
 // ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@
 // signAndSendLaunch() throws before doing anything.
 
 import { RAMherdAPI, API_BASE } from "./mock-data.js";
+import { initNav } from "./nav.js";
 import {
   HASH_FAMILIES,
   APPROACHES,
@@ -62,24 +63,8 @@ function write(el, text, { animate = true } = {}) {
 
 const shortAddress = (a) => (a && a.length > 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a || "");
 
-// ---------------------------------------------------------------------------
-// Nav toggle (narrow widths), same behaviour as the board page
-// ---------------------------------------------------------------------------
-
-const navToggle = $("nav-toggle");
-const mainNav = $("main-nav");
-navToggle.addEventListener("click", () => {
-  const open = mainNav.classList.toggle("is-open");
-  navToggle.setAttribute("aria-expanded", String(open));
-  navToggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
-});
-mainNav.addEventListener("click", (e) => {
-  if (e.target.closest("a")) {
-    mainNav.classList.remove("is-open");
-    navToggle.setAttribute("aria-expanded", "false");
-    navToggle.setAttribute("aria-label", "Open menu");
-  }
-});
+// The top bar is the same on every page; its toggle lives in nav.js.
+initNav();
 
 // ---------------------------------------------------------------------------
 // Part 1: Phantom. Connecting only reads the public key; nothing is signed here.

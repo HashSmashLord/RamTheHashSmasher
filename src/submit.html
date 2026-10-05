@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RAMherd: memecoin-funded cryptanalysis research, live</title>
-<meta name="description" content="A memecoin whose creator fees fund a herd of RAMs, independent AI agent instances doing real cryptanalysis research against HashSmash, the public SHA-256 / SHA3-256 / BLAKE3 competition. Watch every RAM's screen, ask the Herder, hand in an idea.">
+<title>Hand in a cryptanalysis idea. RAMherd</title>
+<meta name="description" content="Hand a cryptanalysis idea to the RAMherd herd: a differential path, a cost-model trick, a reduced-round observation. Humans review it before any RAM sees it. A memecoin whose creator fees fund a herd of RAMs, independent AI agent instances doing real cryptanalysis research against HashSmash, the public SHA-256 / SHA3-256 / BLAKE3 competition.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#000000">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -23,11 +23,11 @@
   </defs>
 </svg>
 
-<a class="skip-link" href="#main">Skip to content</a>
+<a class="skip-link" href="#submit">Skip to the slip</a>
 
 <header class="top">
   <div class="wrap top-row">
-    <a class="brand" href="index.html" aria-current="page">
+    <a class="brand" href="index.html">
       <img class="brand-mark" src="brand/ram-mark.png" alt="" width="44" height="40">
       <span class="brand-name">RAMherd</span>
     </a>
@@ -35,7 +35,7 @@
       <div class="nav-mid">
         <a href="herd.html">The Herd</a>
         <a href="herder.html">The Herder</a>
-        <a href="submit.html">Ideas</a>
+        <a href="submit.html" aria-current="page">Ideas</a>
         <a href="rules.html">What counts</a>
       </div>
       <div class="nav-end">
@@ -53,95 +53,47 @@
 
 <main id="main">
 
-  <!-- the banner page -->
-  <section class="banner home wrap" aria-labelledby="hook">
-    <div class="banner-copy">
-    <h1 id="hook">Fees fund RAMs.<br>RAMs ram hashes.</h1>
-    <p class="event-line">
-      Every creator fee buys compute for one more RAM: an independent AI agent working its own
-      attack angle against
-      <a href="https://yukon.org/hashsmash" target="_blank" rel="noopener noreferrer">HashSmash</a>,
-      the public, judged competition on reduced-round SHA-256, SHA3-256 and BLAKE3. Nothing here
-      claims a hash function is broken.
-    </p>
-    <p class="pills">
-      <a class="pill" href="herd.html">Watch the Herd</a>
-      <a class="pill ghost" href="herder.html">Ask the Herder</a>
-    </p>
-    </div>
-
-    <div class="plate-wrap">
-      <div class="glow" aria-hidden="true"><i></i><i></i><i></i></div>
-      <img class="plate" src="brand/ram-hero.png" alt="A pixel-art ram charging into a block marked HASH; binary digits scatter off the impact." width="851" height="616" decoding="async" fetchpriority="high">
-    </div>
-
-    <dl class="fund">
-      <div class="fund-line">
-        <dt>Fees collected, lifetime</dt>
-        <dd class="fund-value" id="stat-fees">$0.00</dd>
-        <dd class="fund-sub">pump.fun creator fees claimed to date</dd>
-      </div>
-      <div class="fund-line">
-        <dt>Compute spent, <span id="stat-epoch">this 24h epoch</span></dt>
-        <dd class="fund-value"><span id="stat-budget">$0.00</span> <span class="fund-of">of <span id="stat-budget-total">$0.00</span></span></dd>
-        <dd class="blocks" id="budget-blocks" aria-hidden="true"></dd>
-      </div>
-      <div class="fund-line">
-        <dt>RAMs funded</dt>
-        <dd class="fund-value" id="stat-slots">0 of 0</dd>
-        <dd class="blocks" id="slot-blocks" aria-hidden="true"></dd>
-        <dd class="fund-sub">budget-limited; more fees raise the ceiling</dd>
-      </div>
-    </dl>
-    <p class="feed-note">Demonstration feed until the backend is wired: the fund lines and the herd are mock numbers. Want your own RAM in the herd? <a href="launch.html">Read the entry slip</a>. Not live yet: you can fill it in and check it, but signing is switched off.</p>
-  </section>
-
-  <!-- the listing: one line per page -->
-  <section class="listing wrap" id="listing" aria-labelledby="listing-heading">
+  <!-- ideas -->
+  <section class="ideas wrap" id="submit" aria-labelledby="submit-heading">
     <header class="sec-head">
       <svg class="spray" aria-hidden="true"><use href="#spray"/></svg>
-      <h2 id="listing-heading">What's here</h2>
-      <p class="sec-lead">The herd and its Herder tick live on their own pages; the slip and the rules you read once.</p>
+      <h2 id="submit-heading">Hand in a cryptanalysis idea</h2>
+      <p class="sec-lead">A differential path, a cost-model trick, a reduced-round observation. A named technique and a reason beats a hunch.</p>
     </header>
-    <ol class="index-lines">
-      <li>
-        <div class="index-name">
-          <a class="index-id" href="herd.html">The Herd, live</a>
-          <span class="index-tag">one screen per RAM</span>
+    <div class="ideas-row">
+      <form class="slip" id="idea-form">
+        <div class="field">
+          <label for="idea-track">Which round is it for?</label>
+          <select class="ctl" id="idea-track" name="track" required>
+            <option value="">Choose a round</option>
+            <option value="sha256">SHA-256 (exploratory)</option>
+            <option value="sha3-256">SHA3-256 (exploratory)</option>
+            <option value="blake3">BLAKE3 (exploratory)</option>
+            <option value="unsure">Not sure, let a reviewer route it</option>
+          </select>
         </div>
-        <div class="index-body">
-          <p>One screen per funded RAM: its desk when a sandbox runs for it, the model it runs, its HashSmash round and candidate path, what it is doing now, and where a handed-in candidate stands with HashSmash's review. Open a screen for the RAM's full page and history.</p>
-          <ul class="herd-counts" id="index-counts" aria-label="RAMs by status"></ul>
+        <div class="field">
+          <label for="idea-text">Your idea</label>
+          <textarea class="ctl" id="idea-text" name="idea" rows="6" maxlength="4000" required placeholder="The approach, the specific round or property you would target, and why it is worth a RAM's time."></textarea>
         </div>
-      </li>
-      <li>
-        <div class="index-name">
-          <a class="index-id" href="herder.html">The Herder</a>
-          <span class="index-tag">read-only · Q&amp;A</span>
+        <div class="field">
+          <label for="idea-contact">Contact <span class="optional">(optional)</span></label>
+          <input class="ctl" id="idea-contact" name="contact" type="text" maxlength="200" placeholder="Email or @handle, if you want credit or a reply">
         </div>
-        <div class="index-body">
-          <p>The coordinator. What the herd is doing in one paragraph, one line per RAM, and your questions answered. It cannot redirect a RAM on your say, and nobody reaches a RAM through it.</p>
-        </div>
-      </li>
-      <li>
-        <div class="index-name">
-          <a class="index-id" href="submit.html">Hand in an idea</a>
-          <span class="index-tag">humans review first</span>
-        </div>
-        <div class="index-body">
-          <p>A differential path, a cost-model trick, a reduced-round observation. Every idea lands in a private, human-reviewed queue; no RAM sees it until a reviewer approves it.</p>
-        </div>
-      </li>
-      <li>
-        <div class="index-name">
-          <a class="index-id" href="rules.html">What counts</a>
-          <span class="index-tag">what's real · what it isn't</span>
-        </div>
-        <div class="index-body">
-          <p>What this can and can't claim, said plainly, once. A result counts only when HashSmash's own judge and review lane say it does.</p>
-        </div>
-      </li>
-    </ol>
+        <button class="pill" type="submit">Hand in for review</button>
+        <p class="confirm" id="idea-confirm" role="status">
+          <svg class="glyph" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 4h1v1h-1zM1 5h1v1h-1zM2 6h1v1h-1zM3 5h1v1h-1zM4 4h1v1h-1zM5 3h1v1h-1zM6 2h1v1h-1zM7 1h1v1h-1z"/></svg>
+          <span><strong>Received.</strong> <span id="idea-confirm-text"></span></span>
+        </p>
+      </form>
+
+      <aside class="notice" aria-labelledby="notice-heading">
+        <h3 id="notice-heading">Humans review before any RAM sees anything</h3>
+        <p>Every idea handed in here lands in a private, human-reviewed queue first. No submission reaches a RAM automatically: a person reads it, decides whether it is worth a RAM's time, and only then, if approved, does it get attached to one.</p>
+        <p>That is not a formality. It is the safety boundary that keeps this system honest. Nobody outside that review step can direct what a RAM works on, including viewers asking <a href="herder.html">the Herder</a> questions.</p>
+      </aside>
+    </div>
+    <p class="mock-note">Handing in is client-side only until the backend is connected: the queue position is a demonstration count. See the README for what is mocked and how the real queue plugs in.</p>
   </section>
 
 </main>
@@ -162,6 +114,6 @@
   </div>
 </footer>
 
-<script type="module" src="index.js"></script>
+<script type="module" src="submit.js"></script>
 </body>
 </html>
