@@ -17,6 +17,11 @@
 // always pass their assigned one (per-RAM roster in targets.js, or the
 // `RAMHERD_LLM_MODEL` override, resolved by `modelOverride(env)` below). A call
 // with no `model` (the coordinator today) uses the provider's default.
+//
+// Token budget: `max_tokens` defaults to 300. A call may pass `maxTokens` and
+// `reasoning` (OpenRouter's reasoning control, e.g. `{ effort: 'low' }`).
+// The coordinator does: `openrouter/auto` often routes to a reasoning model
+// that spent all 300 tokens thinking and returned an empty answer.
 
 /**
  * @typedef {object} LlmUsage
@@ -29,7 +34,7 @@
 /**
  * @typedef {object} LlmProvider
  * @property {'mock'|'openrouter'|string} kind
- * @property {(req: { system?: string, prompt: string, model?: string }) => Promise<{ text: string, mocked: boolean, model: string|null, usage: LlmUsage }>} complete
+ * @property {(req: { system?: string, prompt: string, model?: string, maxTokens?: number, reasoning?: object }) => Promise<{ text: string, mocked: boolean, model: string|null, usage: LlmUsage }>} complete
  */
 
 /** Usage shape for a call that made no real request (mock mode, or a provider that reports none). */
@@ -76,7 +81,7 @@ export function createOpenRouterProvider({ apiKey, model: defaultModel = 'openro
   if (!apiKey) throw new TypeError('createOpenRouterProvider requires an apiKey');
   return {
     kind: 'openrouter',
-    async complete({ system, prompt, model }) {
+    async complete({ system, prompt, model, maxTokens = 300, reasoning }) {
       const useModel = model || defaultModel;
       const res = await fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -90,7 +95,8 @@ export function createOpenRouterProvider({ apiKey, model: defaultModel = 'openro
             ...(system ? [{ role: 'system', content: system }] : []),
             { role: 'user', content: prompt },
           ],
-          max_tokens: 300,
+          max_tokens: maxTokens,
+          ...(reasoning ? { reasoning } : {}),
         }),
       });
       if (!res.ok) {

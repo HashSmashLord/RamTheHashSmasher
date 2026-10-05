@@ -30,13 +30,15 @@ export async function renderFundLines() {
   if (write(fees, money(s.feesCollectedLifetime)) && !first) print(fees);
 
   // The real server sends null for the spend (no route measures it per epoch yet —
-  // see getStats() in mock-data.js). Then the line says so in words, "of" becomes
-  // "budget" so it still reads, and the bar is hidden: an empty bar would say "nothing
-  // spent", which is not what null means.
+  // see getStats() in mock-data.js). Then the line says so in words, and the connector
+  // says plainly that the budget IS whatever fees came in (allocationFraction is 1 in
+  // budget.js -- it's not a separate fixed quota), not just a number sitting next to
+  // it. The bar is hidden either way: an empty bar would say "nothing spent", which is
+  // not what null means.
   const spent = $("stat-budget");
   const tracked = s.computeSpentEpoch != null;
   if (write(spent, tracked ? money(s.computeSpentEpoch) : "not tracked yet") && !first) print(spent);
-  write(spent.parentElement.querySelector(".fund-of").firstChild, tracked ? "of " : "budget ");
+  write(spent.parentElement.querySelector(".fund-of").firstChild, tracked ? "of " : "— the budget is every fee collected: ");
   write($("stat-budget-total"), money(s.computeBudgetEpoch));
   write($("stat-epoch"), s.epochLabel);
 

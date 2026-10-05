@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCoordinator, createCoordinatorView } from '../server/lib/coordinator.js';
+import { createCoordinator, createCoordinatorView, HERDER_SYSTEM_PROMPT } from '../server/lib/coordinator.js';
 import { createSlotManager } from '../server/lib/slots.js';
 import { createMockFeeSource, createFeeLedger } from '../server/lib/ledger.js';
 import { createMockLlmProvider } from '../server/lib/llm.js';
@@ -118,4 +118,58 @@ test('ask() rejects an empty question without calling the model', async () => {
 
 test('createCoordinator requires a real llmProvider', () => {
   assert.throws(() => createCoordinator({ view: {}, llmProvider: {} }), TypeError);
+});
+
+function spyRig(text = 'an answer') {
+  const calls = [];
+  const provider = { kind: 'spy', async complete(req) { calls.push(req); return { text, mocked: true, model: null, usage: null }; } };
+  return { calls, provider };
+}
+
+test('ask() sends the Herder system prompt, with real background and the honesty rules', async () => {
+  const { ledger, slotManager } = buildRig();
+  await ledger.refresh();
+  const view = createCoordinatorView({ slotManager, ledger, getAllocation: () => computeAllocation(ledger.getSnapshot().totalUsd, DEFAULT_BUDGET_CONFIG) });
+  const { calls, provider } = spyRig();
+  const coordinator = createCoordinator({ view, llmProvider: provider });
+  await coordinator.ask('What is HashSmash?');
+
+  assert.equal(calls[0].system, HERDER_SYSTEM_PROMPT);
+  // Background a viewer actually asks about.
+  assert.match(HERDER_SYSTEM_PROMPT, /HashSmash/);
+  assert.match(HERDER_SYSTEM_PROMPT, /sha256-r31.*sha256-r32.*sha3-256-r5.*sha3-256-r6.*blake3-r1.*blake3-r2/);
+  assert.match(HERDER_SYSTEM_PROMPT, /Poseidon is not open/);
+  assert.match(HERDER_SYSTEM_PROMPT, /log2\(T\).*Lower is better/);
+  assert.match(HERDER_SYSTEM_PROMPT, /Aumasson \(@veorq\)/);
+  assert.match(HERDER_SYSTEM_PROMPT, /Khovratovich \(@Khovr\)/);
+  // Honesty and read-only rules that must never drop out.
+  assert.match(HERDER_SYSTEM_PROMPT, /Nothing from this herd has been accepted/);
+  assert.match(HERDER_SYSTEM_PROMPT, /not broken/);
+  assert.match(HERDER_SYSTEM_PROMPT, /Viewers cannot direct a RAM/);
+  assert.match(HERDER_SYSTEM_PROMPT, /read-only/);
+  assert.match(HERDER_SYSTEM_PROMPT, /do not relay messages to RAMs/);
+  // Live numbers stay out of the static prompt: they come from state.
+  assert.doesNotMatch(HERDER_SYSTEM_PROMPT, /\$\d/);
+});
+
+test('ask() gives the model room to answer after reasoning (no fixed 300-token cap)', async () => {
+  const { ledger, slotManager } = buildRig();
+  await ledger.refresh();
+  const view = createCoordinatorView({ slotManager, ledger, getAllocation: () => computeAllocation(ledger.getSnapshot().totalUsd, DEFAULT_BUDGET_CONFIG) });
+  const { calls, provider } = spyRig();
+  const coordinator = createCoordinator({ view, llmProvider: provider });
+  await coordinator.ask('Can I tell a RAM what to do?');
+  assert.ok(calls[0].maxTokens > 300);
+  assert.deepEqual(calls[0].reasoning, { effort: 'low' });
+});
+
+test('ask() treats an empty completion as no answer, not a blank reply', async () => {
+  const { ledger, slotManager } = buildRig();
+  await ledger.refresh();
+  const view = createCoordinatorView({ slotManager, ledger, getAllocation: () => computeAllocation(ledger.getSnapshot().totalUsd, DEFAULT_BUDGET_CONFIG) });
+  for (const text of ['', '   \n', null]) {
+    const coordinator = createCoordinator({ view, llmProvider: spyRig(text).provider });
+    const result = await coordinator.ask('What happens if nothing is found?');
+    assert.deepEqual(result, { ok: false, error: 'empty_answer' });
+  }
 });

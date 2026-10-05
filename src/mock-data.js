@@ -573,7 +573,13 @@ export const RAMherdAPI = {
       const n = (s) => byStatus[s] || 0;
       const running = n("running-experiment") + n("running");
       const parts = [
-        `${running} of ${summary.slotCount.active} RAMs are running an experiment, ${n("thinking")} ${n("thinking") === 1 ? "is" : "are"} thinking, ${n("idle")} ${n("idle") === 1 ? "is" : "are"} idle.`,
+        // 0 active slots (e.g. right after a restart, before fees fund one): "0 of 0
+        // RAMs are running an experiment" reads as if a herd exists and is stalled.
+        summary.slotCount.active === 0
+          ? (summary.allocation.budgetUsd < summary.allocation.usdPerSlot
+            ? `No RAMs are active yet: fees so far don't cover one $${cents(summary.allocation.usdPerSlot)} slot.`
+            : "No RAMs are active right now.")
+          : `${running} of ${summary.slotCount.active} RAMs are running an experiment, ${n("thinking")} ${n("thinking") === 1 ? "is" : "are"} thinking, ${n("idle")} ${n("idle") === 1 ? "is" : "are"} idle.`,
         "Nothing has reached HashSmash's real review queue yet in this session, and nothing from the herd has ever been accepted.",
         // ledger.totalUsd is the lifetime fee total (server/lib/ledger.js), not an
         // epoch's — so the sentence says "lifetime", not "this epoch".

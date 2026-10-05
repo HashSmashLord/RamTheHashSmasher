@@ -42,7 +42,11 @@
 //   - Off unless RAMHERD_SANDBOX=e2b. Without it no manager is built, the SDK is
 //     never imported and no network call is made, even with E2B_API_KEY set.
 //   - Sandboxes are only created by an explicit start(slotId) call (an admin
-//     route); nothing auto-starts one on slot activation.
+//     route); nothing auto-starts one on slot activation. The one exception is
+//     opt-in auto-restart (RAMHERD_SANDBOX_AUTORESTART=true, off by default):
+//     when E2B ends an active ROSTER slot's sandbox at its hard timeout,
+//     slots.js starts a fresh one for it, with backoff and a give-up limit on
+//     repeated failures. See "Auto-restart" in slots.js.
 //   - Every sandbox is created with a hard E2B-side timeout (default 15 min,
 //     RAMHERD_SANDBOX_TIMEOUT_MIN) and lifecycle onTimeout 'kill', so it dies
 //     even if this process crashes and never calls stop().
@@ -102,6 +106,12 @@ const MAX_TIMEOUT_MIN = 24 * 60; // Pro plan session cap
 const DEFAULT_MAX_CONCURRENT = 6;
 const PLAN_MAX_CONCURRENT = 100;
 const DEFAULT_RECONCILE_MS = 15_000;
+// Auto-restart backoff (slots.js): first retry after a failed restart waits the
+// base delay, each further one doubles it up to the cap; after maxFailures
+// consecutive failed restarts for one slot it stops trying.
+const DEFAULT_RESTART_BASE_DELAY_SEC = 30;
+const RESTART_MAX_DELAY_MS = 10 * 60_000;
+const DEFAULT_RESTART_MAX_FAILURES = 5;
 // A sandbox found gone this close to (or after) its hard stop ended by that timeout.
 const TIMEOUT_SLACK_MS = 30_000;
 
@@ -181,6 +191,12 @@ export function sandboxPolicy(env = process.env) {
     maxConcurrent: intInRange(env.RAMHERD_SANDBOX_MAX, DEFAULT_MAX_CONCURRENT, 1, PLAN_MAX_CONCURRENT),
     // How often (seconds) to ask E2B whether live sandboxes still run; 0 turns the check off.
     reconcileMs: intInRange(env.RAMHERD_SANDBOX_RECONCILE_SEC, DEFAULT_RECONCILE_MS / 1000, 0, 3600) * 1000,
+    // Auto-restart of a roster RAM's sandbox after E2B's hard timeout ended it.
+    // Off unless RAMHERD_SANDBOX_AUTORESTART=true exactly (each restart bills).
+    autoRestart: enabled && env.RAMHERD_SANDBOX_AUTORESTART === 'true',
+    autoRestartBaseDelayMs: intInRange(env.RAMHERD_SANDBOX_AUTORESTART_BACKOFF_SEC, DEFAULT_RESTART_BASE_DELAY_SEC, 1, 3600) * 1000,
+    autoRestartMaxDelayMs: RESTART_MAX_DELAY_MS,
+    autoRestartMaxFailures: intInRange(env.RAMHERD_SANDBOX_AUTORESTART_MAX_FAILURES, DEFAULT_RESTART_MAX_FAILURES, 1, 20),
   });
 }
 

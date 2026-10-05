@@ -92,6 +92,22 @@ test('createOpenRouterProvider falls back to its default model when a call names
   assert.equal(bodies[0].model, 'some/default');
 });
 
+test('createOpenRouterProvider keeps max_tokens 300 and no reasoning field by default', async () => {
+  const { bodies, fetchImpl } = recordingFetch();
+  const provider = createOpenRouterProvider({ apiKey: 'sk-fake', fetchImpl });
+  await provider.complete({ prompt: 'x' });
+  assert.equal(bodies[0].max_tokens, 300);
+  assert.equal('reasoning' in bodies[0], false);
+});
+
+test('createOpenRouterProvider passes a per-call maxTokens and reasoning through', async () => {
+  const { bodies, fetchImpl } = recordingFetch();
+  const provider = createOpenRouterProvider({ apiKey: 'sk-fake', fetchImpl });
+  await provider.complete({ prompt: 'x', maxTokens: 1000, reasoning: { effort: 'low' } });
+  assert.equal(bodies[0].max_tokens, 1000);
+  assert.deepEqual(bodies[0].reasoning, { effort: 'low' });
+});
+
 test('mock provider reports the model it was asked for but never calls it', async () => {
   const result = await createMockLlmProvider().complete({ prompt: 'x', model: 'qwen/qwen3.8-max-prime' });
   assert.equal(result.mocked, true);

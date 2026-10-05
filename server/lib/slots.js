@@ -65,6 +65,31 @@
 // rewrites the banner's text (coalesced: at most one write in flight per slot).
 // `waitForSandboxContext(id)` awaits the start and any pending update.
 //
+// Auto-restart (optional `autoRestart`, store.js passes it only when
+// RAMHERD_SANDBOX_AUTORESTART=true and sandboxes are on): when E2B ends an
+// active ROSTER slot's sandbox at its hard timeout (`endedBy: 'timeout'`,
+// reported through the sandbox manager's onEnded), the slot gets a fresh
+// sandbox through the same path as an admin start, so the workbench task and
+// context banner run again on it. The new sandbox starts fresh: nothing from
+// the old one (clone, terminal history) carries over. What does NOT restart:
+//   - owned (launchpad) slots, ever: they are left entirely alone;
+//   - retired slots;
+//   - a sandbox this server stopped (admin stop, retire, shutdown): status
+//     'stopped' never comes through onEnded, and an admin stop also cancels a
+//     pending restart (and an admin stop that finds the sandbox already gone
+//     is recorded as expired but does not schedule one);
+//   - `endedBy: 'provider'` (gone BEFORE its hard stop): E2B gives no reason,
+//     and it can be a person killing it from E2B's dashboard/CLI, so this is
+//     treated like a deliberate stop; a feed line says it was not restarted.
+// The first restart goes out at once. If it fails, the slot retries after
+// `baseDelayMs`, then doubling each time up to `maxDelayMs` (exponential: E2B
+// rate limits and account errors tend to clear in minutes, not seconds); after
+// `maxFailures` consecutive failures it gives up for that slot and says so in
+// the feed. A success resets the count. `setAutoRestart(false)` and
+// `stopAutoRestart()` (app shutdown; permanent) cancel every pending restart
+// timer, and nothing new is scheduled after that; an admin start or stop on a
+// slot cancels that slot's pending restart.
+//
 // Optional `costLedger` (server/lib/cost.js): when given, every real "thinking"
 // LLM call (the one place `advance()` calls `llmProvider.complete()`) reports
 // its tokens and USD cost against this slot, and against the slot's RAM id
@@ -87,6 +112,16 @@ import { contextPayload } from './sandbox-context.js';
 // checks only). It is not judged, not scored, and not submitted anywhere.
 export const SLOT_STATUSES = ['idle', 'thinking', 'running-experiment', 'validated', 'submitted', 'failed'];
 
+/**
+ * Wait before auto-restart attempt number `failures + 1`, where `failures` is
+ * how many restarts of that slot failed in a row: 0 -> at once, then
+ * base, 2*base, 4*base ... capped at `maxMs`.
+ */
+export function restartDelayMs(failures, baseMs, maxMs) {
+  if (failures <= 0) return 0;
+  return Math.min(maxMs, baseMs * 2 ** (failures - 1));
+}
+
 function freezeCopy(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -100,11 +135,14 @@ function freezeCopy(value) {
  *   sandboxContext?: typeof import('./sandbox-context.js').contextBanner|null,
  *   costLedger?: ReturnType<typeof import('./cost.js').createCostLedger>|null,
  *   modelOverride?: string|null,
+ *   autoRestart?: { enabled?: boolean, baseDelayMs?: number, maxDelayMs?: number, maxFailures?: number }|null,
+ *   setTimer?: (fn: () => void, ms: number) => any,
+ *   clearTimer?: (handle: any) => void,
  *   now?: () => string,
  *   idPrefix?: string,
  * }} opts
  */
-export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
+export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, autoRestart = null, setTimer = setTimeout, clearTimer = clearTimeout, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createSlotManager requires an llmProvider with complete()');
   }
@@ -120,6 +158,16 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
   const sandboxTasks = new Map();
   /** @type {Map<string, { sessionId: string, ready: boolean, starting: Promise<void>, inflight: Promise<void>|null, dirty: boolean }>} slot id -> its banner */
   const contexts = new Map();
+  // Auto-restart config; null when not configured (then nothing below ever schedules).
+  const restartCfg = autoRestart && sandboxManager ? {
+    enabled: autoRestart.enabled !== false,
+    baseDelayMs: autoRestart.baseDelayMs ?? 30_000,
+    maxDelayMs: autoRestart.maxDelayMs ?? 10 * 60_000,
+    maxFailures: autoRestart.maxFailures ?? 5,
+    shutDown: false,
+  } : null;
+  /** @type {Map<string, { failures: number, timer: any, nextAt: string, attempt: Promise<void>|null }>} slot id -> its pending auto-restart */
+  const restarts = new Map();
 
   function pushFeed(slot, type, message) {
     slot.feed.push({ ts: now(), type, message });
@@ -237,6 +285,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       for (const slot of toRetire) {
         slot.active = false;
         pushFeed(slot, 'retired', 'Slot retired: compute budget no longer supports it.');
+        cancelRestart(slot.id, 'the slot was retired');
         if (slot.sandbox && (slot.sandbox.status === 'starting' || slot.sandbox.status === 'running')) {
           // Fire and forget: setSlotCount stays synchronous; the outcome lands in the feed.
           stopSandbox(slot.id).catch(() => {});
@@ -400,6 +449,12 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
   async function startSandbox(id) {
     requireSandboxes();
     const slot = slots.get(id);
+    if (slot && slot.active) cancelRestart(id, 'an admin started its sandbox');
+    return startSandboxNow(id);
+  }
+
+  async function startSandboxNow(id) {
+    const slot = slots.get(id);
     if (!slot) throw new RangeError(`unknown slot id: ${id}`);
     if (!slot.active) throw new Error(`slot ${id} is retired and cannot start a sandbox`);
     if (slot.sandbox?.status === 'running') return snapshot(slot);
@@ -531,8 +586,117 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
   if (sandboxManager && typeof sandboxManager.onEnded === 'function') {
     sandboxManager.onEnded((slotId, details) => {
       const slot = slots.get(slotId);
-      if (slot) markSandboxEnded(slot, details);
+      if (slot && markSandboxEnded(slot, details)) afterSandboxEnded(slot, details);
     });
+  }
+
+  // ---- auto-restart (see the header) ----
+
+  function autoRestartActive() {
+    return Boolean(restartCfg && restartCfg.enabled && !restartCfg.shutDown);
+  }
+
+  /** Called only for a sandbox E2B ended on its own (never for a stop from here). */
+  function afterSandboxEnded(slot, details) {
+    if (!autoRestartActive() || slot.kind !== 'roster' || !slot.active) return;
+    if (details.endedBy !== 'timeout') {
+      pushFeed(slot, 'sandbox-autorestart-skipped', `Not auto-restarting: desktop sandbox ${details.sessionId} ended before its hard stop, which can be a deliberate kill on E2B's side. An admin can start a new one.`);
+      return;
+    }
+    scheduleRestart(slot, 0, null);
+  }
+
+  function scheduleRestart(slot, failures, lastError) {
+    const delay = restartDelayMs(failures, restartCfg.baseDelayMs, restartCfg.maxDelayMs);
+    const entry = { failures, timer: null, nextAt: new Date(Date.now() + delay).toISOString(), attempt: null };
+    restarts.set(slot.id, entry);
+    entry.timer = setTimer(() => {
+      entry.timer = null;
+      entry.attempt = attemptRestart(slot, entry);
+    }, delay);
+    entry.timer?.unref?.();
+    pushFeed(slot, 'sandbox-autorestart-scheduled', failures === 0
+      ? 'Auto-restart: starting a fresh desktop sandbox for this RAM (the old one is gone; nothing on it carries over).'
+      : `Auto-restart attempt ${failures} failed (${lastError}); retrying in ${Math.round(delay / 1000)}s (${failures}/${restartCfg.maxFailures} failures before giving up).`);
+  }
+
+  /** One restart attempt. Never rejects; failures schedule the next try or give up. */
+  async function attemptRestart(slot, entry) {
+    if (restarts.get(slot.id) !== entry) return; // cancelled meanwhile
+    if (!autoRestartActive() || slot.kind !== 'roster' || !slot.active) {
+      restarts.delete(slot.id);
+      return;
+    }
+    try {
+      await startSandboxNow(slot.id);
+      if (restarts.get(slot.id) === entry) restarts.delete(slot.id);
+    } catch (err) {
+      if (restarts.get(slot.id) !== entry) return; // an admin or shutdown took over meanwhile
+      const failures = entry.failures + 1;
+      if (!autoRestartActive() || !slot.active) {
+        restarts.delete(slot.id);
+        return;
+      }
+      if (failures >= restartCfg.maxFailures) {
+        restarts.delete(slot.id);
+        pushFeed(slot, 'sandbox-autorestart-gave-up', `Auto-restart gave up after ${failures} failed attempts in a row; last error: ${err.message}. No more automatic restarts for this RAM until an admin starts its sandbox.`);
+        return;
+      }
+      scheduleRestart(slot, failures, err.message);
+    }
+  }
+
+  /** Drops a slot's pending restart (clears its timer). Returns whether one was pending. */
+  function cancelRestart(id, why) {
+    const entry = restarts.get(id);
+    if (!entry) return false;
+    restarts.delete(id);
+    if (entry.timer) clearTimer(entry.timer);
+    const slot = slots.get(id);
+    if (slot && why) pushFeed(slot, 'sandbox-autorestart-cancelled', `Auto-restart cancelled: ${why}.`);
+    return true;
+  }
+
+  function cancelAllRestarts(why) {
+    for (const id of [...restarts.keys()]) cancelRestart(id, why);
+  }
+
+  /**
+   * Turns auto-restart on or off at runtime (admin). Turning it on only works
+   * when it was configured (RAMHERD_SANDBOX_AUTORESTART=true) and the app is
+   * not shutting down; turning it off cancels every pending restart.
+   * @param {boolean} enabled
+   */
+  function setAutoRestart(enabled) {
+    if (!restartCfg) throw new Error('auto-restart is not configured (set RAMHERD_SANDBOX_AUTORESTART=true with RAMHERD_SANDBOX=e2b)');
+    if (enabled && restartCfg.shutDown) throw new Error('auto-restart was stopped for shutdown');
+    restartCfg.enabled = Boolean(enabled);
+    if (!restartCfg.enabled) cancelAllRestarts('auto-restart was switched off');
+    return autoRestartStatus();
+  }
+
+  /** Permanent off switch for shutdown: cancels every pending restart; nothing is scheduled again. */
+  function stopAutoRestart() {
+    if (!restartCfg) return;
+    restartCfg.shutDown = true;
+    cancelAllRestarts('the server is shutting down');
+  }
+
+  function autoRestartStatus() {
+    return {
+      configured: Boolean(restartCfg),
+      active: autoRestartActive(),
+      maxFailures: restartCfg?.maxFailures ?? null,
+      baseDelayMs: restartCfg?.baseDelayMs ?? null,
+      maxDelayMs: restartCfg?.maxDelayMs ?? null,
+      pending: [...restarts].map(([slotId, e]) => ({ slotId, failures: e.failures, nextAt: e.nextAt, attempting: Boolean(e.attempt) })),
+    };
+  }
+
+  /** Test/operator hook: resolves once the slot's in-flight restart attempt (if any) settled. */
+  async function waitForSandboxRestart(id) {
+    const entry = restarts.get(id);
+    if (entry?.attempt) await entry.attempt;
   }
 
   /**
@@ -545,6 +709,8 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     requireSandboxes();
     const slot = slots.get(id);
     if (!slot) throw new RangeError(`unknown slot id: ${id}`);
+    // A human stopping this desk wins over any pending auto-restart.
+    cancelRestart(id, 'an admin stopped this sandbox');
     try {
       const result = await sandboxManager.stop(id);
       if (result && slot.sandbox) {
@@ -578,7 +744,11 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     getSandboxStream,
     waitForSandboxTask,
     waitForSandboxContext,
+    waitForSandboxRestart,
     reconcileSandboxes,
+    setAutoRestart,
+    stopAutoRestart,
+    autoRestartStatus,
     setSlotCount,
     createOwnedSlot,
     getSlots,

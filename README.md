@@ -173,6 +173,10 @@ to override. It is still the next step for **cost**.
 | `RAMHERD_SANDBOX_TIMEOUT_MIN` | 15 | E2B-side hard kill timeout per sandbox (1 to 1440) |
 | `RAMHERD_SANDBOX_MAX` | 6 | max concurrent sandboxes from this server (1 to 100) |
 | `RAMHERD_SANDBOX_RECONCILE_SEC` | 15 | how often, while any sandbox is live, to ask E2B whether each still runs (0 turns the check off) |
+| `RAMHERD_SANDBOX_AUTORESTART` | unset (off) | `true` = when E2B's hard timeout ends an active roster RAM's sandbox, start a fresh one (workbench task + banner rerun; nothing carries over). Never for owned RAMs, admin-stopped sandboxes, or ones gone before their hard stop. Switch at runtime: `POST /api/admin/sandboxes/autorestart {"enabled": false}` |
+| `RAMHERD_SANDBOX_AUTORESTART_BACKOFF_SEC` | 30 | wait before retrying a failed restart; doubles each retry, capped at 10 min |
+| `RAMHERD_SANDBOX_AUTORESTART_MAX_FAILURES` | 5 | consecutive failed restarts for one RAM before it gives up (feed line says so) |
+| `RAMHERD_AUTO_SEED` | unset (off) | `true` = on boot (`server/index.js`, `server/lib/autoseed.js`), set the mock fee ledger to the smallest total that funds the full roster (`ACTIVE_TRACKS.length` RAMs, capped by `RAMHERD_MAX_SLOTS`) and reallocate, before the server listens; then, if sandboxes are on, start one per active roster slot in the background. Same calls as `POST /api/admin/fees` + `/reallocate` + `/slots/:id/sandbox/start`. Roster only, never lowers a higher fee total, a failed start is logged + on that slot's feed and the rest continue. Every sandbox bills. Proven 2026-10-05 on a real local server with real E2B |
 
 Admin routes (`x-admin-token`): `POST /api/admin/slots/:id/sandbox/start`, `POST /api/admin/slots/:id/sandbox/stop`,
 `GET /api/admin/slots/:id/sandbox` (stream URL plus session details).

@@ -84,7 +84,13 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
 
   // Each slot calls its own roster model unless RAMHERD_LLM_MODEL forces one
   // model on all of them. Mock vs live is still only llm.js's decision.
-  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, costLedger, modelOverride: modelOverride(env) });
+  // Auto-restart of roster RAMs' sandboxes after E2B's hard timeout: opt-in
+  // with RAMHERD_SANDBOX_AUTORESTART=true on top of RAMHERD_SANDBOX=e2b (off by
+  // default; every restart bills). Owned slots are never auto-restarted.
+  const autoRestart = sandboxManager && sandbox.autoRestart
+    ? { enabled: true, baseDelayMs: sandbox.autoRestartBaseDelayMs, maxDelayMs: sandbox.autoRestartMaxDelayMs, maxFailures: sandbox.autoRestartMaxFailures }
+    : null;
+  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, costLedger, modelOverride: modelOverride(env), autoRestart });
   const ideaQueue = createIdeaQueue();
   // Pinata, opt-in with PINATA_JWT: a launchpad RAM's token metadata gets
   // pinned to IPFS instead of only living at this server's own endpoint.
