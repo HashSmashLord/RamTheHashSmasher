@@ -56,11 +56,22 @@ export function creatorFeeLamportsOf(tx, treasury) {
 
 /**
  * Thin adapter over a real @solana/web3.js Connection -- same pattern as
- * launchverify.js's connectionAdapter, and the same reason: getParsedTransaction,
- * not getTransaction, is the one that returns the jsonParsed shape this module
- * actually reads.
+ * launchverify.js's connectionAdapter, and the same reason: a jsonParsed shape,
+ * not the raw compiled-message one plain getTransaction returns.
+ *
+ * getTransaction itself goes around the library's own getParsedTransaction, not
+ * through it: a real dry run against the real treasury 2026-10-06 hit real
+ * transactions at version 1 that the installed @solana/web3.js (1.98.4) accepts
+ * the RPC returning (maxSupportedTransactionVersion raised to 1 gets it past the
+ * RPC) but then refuses itself -- its own response schema only knows the literal
+ * versions "legacy" and 0, so it throws ("expected a union of literal | literal,
+ * but received: 1") on the exact transactions this module most needs to count,
+ * silently undercounting every real fee inside one. A raw JSON-RPC call bypasses
+ * that client-side schema entirely; the real response shape (meta.preBalances,
+ * meta.logMessages, transaction.message.accountKeys) is identical either way, and
+ * `creatorFeeLamportsOf` above already reads exactly that shape.
  */
-export function connectionAdapter(web3Connection) {
+export function connectionAdapter(web3Connection, { fetchImpl = fetch } = {}) {
   return {
     // getSignaturesForAddress needs a real PublicKey instance, not a base58 string
     // (confirmed real 2026-10-06: a plain string throws "address.toBase58 is not a
@@ -72,11 +83,33 @@ export function connectionAdapter(web3Connection) {
       return web3Connection.getSignaturesForAddress(key, opts);
     },
     async getTransaction(signature) {
-      // 1, not launchverify.js's 0: a real dry run against the real treasury 2026-10-06
-      // hit real transactions at version 1 (pump.fun's fee-sharing instruction itself
-      // appears to run inside a v1 transaction, unlike a plain launch's v0), and 0 made
-      // the RPC refuse those outright -- undercounting every real fee inside one.
-      return web3Connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 1 });
+      // The raw fetch below has none of @solana/web3.js's own built-in 429 retry/backoff
+      // (that library-internal retry is exactly what made its getParsedTransaction slow
+      // but resilient) -- real-tested 2026-10-06: without replacing it here, a public
+      // RPC's rate limit turns into real, silent undercounting (one dry run lost 18 of
+      // ~500 transactions to bare 429s in under 3 seconds, versus 2 lost to the version-1
+      // schema bug before). maxRetries=5 with the same delay schedule web3.js itself logs
+      // (500ms, 1s, 2s, 4s, 8s) buys back that resilience without this module depending on
+      // the library's own retry internals.
+      let res;
+      for (let attempt = 0; ; attempt++) {
+        res = await fetchImpl(web3Connection.rpcEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getTransaction',
+            params: [signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 1 }],
+          }),
+        });
+        if (res.status !== 429 || attempt >= 5) break;
+        await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+      }
+      if (!res.ok) throw new Error(`getTransaction RPC call failed: ${res.status}`);
+      const body = await res.json();
+      if (body.error) throw new Error(`getTransaction RPC error: ${body.error.message || JSON.stringify(body.error)}`);
+      return body.result ?? null;
     },
   };
 }

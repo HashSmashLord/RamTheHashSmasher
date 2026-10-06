@@ -4,7 +4,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { creatorFeeLamportsOf, createPumpFeeSource, createCoinGeckoPriceSource, pumpFeePolicy } from '../server/lib/pumpfee.js';
+import { creatorFeeLamportsOf, createPumpFeeSource, createCoinGeckoPriceSource, connectionAdapter, pumpFeePolicy } from '../server/lib/pumpfee.js';
 
 const TREASURY = 'Treasury111111111111111111111111111111111';
 const OTHER = 'Other1111111111111111111111111111111111111';
@@ -153,6 +153,88 @@ test('createCoinGeckoPriceSource: a real-shaped response parses; a bad one throw
 
   const zero = createCoinGeckoPriceSource({ fetchImpl: async () => ({ ok: true, json: async () => ({ solana: { usd: 0 } }) }) });
   await assert.rejects(zero.fetchSolUsd(), 'a non-positive price is never usable, never silently accepted');
+});
+
+function fakeWeb3Connection({ rpcEndpoint = 'https://fake-rpc.example', getSignaturesForAddress = async () => [] } = {}) {
+  return { rpcEndpoint, getSignaturesForAddress };
+}
+
+test('connectionAdapter.getSignaturesForAddress: converts a plain base58 string to a real PublicKey before calling the library', async () => {
+  let seenAddress = null;
+  const web3Connection = fakeWeb3Connection({
+    getSignaturesForAddress: async (addr, opts) => { seenAddress = addr; return [{ signature: 'x' }]; },
+  });
+  const adapter = connectionAdapter(web3Connection);
+  const realLookingAddress = '5M6Pc7ossZ8cuQAjnexH9vv2axEJoncgZ3C6uD2PJqHm'; // a real, valid base58 pubkey shape; TREASURY above is not
+  const result = await adapter.getSignaturesForAddress(realLookingAddress, { limit: 10 });
+  assert.equal(typeof seenAddress, 'object', 'a real PublicKey instance, not the bare string');
+  assert.equal(seenAddress.toBase58(), realLookingAddress);
+  assert.deepEqual(result, [{ signature: 'x' }]);
+});
+
+test('connectionAdapter.getTransaction: a raw JSON-RPC call, not the library\'s getParsedTransaction -- real fix for version-1 transactions the installed web3.js schema rejects', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts) => {
+    calls.push({ url, body: JSON.parse(opts.body) });
+    return { ok: true, async json() { return { jsonrpc: '2.0', id: 1, result: distributeTx() }; } };
+  };
+  const adapter = connectionAdapter(fakeWeb3Connection({ rpcEndpoint: 'https://fake-rpc.example' }), { fetchImpl });
+  const tx = await adapter.getTransaction('sig123');
+  assert.equal(calls[0].url, 'https://fake-rpc.example');
+  assert.equal(calls[0].body.method, 'getTransaction');
+  assert.deepEqual(calls[0].body.params, ['sig123', { encoding: 'jsonParsed', maxSupportedTransactionVersion: 1 }]);
+  assert.deepEqual(tx, distributeTx());
+});
+
+test('connectionAdapter.getTransaction: retries a real 429 with backoff instead of silently undercounting, same resilience the raw fetch otherwise loses', async () => {
+  let calls = 0;
+  const delays = [];
+  const realSetTimeout = global.setTimeout;
+  global.setTimeout = (fn, ms) => { delays.push(ms); return realSetTimeout(fn, 0); }; // real backoff math, no real wait in the test
+  try {
+    const fetchImpl = async () => {
+      calls++;
+      if (calls < 3) return { status: 429, ok: false };
+      return { ok: true, status: 200, async json() { return { jsonrpc: '2.0', id: 1, result: distributeTx() }; } };
+    };
+    const adapter = connectionAdapter(fakeWeb3Connection(), { fetchImpl });
+    const tx = await adapter.getTransaction('sig');
+    assert.equal(calls, 3, 'succeeded on the 3rd attempt after two real 429s');
+    assert.deepEqual(delays, [500, 1000], 'backoff doubles each retry');
+    assert.deepEqual(tx, distributeTx());
+  } finally {
+    global.setTimeout = realSetTimeout;
+  }
+});
+
+test('connectionAdapter.getTransaction: gives up after repeated 429s rather than retrying forever', async () => {
+  const realSetTimeout = global.setTimeout;
+  global.setTimeout = (fn) => realSetTimeout(fn, 0);
+  try {
+    let calls = 0;
+    const adapter = connectionAdapter(fakeWeb3Connection(), { fetchImpl: async () => { calls++; return { status: 429, ok: false }; } });
+    await assert.rejects(adapter.getTransaction('sig'), /429/);
+    assert.equal(calls, 6, '1 initial try + 5 retries, then it stops');
+  } finally {
+    global.setTimeout = realSetTimeout;
+  }
+});
+
+test('connectionAdapter.getTransaction: a real RPC error (bad status or a JSON-RPC error body) throws rather than returning something that silently counts as 0', async () => {
+  const badStatus = connectionAdapter(fakeWeb3Connection(), { fetchImpl: async () => ({ ok: false, status: 500 }) });
+  await assert.rejects(badStatus.getTransaction('s'));
+
+  const errorBody = connectionAdapter(fakeWeb3Connection(), {
+    fetchImpl: async () => ({ ok: true, async json() { return { jsonrpc: '2.0', id: 1, error: { code: -1, message: 'boom' } }; } }),
+  });
+  await assert.rejects(errorBody.getTransaction('s'), /boom/);
+});
+
+test('connectionAdapter.getTransaction: a real "not found yet" response (result: null) passes through as null, never an invented transaction', async () => {
+  const adapter = connectionAdapter(fakeWeb3Connection(), {
+    fetchImpl: async () => ({ ok: true, async json() { return { jsonrpc: '2.0', id: 1, result: null }; } }),
+  });
+  assert.equal(await adapter.getTransaction('s'), null);
 });
 
 test('pumpFeePolicy: off unless RAMHERD_FEE_SOURCE is exactly "onchain" -- the mock stays the default', () => {
