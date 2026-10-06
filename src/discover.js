@@ -5,13 +5,12 @@
 // Data through RAMherdAPI.launchpad only; status filtering and link-building are pure
 // (src/discover-view.js), so they're covered by node tests without a DOM.
 
-import { RAMherdAPI, updateDemoNote } from "./mock-data.js";
+import { RAMherdAPI } from "./mock-data.js";
 import { initNav } from "./nav.js";
 import { $, ramHref } from "./ui.js";
 import { launchedRams, pumpFunUrl, ramRoundLabel, tokenImageUrl } from "./discover-view.js";
 
 initNav();
-updateDemoNote("This list is the real launchpad, polled live from the server — not a demonstration feed.");
 
 const grid = $("discover-grid");
 const empty = $("discover-empty");
