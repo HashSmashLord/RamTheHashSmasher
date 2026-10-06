@@ -5,8 +5,9 @@
 // Data through RAMherdAPI only; the desk stream through the board's shared feed.
 
 import { RAMherdAPI } from "./mock-data.js";
+import { pumpFunUrl } from "./discover-view.js";
 import { createDeskViewer } from "./sandbox-viewer.js";
-import { $, JUDGE_FULL, JUDGE_WORD, SCORE_TERM, STATUS_WORD, glyph, print, roundShort, scoreText, slotIdFor, writeNowLine, writePath } from "./ui.js";
+import { $, JUDGE_FULL, JUDGE_WORD, SCORE_TERM, STATUS_WORD, glyph, print, roundShort, scoreText, shortAddress, slotIdFor, solFromLamports, writeNowLine, writePath } from "./ui.js";
 
 // One line per desk state (sandbox-viewer.js deskWhy), the full version: this page has
 // room. `idle` is the usual case: never had a desk. The others say what its last desk
@@ -82,18 +83,47 @@ export function mountRamPage({ feed }) {
       ["Approach", detail.approach],
       ["Round", `${roundShort(detail)} (${detail.trackLabel})`],
       ["Candidate path", detail.lanePath, true],
-      ["HashSmash review", `${reviewStatus} ${leaderboardLink}`],
+      ["HashSmash review", `${reviewStatus} ${leaderboardLink}`, false, true],
       [SCORE_TERM, scoreText(detail.log2T) ?? "not scored yet"],
       ["Server slot", slotIdFor(detail)],
     ];
+    // Launched-through-the-launchpad RAMs only (roster RAMs have no token at all): the
+    // real contract address, a link to it on-chain and on pump.fun, and how much its own
+    // creator fees have actually generated so far -- real numbers off its own funding
+    // record (server/lib/rams.js / ramfunds.js), never estimated.
+    if (detail.token) {
+      const mint = detail.token.mint;
+      const pump = pumpFunUrl(detail);
+      const feesSol = detail.funding ? solFromLamports(detail.funding.creatorFeesLamports) : null;
+      rows.push(
+        ["Token", `${detail.token.name} ($${detail.token.symbol})`],
+        [
+          "Contract",
+          mint
+            ? `<a class="ext" href="https://solscan.io/token/${encodeURIComponent(mint)}" target="_blank" rel="noopener noreferrer" title="${mint}">${shortAddress(mint)}<span class="sr-only"> (opens in a new tab)</span></a>`
+            : "not minted yet",
+          false,
+          true,
+        ],
+        [
+          "pump.fun",
+          pump
+            ? `<a class="ext" href="${pump}" target="_blank" rel="noopener noreferrer">View on pump.fun<span class="sr-only"> (opens in a new tab)</span></a>`
+            : "not minted yet",
+          false,
+          true,
+        ],
+        ["Creator fees generated", feesSol !== null ? `${feesSol} SOL` : "0 SOL so far"],
+      );
+    }
     parts.facts.innerHTML = "";
-    for (const [k, v, isPath] of rows) {
+    for (const [k, v, isPath, isHtml] of rows) {
       const div = document.createElement("div");
       const dt = document.createElement("dt");
       dt.textContent = k;
       const dd = document.createElement("dd");
       if (isPath) writePath(dd, v);
-      else if (k === "HashSmash review") dd.innerHTML = v;
+      else if (isHtml) dd.innerHTML = v;
       else dd.textContent = v;
       div.append(dt, dd);
       parts.facts.append(div);

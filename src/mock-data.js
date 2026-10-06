@@ -561,8 +561,17 @@ export const RAMherdAPI = {
         };
       }
       const agent = realSlotToAgent(found.slot, { withHistory: true });
-      // Launched through the launchpad: its page lives at its slot id from here on.
-      if (found.kind === "launched") agent.launchpadRamId = found.ram.id;
+      // Launched through the launchpad: its page lives at its slot id from here on, and it
+      // carries its own real token/funding facts -- the contract address, the pump.fun link,
+      // and how much its own creator fees have actually generated -- all straight from the
+      // same real RAM record (server/lib/rams.js, withFunding()) ram-resolve.js already fetched
+      // to find it, never guessed or re-derived.
+      if (found.kind === "launched") {
+        const { ram } = found;
+        agent.launchpadRamId = ram.id;
+        agent.token = ram.token;
+        agent.funding = ram.funding;
+      }
       return agent;
     }
     await simulatedLatency();

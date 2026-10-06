@@ -45,6 +45,15 @@ export const money = (n) => `$${n.toFixed(2)}`;
 export const $ = (id) => document.getElementById(id);
 export const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+/** "AbCd…WxYz": the middle of a long address/signature elided; short strings pass through. */
+export const shortAddress = (a) => (typeof a === "string" && a.length > 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a || "");
+
+/** Real integer lamports -> a SOL amount string, trimmed of trailing zeros (never "0.2000000000"). */
+export function solFromLamports(lamports) {
+  if (typeof lamports !== "number" || !Number.isFinite(lamports)) return null;
+  return (lamports / 1e9).toFixed(9).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 // "SHA-256 r31": the feed's roundLabel, or derived from "SHA-256 · r31 · exploratory".
 export function roundShort(agent) {
   if (agent.roundLabel) return agent.roundLabel;

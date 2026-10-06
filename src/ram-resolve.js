@@ -33,7 +33,19 @@ async function getJson(fetchImpl, path) {
 export async function resolveRamId(id, { fetchImpl = globalThis.fetch } = {}) {
   const enc = encodeURIComponent(id);
   const direct = await getJson(fetchImpl, `/api/slots/${enc}`);
-  if (direct) return { kind: "slot", slot: direct.slot };
+  if (direct) {
+    // An owned slot (direct.slot.ramId set) is always a launched RAM -- this is how a
+    // real visitor actually reaches this page almost every time (every board tile and
+    // Discover card links by slot id, not by the launchpad id), so "launched" has to
+    // cover this path too, not just the slower launchpad-id lookup below, or the token/
+    // contract/fee facts on its own page would only ever show up for the one rare case
+    // of someone typing the original ram-XXXX id in by hand.
+    if (direct.slot.ramId) {
+      const found = await getJson(fetchImpl, `/api/launchpad/rams/${encodeURIComponent(direct.slot.ramId)}`);
+      if (found) return { kind: "launched", slot: direct.slot, ram: found.ram };
+    }
+    return { kind: "slot", slot: direct.slot };
+  }
 
   const found = await getJson(fetchImpl, `/api/launchpad/rams/${enc}`);
   if (!found) return null;

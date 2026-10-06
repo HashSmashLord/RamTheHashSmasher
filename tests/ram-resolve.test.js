@@ -30,6 +30,19 @@ test('a slot id resolves straight to its slot; the launchpad is never asked', as
   assert.deepEqual(f.calls, ['/api/slots/slot-4']);
 });
 
+test('an owned slot (ramId set) resolves as "launched" too, not the bare "slot" shape -- every board tile and Discover card links by slot id, so this is the path a real visitor actually takes', async () => {
+  const ram = { id: 'ram-0007', status: 'active', slotId: 'slot-6', token: { name: 'Keccak Knocker' } };
+  const f = fakeFetch({
+    '/api/slots/slot-6': { slot: { id: 'slot-6', kind: 'owned', ramId: 'ram-0007' } },
+    '/api/launchpad/rams/ram-0007': { ram },
+  });
+  const r = await resolveRamId('slot-6', { fetchImpl: f.impl });
+  assert.equal(r.kind, 'launched');
+  assert.equal(r.slot.id, 'slot-6');
+  assert.equal(r.ram.id, 'ram-0007');
+  assert.deepEqual(f.calls, ['/api/slots/slot-6', '/api/launchpad/rams/ram-0007']);
+});
+
 test('an active launchpad id: slot 404 -> launchpad record -> its own slot', async () => {
   const ram = { id: 'ram-0001', status: 'active', slotId: 'slot-6' };
   const f = fakeFetch({ '/api/launchpad/rams/ram-0001': { ram }, '/api/slots/slot-6': { slot: { id: 'slot-6', kind: 'owned' } } });
@@ -100,8 +113,12 @@ test('against a real server: the same launchpad id resolves before and after the
   assert.equal(r.slot.id, active.slotId);
   assert.equal(r.slot.kind, 'owned');
   assert.equal(r.slot.ramId, ram.id);
-  // And the slot id itself still resolves directly.
-  assert.equal((await resolveRamId(active.slotId, { fetchImpl })).kind, 'slot');
+  // And the slot id itself -- the id every real link on the site actually uses -- resolves
+  // the same "launched" way, same token/funding facts attached, not the bare slot shape.
+  const bySlot = await resolveRamId(active.slotId, { fetchImpl });
+  assert.equal(bySlot.kind, 'launched');
+  assert.equal(bySlot.slot.id, active.slotId);
+  assert.equal(bySlot.ram.id, ram.id);
 
   // The roster ceiling grew by one with that launch, visible on the public route.
   const { allocation } = await (await s.get('/api/allocation')).json();
