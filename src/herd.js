@@ -33,8 +33,16 @@ RAMherdAPI.subscribeLive(tick, 4000);
 
 // Every screen re-checks its stream every 10s; the iframe is only touched when the
 // stream itself changes, so a poll never reloads a live desk.
+//
+// Same real scroll-jump fix as board.js's own render() (2026-10-06): refreshDesks()/
+// refreshDesk() can change a tile's content (e.g. switching between "no desk running"
+// text and a live iframe), which reflows the grid and silently moves a scrolled
+// reader's position -- a second, separate interval from the 4s fleet tick, so it needed
+// its own snapshot-and-restore; fixing render() alone left this one still jumping.
 setInterval(async () => {
+  const scrollY = window.scrollY;
   await feed.refresh();
   board.refreshDesks();
   page.refreshDesk();
+  if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
 }, DESK_POLL_MS);
