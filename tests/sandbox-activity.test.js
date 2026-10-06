@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createSandboxManager, sandboxPolicy } from '../server/lib/sandbox.js';
-import { createSlotManager, LOOP_THINKING_SYSTEM, LOOP_DRAFT_SYSTEM } from '../server/lib/slots.js';
+import { createSlotManager, LOOP_THINKING_SYSTEM, LOOP_DRAFT_SYSTEM, LOOP_VERIFY_SYSTEM } from '../server/lib/slots.js';
 import { createMockLlmProvider } from '../server/lib/llm.js';
 import { createStore } from '../server/store.js';
 import { loadConfig } from '../server/config.js';
@@ -774,10 +774,11 @@ test('a dedicated drafting call only ever happens after a real search, and asks 
   await r.step(); // idle -> thinking: asks for a search, and a draft
   await r.step(); // thinking -> running-experiment (a real browse already happened inside step 1)
   assert.ok(r.m.getSlot('slot-0').feed.some((f) => f.type === 'sandbox-browse'), 'the real browse must have actually happened');
-  await r.step(); // running-experiment -> the dedicated drafting call fires now
-  assert.equal(r.llm.calls.length, 2);
+  await r.step(); // running-experiment -> the dedicated drafting call fires now, then the verification call
+  assert.equal(r.llm.calls.length, 3);
   assert.equal(r.llm.calls[1].system, LOOP_DRAFT_SYSTEM);
   assert.match(r.llm.calls[1].prompt, /you said/i);
+  assert.equal(r.llm.calls[2].system, LOOP_VERIFY_SYSTEM);
 });
 
 test('peer-review-only grounding (no literature search) is enough to make a drafting attempt eligible, and a real competitor PR can be honestly cited', async () => {
@@ -797,9 +798,10 @@ test('peer-review-only grounding (no literature search) is enough to make a draf
   const slotMid = r.m.getSlot('slot-0');
   assert.ok(slotMid.feed.some((f) => f.type === 'sandbox-peer-review'), 'the real peer lookup must have actually happened');
   assert.equal(slotMid.feed.some((f) => f.type === 'sandbox-browse'), false, 'no literature search happened this cycle');
-  await r.step(); // running-experiment -> the dedicated drafting call fires (peer review alone is enough grounding)
-  assert.equal(r.llm.calls.length, 2);
+  await r.step(); // running-experiment -> the dedicated drafting call fires (peer review alone is enough grounding), then verification
+  assert.equal(r.llm.calls.length, 3);
   assert.equal(r.llm.calls[1].system, LOOP_DRAFT_SYSTEM);
+  assert.equal(r.llm.calls[2].system, LOOP_VERIFY_SYSTEM);
   assert.equal(runner.calls.length, 1);
   assert.equal(runner.calls[0].loopDraft.citedPaper.kind, 'peer-pr');
   assert.equal(runner.calls[0].loopDraft.citedPaper.number, 302);
@@ -870,6 +872,79 @@ test('a genuinely valid drafted claim reaches the real pipeline, forced to stay 
   assert.match(slot.feed.at(-1).message, /stays a draft/);
 });
 
+test('a drafted claim that genuinely passes adversarial verification reaches submission_state "ready" -- the real, intended path to a live submission', async () => {
+  const runner = stubPipelineRunner();
+  const r = rig({
+    pipelineRunner: runner,
+    answers: [
+      'Trying a tighter filter.\nSEARCH: sha256 reduced round collision\nDRAFT: I might have something.',
+      VALID_DRAFT_ANSWER,
+      'VERDICT: PASS\nREASON: The extrapolation genuinely follows from the cited paper and the scope matches this exact target.',
+    ],
+    activeLoop: { browseEvery: 1 },
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // idle -> thinking + real browse
+  await r.step(); // thinking -> running-experiment
+  await r.step(); // running-experiment -> drafting call -> valid -> verification call -> PASS -> real pipeline
+  assert.equal(r.llm.calls.length, 3, 'thinking, drafting, verification');
+  assert.equal(r.llm.calls[2].system, LOOP_VERIFY_SYSTEM);
+  assert.match(r.llm.calls[2].prompt, /STATEMENT:/);
+  assert.match(r.llm.calls[2].prompt, /IACR ePrint 2026\/1120/);
+  const draft = runner.calls[0].loopDraft;
+  assert.equal(draft.verification.pass, true);
+  assert.match(draft.verification.reason, /extrapolation genuinely follows/);
+  const slot = r.m.getSlot('slot-0');
+  assert.ok(slot.feed.some((f) => f.type === 'pipeline-loop-verify-passed' && /could not find a real issue/.test(f.message)));
+});
+
+test('a drafted claim that fails adversarial verification stays a draft, same as before this mechanism existed', async () => {
+  const runner = stubPipelineRunner();
+  const r = rig({
+    pipelineRunner: runner,
+    answers: [
+      'Trying a tighter filter.\nSEARCH: sha256 reduced round collision\nDRAFT: I might have something.',
+      VALID_DRAFT_ANSWER,
+      'VERDICT: FAIL\nREASON: The extrapolation claims more than the cited title alone could support.',
+    ],
+    activeLoop: { browseEvery: 1 },
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step();
+  await r.step();
+  await r.step();
+  const draft = runner.calls[0].loopDraft;
+  assert.equal(draft.verification.pass, false);
+  assert.match(draft.verification.reason, /claims more than the cited title/);
+  const slot = r.m.getSlot('slot-0');
+  assert.ok(slot.feed.some((f) => f.type === 'pipeline-loop-verify-failed' && /found a real problem/.test(f.message)));
+});
+
+test('a mocked (dry-run) verification response is treated as a fail, never a real pass', async () => {
+  const runner = stubPipelineRunner();
+  const calls = [];
+  const provider = {
+    kind: 'openrouter',
+    async complete(req) {
+      calls.push(req);
+      if (req.system === LOOP_VERIFY_SYSTEM) return { text: 'VERDICT: PASS\nREASON: looks fine', mocked: true, model: req.model, usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: null } };
+      if (req.system === LOOP_DRAFT_SYSTEM) return { text: VALID_DRAFT_ANSWER, mocked: false, model: req.model, usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, costUsd: 0.001 } };
+      return { text: 'Trying a tighter filter.\nSEARCH: sha256 reduced round collision\nDRAFT: I might have something.', mocked: false, model: req.model, usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, costUsd: 0.001 } };
+    },
+  };
+  const r = rig({ pipelineRunner: runner, llm: { calls, provider }, activeLoop: { browseEvery: 1 } });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step();
+  await r.step();
+  await r.step();
+  const draft = runner.calls[0].loopDraft;
+  assert.equal(draft.verification.pass, false, 'a mocked PASS is still never a real pass');
+  assert.match(draft.verification.reason, /mock \(dry-run\) answer/);
+});
+
 test('mocked answers are never treated as a real drafting decision; the loop keeps running on the normal pipeline instead', async () => {
   const runner = stubPipelineRunner();
   // fakeLiveLlm reports mocked:false for every answer by default; simulate a
@@ -912,7 +987,7 @@ test('drafting attempts are bounded: after maxDraftAttemptsPerSession, further D
   await r.step(); // idle -> thinking
   await r.step(); // thinking -> running-experiment
   await r.step(); // running-experiment -> straight to the normal pipeline, no drafting call
-  assert.equal(r.llm.calls.length, 3, 'thinking, drafting #1, thinking #2 — no drafting #2');
+  assert.equal(r.llm.calls.length, 4, 'thinking, drafting #1, verification #1 (the draft passed), thinking #2 — no drafting #2');
   assert.equal(runner.calls.length, 2);
   assert.equal(runner.calls[1].loopDraft, null, 'the cap held: cycle 2 got the ordinary harness draft');
 });

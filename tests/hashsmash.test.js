@@ -652,6 +652,50 @@ test('loop-authored draft: a genuinely valid attempt is written, passes real che
   assert.deepEqual(rest, [], 'a loop-authored draft never proceeds to judge or score either');
 });
 
+test('loop-authored draft: a genuine adversarial-verification PASS is the only thing that ever reaches submission_state "ready" -- real, end to end', { skip: SKIP }, async () => {
+  const r = runner();
+  const attempt = validAttempt();
+  const citedPaper = REAL_SEARCH_RESULTS[0];
+  const verification = { pass: true, reason: 'The extrapolation genuinely follows from the cited result and the scope matches this exact target.' };
+
+  const res = await r.runCycle({ slotId: 'loop-draft-verified', track: TRACK, loopDraft: { attempt, citedPaper, verification } });
+  assert.equal(res.precheck.ok, true, res.precheck.errors.join('; '));
+
+  const claim = JSON.parse(readFileSync(join(res.candidateDir, 'claim.json'), 'utf8'));
+  assert.equal(claim.submission_state, 'ready', 'a genuine verification PASS is the one thing that lets this leave draft state');
+  assert.equal(claim.heuristics[0].role, 'score-critical');
+  assert.ok(claim.restrictions[0].includes('passed a second, independent model call'));
+  assert.ok(claim.restrictions[0].includes(verification.reason));
+
+  const proof = readFileSync(join(res.candidateDir, 'proof.md'), 'utf8');
+  assert.match(proof, /A second, independent model call.*genuinely passed it/);
+  assert.equal(/Nobody has reviewed, judged, or independently verified/.test(proof), false, 'the old unconditional "nobody verified" line must not survive when it genuinely did');
+
+  const [check, intake] = res.stages;
+  assert.equal(check.status, 'mechanically_valid');
+  assert.equal(check.parsed[0].submission_state, 'ready');
+  // Real intake treats a ready, well-formed package as real-pipeline-valid, same as the committed
+  // sha256-r32 research package -- this is what actually unlocks a later real Yukon submission.
+  assert.notEqual(intake.outcome, 'draft-not-submitted');
+});
+
+test('loop-authored draft: a verification FAIL (or none attempted) stays exactly the old, forced-draft behavior', { skip: SKIP }, async () => {
+  const r = runner();
+  const attempt = validAttempt();
+  const citedPaper = REAL_SEARCH_RESULTS[0];
+
+  const failed = await r.runCycle({ slotId: 'loop-draft-failed-verify', track: TRACK, loopDraft: { attempt, citedPaper, verification: { pass: false, reason: 'A real problem was found.' } } });
+  const failedClaim = JSON.parse(readFileSync(join(failed.candidateDir, 'claim.json'), 'utf8'));
+  assert.equal(failedClaim.submission_state, 'draft');
+  assert.equal(failedClaim.heuristics[0].role, 'supporting');
+  assert.match(failedClaim.restrictions[0], /the independent verification call did not pass \(A real problem was found\.\)/);
+
+  const none = await r.runCycle({ slotId: 'loop-draft-no-verify', track: TRACK, loopDraft: { attempt, citedPaper } });
+  const noneClaim = JSON.parse(readFileSync(join(none.candidateDir, 'claim.json'), 'utf8'));
+  assert.equal(noneClaim.submission_state, 'draft');
+  assert.match(noneClaim.restrictions[0], /no independent verification was attempted/);
+});
+
 test('loop-authored draft: citing a real competitor PR instead of an ePrint paper is written honestly, and still only ever reaches a draft', { skip: SKIP }, async () => {
   const r = runner();
   const attempt = validAttempt({ citedPaperId: 'PR#302' });

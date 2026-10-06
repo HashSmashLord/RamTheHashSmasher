@@ -85,6 +85,8 @@ export const DEFAULT_MAX_THINKING_PER_SESSION = 60;
 export const DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION = 3;
 /** max_tokens for the dedicated drafting call (slots.js's LOOP_DRAFT_SYSTEM). */
 export const LOOP_DRAFT_MAX_TOKENS = 700;
+/** max_tokens for the adversarial verification call (slots.js's LOOP_VERIFY_SYSTEM) -- a two-line verdict, no reasoning dump needed. */
+export const LOOP_VERIFY_MAX_TOKENS = 200;
 /**
  * max_tokens for a loop thinking call. Measured on the real roster model
  * (anthropic/claude-opus-5.5 via OpenRouter, 2026-10-05): reasoning is
@@ -186,6 +188,29 @@ export function parseDraftAttempt(text) {
     scope: field('SCOPE'),
     extrapolation: field('EXTRAPOLATION'),
     limitations: field('LIMITATIONS'),
+  };
+}
+
+/**
+ * Parses a VERDICT: PASS|FAIL / REASON: ... response from the real
+ * adversarial verification call (slots.js LOOP_VERIFY_SYSTEM) -- a second,
+ * independent model call whose only job is to try to find something wrong
+ * with another model's own drafted attempt, before that attempt is ever
+ * allowed to leave the forced draft/supporting state. Same discipline as
+ * parseDraftAttempt: a label not found is null, never guessed; anything
+ * other than a verdict line starting with "pass" is treated as a fail (the
+ * safe default), not a silent pass.
+ */
+export function parseVerifyVerdict(text) {
+  const raw = String(text ?? '');
+  const field = (label) => {
+    const m = new RegExp(`^\\s*\\**\\s*${label}\\s*:\\s*(.+)$`, 'im').exec(raw);
+    return m ? m[1].trim().replace(/\*+$/, '').trim() : null;
+  };
+  const verdictLine = (field('VERDICT') ?? '').toLowerCase();
+  return {
+    pass: verdictLine.startsWith('pass'),
+    reason: field('REASON'),
   };
 }
 

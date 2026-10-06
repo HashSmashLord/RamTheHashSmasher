@@ -89,6 +89,34 @@ experiment, which HashSmash only runs in its pinned Docker sandbox, with no host
 Docker isn't installed on this machine, so intake on that package exits `3`. The runner reports
 this as `environment-blocked` (a setup problem, not a verdict on the candidate).
 
+## Autonomous candidate drafting and adversarial verification
+
+A roster RAM's always-on loop (`server/lib/sandbox-activity.js` `LOOP_THINKING_SYSTEM`,
+`server/lib/slots.js`) can end a thinking step with `DRAFT: <reason>`. That alone writes nothing:
+a narrower, dedicated follow-up call (`LOOP_DRAFT_SYSTEM`) only fires after this slot has done at
+least one real literature or peer-PR lookup this session, and is capped per session
+(`maxDraftAttemptsPerSession`, default 3). Its answer is parsed (`parseDraftAttempt`) and run
+through `validateLoopAttempt` — a structural, prompt-proof honesty gate rejecting out-of-range
+numbers, thin or missing disclosed limitations, banned words ("proven"/"verified"/"guaranteed"),
+and any cited paper or PR id not actually present in this session's own real search/peer-review
+results — before `writeLoopDraftCandidate` ever touches disk.
+
+That alone is not enough to leave `draft`. A second, fully independent model call
+(`LOOP_VERIFY_SYSTEM`, `runLoopVerification`) — a different prompt, no shared context with the
+one that proposed the attempt, explicitly asked to try to find a real problem with it rather than
+agree — has to genuinely answer `VERDICT: PASS` (added 2026-10-06, after the operator asked for
+real autonomous submission: no human review step, so the automated check itself had to get
+stronger first). Only when that happens does `writeLoopDraftCandidate` mark `submission_state:
+"ready"` and the heuristic's `role: "score-critical"`; a FAIL, a mocked response, or no attempt at
+verification at all force-keeps `draft`/`supporting`, the same safe default as before this
+mechanism existed. Neither check is a human, and neither is a guarantee the underlying
+mathematics is actually correct — only that it passed two independent, automated, adversarial
+checks. `slot.bestResult` (the number `decideYukonSubmission` below reads) is only ever updated
+from a candidate whose `submission_state` is genuinely `"ready"` — a real bug, found while wiring
+this up: the organizer's own harness-draft template is not numberless (`success_probability:
+0.39`, the generic birthday bound), and that was flowing into `bestResult` on every ordinary
+harness-draft cycle before this was fixed.
+
 ## Yukon submission CLI (built, gated off, never run)
 
 `server/lib/yukon-submit.js` wraps the **real** external HashSmash/Yukon submission path — a

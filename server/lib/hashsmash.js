@@ -649,7 +649,7 @@ export function createHashSmashRunner({
    *   - evidence_ids are computed from the real proof.md this call writes,
    *     not trusted from the model's own line-number guess.
    */
-  async function writeLoopDraftCandidate(workspaceDir, track, { slotId = 'unknown', attempt, citedPaper }) {
+  async function writeLoopDraftCandidate(workspaceDir, track, { slotId = 'unknown', attempt, citedPaper, verification = null }) {
     assertTrack(track);
     const candidateDir = candidateDirFor(workspaceDir, track);
     if (relative(wsRoot, candidateDir).startsWith('..')) throw new Error('refusing to write outside the workspaces dir');
@@ -668,13 +668,25 @@ export function createHashSmashRunner({
       memory_log2_bytes: attempt.memoryLog2Bytes,
       success_probability: attempt.successProbability,
     };
-    claim.submission_state = 'draft';
+    // 'ready' only when a real, independent second model call (slots.js
+    // runLoopVerification, LOOP_VERIFY_SYSTEM) -- a different prompt than the
+    // one that proposed this, explicitly asked to try to find a real problem
+    // with it -- genuinely came back PASS. verification is null/not-pass
+    // unless the caller actually ran that step; never assumed by omission. A
+    // fail-to-verify (or no attempt at all) force-keeps 'draft', the same
+    // safe default as before 2026-10-06 -- this changes WHICH checks a
+    // candidate has to clear to ever reach 'ready', not that it clears none.
+    const verified = verification?.pass === true;
+    claim.submission_state = verified ? 'ready' : 'draft';
     const isPeerPr = citedPaper?.kind === 'peer-pr';
     const citationRestriction = isPeerPr
       ? `This RAM cited an open, unverified pull request from a real competitor on the real HashSmash repository: PR #${citedPaper.number}${citedPaper.login ? ` by @${citedPaper.login}` : ''} ("${citedPaper.title}")${citedPaper.claimedScore ? `, which self-reports a claimed score of ${citedPaper.claimedScore}` : ''}. That is another competitor's own self-reported claim, not verified by Yukon or anyone else, and an open PR may still be rejected or wrong; citing it is not the same as having confirmed it. It was found by a text match on this track's name in the PR's own title/body, which is not a guarantee the PR is actually that track's own submission.`
       : `This RAM cited IACR ePrint ${citedPaper.id} ("${citedPaper.title}") from its own real literature search this session as grounding. Citing a paper's title is not the same as having verified its applicability to this exact target, and that distinction is deliberate, not an oversight.`;
+    const verificationRestriction = verified
+      ? `This candidate passed a second, independent model call (a different prompt, framed adversarially to find a problem with it, not to agree with it) before submission_state was allowed to leave 'draft'. A real, automated check, not a human one, and not a guarantee of correctness.${verification.reason ? ` Its own stated reason: "${verification.reason}"` : ''}`
+      : `submission_state is forced to draft: ${verification ? `the independent verification call did not pass (${verification.reason || 'no reason given'})` : 'no independent verification was attempted'}, so HashSmash intake correctly refuses to forward it to the judge.`;
     claim.restrictions = [
-      `${LOOP_DRAFT_MARKER} (RAM slot ${slotId}). The claim.claim numbers above and the one heuristic below were written by this RAM's own model this session from its own real research, not the organizer's empty template. submission_state is forced to draft: nobody has independently verified this heuristic, so HashSmash intake correctly refuses to forward it to the judge.`,
+      `${LOOP_DRAFT_MARKER} (RAM slot ${slotId}). The claim.claim numbers above and the one heuristic below were written by this RAM's own model this session from its own real research, not the organizer's empty template. ${verificationRestriction}`,
       citationRestriction,
     ];
 
@@ -702,8 +714,11 @@ export function createHashSmashRunner({
       `# ${LOOP_DRAFT_MARKER}: ${track}`,
       '',
       `Written autonomously by RAM slot \`${slotId}\` during its always-on research loop, from its own`,
-      'model, its own real literature search, and its own research so far this session. Nobody has',
-      'reviewed, judged, or independently verified any of it.',
+      'model, its own real literature search, and its own research so far this session.',
+      verified
+        ? 'No human has reviewed this. A second, independent model call, prompted adversarially to try'
+          + ' to find a real problem with it, did -- and genuinely passed it.'
+        : 'Nobody has reviewed, judged, or independently verified any of it.',
       '',
       ...citedSection,
       '',
@@ -719,9 +734,14 @@ export function createHashSmashRunner({
       '',
       '## What this is not',
       '',
-      'No new collision, witness, or independently-reviewed proof was produced this session. This',
-      'candidate stays a draft on purpose; HashSmash intake does not forward drafts to the judge, so',
-      'nothing here is scored, ranked, or submitted.',
+      verified
+        ? 'No new collision or witness was produced this session. This passed this harness\'s own'
+          + ' structural honesty check and a separate adversarial verification pass -- real, automated'
+          + ' checks, neither of them a human, and neither a guarantee the underlying mathematics is'
+          + ' actually right.'
+        : 'No new collision, witness, or independently-reviewed proof was produced this session. This'
+          + ' candidate stays a draft on purpose; HashSmash intake does not forward drafts to the judge,'
+          + ' so nothing here is scored, ranked, or submitted.',
       '',
     ];
     const proofText = proofLines.join('\n');
@@ -729,7 +749,7 @@ export function createHashSmashRunner({
     claim.heuristics = [{
       id: attempt.heuristicId,
       statement: attempt.statement,
-      role: 'supporting',
+      role: verified ? 'score-critical' : 'supporting',
       scope: attempt.scope,
       extrapolation: attempt.extrapolation,
       evidence_ids: [`proof:1-${proofLineCount}`],
@@ -826,7 +846,7 @@ export function createHashSmashRunner({
     const { candidateDir, claim } = research
       ? writeResearchCandidate(ws.dir, track)
       : loopDraft
-        ? await writeLoopDraftCandidate(ws.dir, track, { slotId, attempt: loopDraft.attempt, citedPaper: loopDraft.citedPaper })
+        ? await writeLoopDraftCandidate(ws.dir, track, { slotId, attempt: loopDraft.attempt, citedPaper: loopDraft.citedPaper, verification: loopDraft.verification })
         : await writeHarnessDraft(ws.dir, track, { slotId });
     const candidate = {
       kind: research ? 'research' : loopDraft ? 'loop-draft' : 'harness-draft',

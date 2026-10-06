@@ -9,37 +9,40 @@ function manager() {
 }
 
 test('updateBestResult only ever moves toward a genuinely better REAL number, never invents or regresses', () => {
+  const ready = (timeLog2, successProbability) => ({ submissionState: 'ready', timeLog2, successProbability });
   const slot = { bestResult: null };
   assert.equal(updateBestResult(slot, null), null, 'nothing to learn from yet');
   assert.equal(slot.bestResult, null);
-  updateBestResult(slot, { timeLog2: 90, successProbability: 0.5 });
+  updateBestResult(slot, ready(90, 0.5));
   assert.deepEqual(slot.bestResult, { timeLog2: 90, successProbability: 0.5 });
   // A worse real number never overwrites the best one.
-  updateBestResult(slot, { timeLog2: 95, successProbability: 0.3 });
+  updateBestResult(slot, ready(95, 0.3));
   assert.deepEqual(slot.bestResult, { timeLog2: 90, successProbability: 0.5 });
   // A genuinely better real number on either axis does.
-  updateBestResult(slot, { timeLog2: 86, successProbability: 0.3 });
+  updateBestResult(slot, ready(86, 0.3));
   assert.deepEqual(slot.bestResult, { timeLog2: 86, successProbability: 0.5 });
-  updateBestResult(slot, { timeLog2: 86, successProbability: 0.9 });
+  updateBestResult(slot, ready(86, 0.9));
   assert.deepEqual(slot.bestResult, { timeLog2: 86, successProbability: 0.9 });
   // Non-numeric fields (e.g. a harness draft with no success claim) are ignored, not treated as zero.
-  updateBestResult(slot, { timeLog2: null, successProbability: null });
+  updateBestResult(slot, ready(null, null));
   assert.deepEqual(slot.bestResult, { timeLog2: 86, successProbability: 0.9 });
 });
 
-test('updateBestResult refuses a harness-draft candidate outright, even with real-looking positive numbers -- real bug, 2026-10-06: the organizer\'s own draft_claim() template carries success_probability 0.39 and a real time_log2, which used to flow straight into bestResult (and from there, into a real Yukon submission decision) as if it were this RAM\'s own finding', () => {
+test('updateBestResult requires submissionState === \'ready\', even with real-looking positive numbers -- real bug, 2026-10-06: the organizer\'s own draft_claim() template carries success_probability 0.39 and a real time_log2 while still submission_state \'draft\', which used to flow straight into bestResult (and from there, into a real Yukon submission decision) as if it were this RAM\'s own finding. An unverified loop-draft is submission_state \'draft\' for exactly the same reason until it passes real adversarial verification (runLoopVerification), so checking state, not just candidate kind, correctly covers both', () => {
   const fresh = { bestResult: null };
-  updateBestResult(fresh, { kind: 'harness-draft', timeLog2: 128, successProbability: 0.39 });
-  assert.equal(fresh.bestResult, null, 'a harness-draft never establishes a first bestResult, however real-looking its numbers are');
+  updateBestResult(fresh, { kind: 'harness-draft', submissionState: 'draft', timeLog2: 128, successProbability: 0.39 });
+  assert.equal(fresh.bestResult, null, 'a draft-state candidate never establishes a first bestResult, however real-looking its numbers are');
+  updateBestResult(fresh, { kind: 'loop-draft', submissionState: 'draft', timeLog2: 50, successProbability: 0.6 });
+  assert.equal(fresh.bestResult, null, 'an unverified loop-draft is submission_state draft too, and is refused the same way');
 
   const withGenuine = { bestResult: { timeLog2: 86, successProbability: 0.3 } };
-  updateBestResult(withGenuine, { kind: 'harness-draft', timeLog2: 10, successProbability: 0.99 });
-  assert.deepEqual(withGenuine.bestResult, { timeLog2: 86, successProbability: 0.3 }, 'a harness-draft never overwrites a genuine prior result either, however much "better" its placeholder numbers look');
+  updateBestResult(withGenuine, { kind: 'harness-draft', submissionState: 'draft', timeLog2: 10, successProbability: 0.99 });
+  assert.deepEqual(withGenuine.bestResult, { timeLog2: 86, successProbability: 0.3 }, 'a draft-state candidate never overwrites a genuine prior result either, however much "better" its placeholder numbers look');
 
-  // A genuine candidate kind still works exactly as before.
-  updateBestResult(withGenuine, { kind: 'loop-draft', timeLog2: 80, successProbability: 0.35 });
+  // A genuinely 'ready' candidate still works exactly as before, loop-draft or research.
+  updateBestResult(withGenuine, { kind: 'loop-draft', submissionState: 'ready', timeLog2: 80, successProbability: 0.35 });
   assert.deepEqual(withGenuine.bestResult, { timeLog2: 80, successProbability: 0.35 });
-  updateBestResult(withGenuine, { kind: 'research', timeLog2: 70, successProbability: 0.4 });
+  updateBestResult(withGenuine, { kind: 'research', submissionState: 'ready', timeLog2: 70, successProbability: 0.4 });
   assert.deepEqual(withGenuine.bestResult, { timeLog2: 70, successProbability: 0.4 });
 });
 

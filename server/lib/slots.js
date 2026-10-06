@@ -197,9 +197,9 @@
 import { assignmentForIndex, ACTIVE_TRACKS } from './targets.js';
 import { contextPayload } from './sandbox-context.js';
 import {
-  parseThinking, parseDraftAttempt, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
+  parseThinking, parseDraftAttempt, parseVerifyVerdict, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
   DEFAULT_BROWSE_EVERY, DEFAULT_PEERS_EVERY, DEFAULT_MAX_THINKING_PER_SESSION, LOOP_THINKING_MAX_TOKENS,
-  DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION, LOOP_DRAFT_MAX_TOKENS,
+  DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION, LOOP_DRAFT_MAX_TOKENS, LOOP_VERIFY_MAX_TOKENS,
 } from './sandbox-activity.js';
 import { validateLoopAttempt, findCitedReference } from './hashsmash.js';
 
@@ -243,6 +243,21 @@ export const LOOP_DRAFT_SYSTEM = 'You are the same HashSmash solver agent, now a
   + 'Never write that something is proven, verified, confirmed or guaranteed when it is only estimated or argued from a short literature read or another competitor\'s own unverified, self-reported claim. '
   + 'If you cannot honestly give a real CITED_PAPER_ID taken from the results you were actually given this session, answer "ATTEMPT: no".';
 
+/**
+ * System prompt for the adversarial verification call (see runLoopVerification):
+ * a SECOND, independent call, a different prompt than LOOP_DRAFT_SYSTEM, whose
+ * only real job is to try to find a reason the attempt should not be trusted
+ * yet. The only thing that can ever move a loop-authored candidate's
+ * submission_state out of 'draft' (hashsmash.js writeLoopDraftCandidate).
+ */
+export const LOOP_VERIFY_SYSTEM = 'You are an independent, skeptical reviewer checking another AI agent\'s own research claim before it is allowed to become a real, submittable candidate on a real public competition. '
+  + 'You did not write this claim and have no stake in it being right. Your only job is to find a real reason it should NOT be trusted yet, if one genuinely exists. '
+  + 'You are given the claim\'s own disclosed statement, scope, extrapolation and limitations, its numeric claim, and the real paper or competitor pull request it cites. '
+  + 'Check specifically: does the extrapolation actually follow from what the cited source is described as saying, or is it a stretch beyond what a title or short read could support; does the stated scope genuinely match this exact target (hash family, round count, construction); are the disclosed limitations honestly complete, not hiding a bigger gap than stated; is the numeric claim (time/memory/success probability) plausible for what is being described, not suspiciously strong for a single session\'s literature read. '
+  + 'A cited source existing and being topically relevant is not enough on its own — the SPECIFIC extrapolation this RAM is making from it has to actually hold up to that scrutiny. '
+  + 'If, after genuinely checking each of those, you cannot find a real problem, answer "VERDICT: PASS". Otherwise answer "VERDICT: FAIL". The honest default, like every other check in this system, is to find the real problem if one exists, not to wave a claim through because it sounds plausible or technically written. '
+  + 'Answer in EXACTLY this plain-text format and nothing else, no markdown, nothing before or after it: first line "VERDICT: PASS" or "VERDICT: FAIL", second line "REASON: <one or two sentences, specific to what you actually checked, not generic>".';
+
 /** Feed entry types that are the RAM's research history (what a thinking step is grounded in). */
 const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|pipeline-.*|sandbox-browse|sandbox-peer-review|sandbox-task-done|suggestion-attached)$/;
 
@@ -255,22 +270,27 @@ const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|
  * public snapshot. Returns the slot's best record (or null if `detail` had
  * nothing numeric yet).
  *
- * `detail.kind === 'harness-draft'` is refused here, not just skipped by
- * whoever calls this: real bug, found 2026-10-06 while wiring real Yukon
- * submission — the organizer's own draft_claim() template (frontier_tracks.py)
- * is NOT numberless. It carries a real positive success_probability (0.39,
- * the generic birthday bound) and a real time_log2 (digest_bits/2) alongside
+ * Requires `detail.submissionState === 'ready'`, not just skipped by whoever
+ * calls this: real bug, found 2026-10-06 while wiring real Yukon submission —
+ * the organizer's own draft_claim() template (frontier_tracks.py) is NOT
+ * numberless. It carries a real positive success_probability (0.39, the
+ * generic birthday bound) and a real time_log2 (digest_bits/2) alongside
  * `heuristics: []` and `submission_state: "draft"` -- those numbers used to
  * flow straight into bestResult on every single harness-draft cycle (five of
  * six tracks, constantly), which decideYukonSubmission (yukon-sandbox.js)
  * would have read as "a real measured result" and happily submitted: the
  * organizer's own non-claim placeholder, represented to real judges as this
- * RAM's own finding. Only a genuine 'research' or 'loop-draft' candidate
- * (hashsmash.js's writeResearchCandidate / writeLoopDraftCandidate, both
- * already honesty-gated) may ever move this number.
+ * RAM's own finding. A loop-authored candidate (hashsmash.js
+ * writeLoopDraftCandidate) is the same risk whenever it has NOT yet passed
+ * the real adversarial verification call (slots.js runLoopVerification):
+ * it also stays submission_state 'draft', so checking state here, not just
+ * candidate kind, correctly excludes an unverified self-report too, not only
+ * the organizer's own template. Only a genuinely 'ready' candidate (the
+ * committed research package, or a loop-draft that passed verification) may
+ * ever move this number.
  */
 export function updateBestResult(slot, detail) {
-  if (!detail || detail.kind === 'harness-draft') return slot.bestResult ?? null;
+  if (!detail || detail.submissionState !== 'ready') return slot.bestResult ?? null;
   if (!slot.bestResult) slot.bestResult = { timeLog2: null, successProbability: null };
   if (typeof detail.timeLog2 === 'number' && (slot.bestResult.timeLog2 === null || detail.timeLog2 < slot.bestResult.timeLog2)) {
     slot.bestResult.timeLog2 = detail.timeLog2;
@@ -758,8 +778,46 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     }
     const citedPaper = findCitedReference(attempt.citedPaperId, { lastSearchResults, lastPeerResults });
     const citedDesc = citedPaper.kind === 'peer-pr' ? `competitor PR #${citedPaper.number}` : `ePrint ${citedPaper.id}`;
-    pushFeed(slot, 'pipeline-loop-draft-attempt', `This RAM's model proposed its own candidate claim for ${track} (heuristic "${attempt.heuristicId}", citing ${citedDesc}); it still has to pass the exact same real HashSmash pipeline as any other candidate, and stays a draft either way.`);
-    await runRealPipeline(slot, { loopDraft: { attempt, citedPaper } });
+    pushFeed(slot, 'pipeline-loop-draft-attempt', `This RAM's model proposed its own candidate claim for ${track} (heuristic "${attempt.heuristicId}", citing ${citedDesc}); it still has to pass the exact same real HashSmash pipeline as any other candidate.`);
+    const verification = await runLoopVerification(slot, attempt, citedPaper);
+    pushFeed(
+      slot,
+      verification.pass ? 'pipeline-loop-verify-passed' : 'pipeline-loop-verify-failed',
+      verification.pass
+        ? `A second, independent model call (asked specifically to try to find a problem with this claim, not to agree with it) could not find a real issue with it: "${verification.reason || 'no reason given'}". This candidate can now leave draft state.`
+        : `A second, independent model call found a real problem with this claim and it stays a draft: "${verification.reason || 'no reason given'}".`,
+    );
+    await runRealPipeline(slot, { loopDraft: { attempt, citedPaper, verification } });
+  }
+
+  /**
+   * A second, independent model call -- a different prompt (LOOP_VERIFY_SYSTEM)
+   * than the one that proposed `attempt`, no shared conversation history with
+   * it -- whose only job is to try to find a real reason not to trust this
+   * RAM's own attempt yet. This, on top of validateLoopAttempt's own
+   * structural check, is the only thing that can ever let
+   * writeLoopDraftCandidate (hashsmash.js) mark a loop-authored candidate
+   * 'ready' instead of force-kept 'draft'. Never throws; a mocked or
+   * malformed response is treated as a fail -- the same safe default as a
+   * real, honest "no".
+   */
+  async function runLoopVerification(slot, attempt, citedPaper) {
+    const { model } = slot.assignment;
+    const citedDesc = citedPaper.kind === 'peer-pr'
+      ? `competitor pull request #${citedPaper.number} ("${citedPaper.title}")`
+      : `IACR ePrint ${citedPaper.id} ("${citedPaper.title}")`;
+    const prompt = `Claim to check, citing ${citedDesc}:\n`
+      + `STATEMENT: ${attempt.statement}\n`
+      + `SCOPE: ${attempt.scope}\n`
+      + `EXTRAPOLATION: ${attempt.extrapolation}\n`
+      + `LIMITATIONS: ${attempt.limitations}\n`
+      + `TIME_LOG2: ${attempt.timeLog2}, MEMORY_LOG2_BYTES: ${attempt.memoryLog2Bytes}, SUCCESS_PROBABILITY: ${attempt.successProbability}`;
+    const result = await llmProvider.complete({ model, system: LOOP_VERIFY_SYSTEM, prompt, maxTokens: LOOP_VERIFY_MAX_TOKENS });
+    if (costLedger && result.usage) {
+      costLedger.record({ slotId: slot.id, ramId: slot.ramId, model, usage: result.usage, ref: now() });
+    }
+    if (result.mocked) return { pass: false, reason: 'verification call came back as a mock (dry-run) answer, never treated as a real pass' };
+    return parseVerifyVerdict(result.text);
   }
 
   /**
