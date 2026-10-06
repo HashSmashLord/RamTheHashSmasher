@@ -144,7 +144,11 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   // header). Passed whenever sandboxes are on at all, same as sandboxTask —
   // it is the module itself, not this wiring, that stays inert by default.
   const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, sandboxActivity: activeLoop ? desktopActivity : null, activeLoop, yukonSandbox: sandboxManager ? yukonSandbox : null, costLedger, modelOverride: modelOverride(env), autoRestart });
-  const ideaQueue = createIdeaQueue();
+  // Same opt-in persistence pattern as rams.js below (RAMHERD_DATA_DIR, unset =
+  // in-memory only, every existing createStore() test unaffected): real bug, found
+  // 2026-10-06, a genuinely good approved idea silently wiped on every restart.
+  const ideaQueuePersistPath = env.RAMHERD_DATA_DIR ? join(env.RAMHERD_DATA_DIR, 'ideas.json') : null;
+  const ideaQueue = createIdeaQueue({ persistPath: ideaQueuePersistPath, log });
   // Pinata, opt-in with PINATA_JWT: a launchpad RAM's token metadata gets
   // pinned to IPFS instead of only living at this server's own endpoint.
   // Unset -> rams.js keeps the self-hosted metadata.json URI exactly as

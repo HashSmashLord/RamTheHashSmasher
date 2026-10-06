@@ -16,6 +16,12 @@ const app = createApp(config);
 // listen in the background and never block or crash boot.
 const autoSeed = autoSeedPolicy(process.env);
 const seeded = autoSeed.enabled ? await seedRosterFunding(app.store, { budgetConfig: config.budget, log: config.log }) : null;
+// Real idea-queue persistence (server/lib/moderation.js): the queue's own records
+// rehydrated already, inside createApp() above -- this is the one remaining step, now
+// that the roster (and any rehydrated owned slots) actually exist, replaying each
+// approved idea's real attachment onto today's slots. Runs regardless of autoSeed: an
+// idea approved onto an owned (launchpad) slot has nothing to do with roster funding.
+app.store.ideaQueue.reattachApproved((slotId, idea) => app.store.slotManager.attachSuggestion(slotId, idea));
 const address = await app.listen();
 console.log(`herd listening on http://${address.address}:${address.port}`);
 // Runs whenever auto-seed is on, regardless of whether roster funding (above)

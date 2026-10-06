@@ -13,6 +13,20 @@
 // command. This module never imports the slot manager; the caller passes an
 // `attach(slotId, idea)` function so moderation and solver-slot code stay
 // decoupled.
+//
+// Persistence (opt-in, `persistPath`; same atomic-write pattern as
+// rams.js/persist.js): confirmed real 2026-10-06, a recurring research-
+// guidance review caught a genuinely good, independently-reverified finding
+// (an approved idea on sha3-256-r6) silently wiped by an in-memory-only
+// reset, three rounds in a row. The queue's own records (pending/approved/
+// rejected, the id counter) rehydrate at construction time, same as
+// rams.js. The slot *attachment* itself does not: slots are pure runtime
+// state (never persisted, recreated fresh on every boot), so there is
+// nothing to attach an approved idea to yet at the moment this module is
+// constructed -- the roster doesn't exist until later in boot. See
+// `reattachApproved` below, called once the roster is actually up.
+
+import { readJsonFile, writeJsonFileAtomic } from './persist.js';
 
 const MAX_LENGTH = 4000;
 
@@ -73,9 +87,9 @@ export function screenIdea(rawText) {
 }
 
 /**
- * @param {{ now?: () => string, idPrefix?: string }} [opts]
+ * @param {{ now?: () => string, idPrefix?: string, persistPath?: string|null, log?: (line: string) => void }} [opts]
  */
-export function createIdeaQueue({ now = () => new Date().toISOString(), idPrefix = 'idea' } = {}) {
+export function createIdeaQueue({ now = () => new Date().toISOString(), idPrefix = 'idea', persistPath = null, log = () => {} } = {}) {
   let seq = 0;
   /** @type {Map<string, any>} */
   const pending = new Map();
@@ -83,6 +97,33 @@ export function createIdeaQueue({ now = () => new Date().toISOString(), idPrefix
   const approved = new Map();
   /** @type {Map<string, any>} */
   const rejected = new Map(); // both auto-rejected (screening) and human-rejected
+
+  function persist() {
+    if (!persistPath) return;
+    writeJsonFileAtomic(
+      persistPath,
+      { version: 1, seq, pending: [...pending.values()], approved: [...approved.values()], rejected: [...rejected.values()] },
+      { log },
+    );
+  }
+
+  // Rehydrate the real records only -- no slot interaction here, see the
+  // module header and reattachApproved below for why that is a separate,
+  // later step. A missing file (first boot, or no persistPath at all) or a
+  // corrupt/foreign one both leave this queue exactly as empty as it would
+  // be without persistence -- readJsonFile has already logged the latter.
+  if (persistPath) {
+    const loaded = readJsonFile(persistPath, { log });
+    if (loaded && Array.isArray(loaded.pending) && Array.isArray(loaded.approved) && Array.isArray(loaded.rejected)) {
+      for (const idea of loaded.pending) if (idea?.id) pending.set(idea.id, idea);
+      for (const idea of loaded.approved) if (idea?.id) approved.set(idea.id, idea);
+      for (const idea of loaded.rejected) if (idea?.id) rejected.set(idea.id, idea);
+      if (Number.isInteger(loaded.seq) && loaded.seq > seq) seq = loaded.seq;
+      log(`moderation: rehydrated ${pending.size} pending, ${approved.size} approved, ${rejected.size} rejected idea(s) from ${persistPath}.`);
+    } else if (loaded) {
+      log(`moderation: ${persistPath} did not have the expected shape, starting empty.`);
+    }
+  }
 
   /**
    * @param {string} text
@@ -94,9 +135,11 @@ export function createIdeaQueue({ now = () => new Date().toISOString(), idPrefix
     const base = { id, text: String(text ?? ''), author: meta.author || null, submittedAt: now() };
     if (!screening.ok) {
       rejected.set(id, { ...base, status: 'auto-rejected', rule: screening.rule, reason: screening.reason });
+      persist();
       return { ok: false, id, rule: screening.rule, reason: screening.reason };
     }
     pending.set(id, { ...base, status: 'pending' });
+    persist();
     return { ok: true, id, status: 'pending' };
   }
 
@@ -119,10 +162,42 @@ export function createIdeaQueue({ now = () => new Date().toISOString(), idPrefix
     pending.delete(id);
     const record = { ...idea, status: 'approved', decidedAt: now(), targetSlotIds: [...targetSlotIds] };
     approved.set(id, record);
+    persist();
     if (typeof attach === 'function') {
       for (const slotId of targetSlotIds) attach(slotId, { id: record.id, text: record.text });
     }
     return record;
+  }
+
+  /**
+   * Replays every currently-approved idea's real attachment onto today's
+   * roster — called once, after the roster actually exists (see
+   * server/index.js), never at construction time. `attach` is the exact
+   * same function the live admin approve route already uses
+   * (`(slotId, idea) => store.slotManager.attachSuggestion(slotId, idea)`).
+   * A target slot that no longer exists (the roster shrank, or an owned
+   * slot was retired) is skipped and logged, never thrown -- one missing
+   * slot must never stop the rest of the queue from reattaching, and this
+   * runs during boot, before anything else can handle a thrown error.
+   * @param {(slotId: string, idea: { id: string, text: string }) => void} attach
+   */
+  function reattachApproved(attach) {
+    if (typeof attach !== 'function') return { reattached: 0, skipped: 0 };
+    let reattached = 0;
+    let skipped = 0;
+    for (const record of approved.values()) {
+      for (const slotId of record.targetSlotIds ?? []) {
+        try {
+          attach(slotId, { id: record.id, text: record.text });
+          reattached++;
+        } catch (err) {
+          skipped++;
+          log(`moderation: could not reattach approved idea ${record.id} to ${slotId} on boot, continuing: ${err?.message || err}`);
+        }
+      }
+    }
+    if (reattached || skipped) log(`moderation: reattached ${reattached} approved idea/slot pair(s) on boot (${skipped} skipped).`);
+    return { reattached, skipped };
   }
 
   /**
@@ -135,8 +210,9 @@ export function createIdeaQueue({ now = () => new Date().toISOString(), idPrefix
     pending.delete(id);
     const record = { ...idea, status: 'rejected', decidedAt: now(), reason };
     rejected.set(id, record);
+    persist();
     return record;
   }
 
-  return { submit, listPending, listApproved, listRejected, approve, reject };
+  return { submit, listPending, listApproved, listRejected, approve, reject, reattachApproved };
 }
