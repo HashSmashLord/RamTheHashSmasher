@@ -128,6 +128,7 @@ export function createApp(config) {
     env: config.env ?? process.env,
     loadSandboxSdk: config.loadSandboxSdk,
     launchpad: { publicBaseUrl: config.launchpad.publicBaseUrl, treasury: config.launchpad.treasury },
+    log: config.log || (() => {}),
   });
   const ideaLimiter = createRateLimiter(config.ideaRateLimit);
   // Public and unauthenticated; each ask is a (paid, once live) LLM call and a

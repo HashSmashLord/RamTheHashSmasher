@@ -3,6 +3,7 @@
 // it's also the only place that could accidentally hand the coordinator a
 // mutator — kept deliberately tiny and reviewed as such.
 
+import { join } from 'node:path';
 import { createMockFeeSource, createFeeLedger } from './lib/ledger.js';
 import { computeAllocation, withLaunchCeiling } from './lib/budget.js';
 import { createSlotManager } from './lib/slots.js';
@@ -27,9 +28,10 @@ import { createPinataClient, pinataPolicy } from './lib/pinata.js';
  *   env?: NodeJS.ProcessEnv,
  *   loadSandboxSdk?: () => Promise<{ Sandbox: any }>,
  *   launchpad?: { publicBaseUrl: string, treasury: string },
+ *   log?: (line: string) => void,
  * }} opts
  */
-export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, launchpad = { publicBaseUrl: 'http://127.0.0.1:4700', treasury: undefined } }) {
+export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, launchpad = { publicBaseUrl: 'http://127.0.0.1:4700', treasury: undefined }, log = () => {} }) {
   const feeSource = createMockFeeSource();
   const ledger = createFeeLedger({ source: feeSource });
   const llmProvider = createLlmProvider(env);
@@ -117,6 +119,14 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   // ceiling a real launch raised. A Set, so the same RAM can't count twice.
   // In memory like every other record here: a restart resets it (README).
   const launchesThatRaisedCeiling = new Set();
+  // Persistence for the RAM registry (server/lib/rams.js + persist.js): opt-in
+  // with RAMHERD_DATA_DIR, unset here means null = in-memory only, exactly
+  // today's behaviour, so every existing test (hundreds of `createStore()`
+  // calls, with no RAMHERD_DATA_DIR) is unaffected and never touches disk.
+  // In production, server/index.js's Fly deploy sets RAMHERD_DATA_DIR to the
+  // mounted volume (e.g. /data); for local dev that wants the same survival,
+  // set it to something like .ramherd/data (already git-ignored).
+  const ramsPersistPath = env.RAMHERD_DATA_DIR ? join(env.RAMHERD_DATA_DIR, 'rams.json') : null;
   const rams = createRamRegistry({
     slotManager,
     funds: ramFunds,
@@ -125,6 +135,8 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
     treasury: launchpad.treasury,
     pinata: pinataClient,
     onActivated: (ram) => launchesThatRaisedCeiling.add(ram.id),
+    persistPath: ramsPersistPath,
+    log,
   });
 
   /** The budget config in force right now: the static one, plus launchpad ceiling growth. */

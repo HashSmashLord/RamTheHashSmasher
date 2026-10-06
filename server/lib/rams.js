@@ -18,12 +18,38 @@
 // on activation and any creator fees later reported for its token; a judged
 // HashSmash win writes an owed payout to the owner's wallet (payouts.js).
 // Nothing here can send, sign or claim anything.
+//
+// Persistence (opt-in with `persistPath`): the `rams` Map and `mintsInUse`
+// are written to one JSON file on every real mutation and reloaded on
+// construction, so a launched RAM survives a restart — see persist.js for the
+// atomic-write mechanics and fly.toml for why this exists (two real launched
+// tokens were silently wiped by routine restarts before this). Deliberately
+// NOT persisted here, and still reset by a restart same as today:
+//   - ramFunds / payouts (the RAM's funding account and any owed payouts):
+//     out of scope for this pass; the RAM record itself (status, launch
+//     signature, token info) survives, its money bookkeeping doesn't yet.
+//   - slots.js's slot/sandbox state (feed history, pipeline, sandbox): pure
+//     runtime state, never persisted. On reload, every rehydrated `active`
+//     RAM gets a FRESH owned slot recreated via slotManager.createOwnedSlot
+//     (idle, empty feed, no sandbox) so the RAM still resolves to a real
+//     slot (src/ram-resolve.js expects an active RAM to always have one) and
+//     the honest "no desk running, never started" messaging that already
+//     exists (src/sandbox-viewer.js deskWhy) covers the rest correctly.
+//   - unpinned (self-hosted) token images: images.js holds their bytes only
+//     in memory and does not persist either, so a self-hosted image's URL
+//     will 404 after a restart even though the RAM record survives; a
+//     Pinata-pinned image's URL is external (IPFS gateway) and keeps working
+//     regardless. metadata() below falls back to the RAM's own stored
+//     token.image URL when the (also in-memory, unpersisted) images store no
+//     longer has the id, so a pinned image's URL still reaches real clients
+//     even though the images Map itself was never asked to survive a restart.
 
 import bs58 from 'bs58';
 import { PublicKey } from '@solana/web3.js';
 import { CREATE_FEE_LAMPORTS, DEFAULT_TREASURY } from './launchtx.js';
 import { createRateLimiter } from './ratelimit.js';
 import { createImageStore, DEFAULT_IMAGE_PIN_RATE_LIMIT, DEFAULT_MAX_HELD_IMAGE_BYTES } from './images.js';
+import { readJsonFile, writeJsonFileAtomic } from './persist.js';
 
 export const RAM_STATUSES = Object.freeze(['draft', 'awaiting-signature', 'active', 'cancelled']);
 
@@ -70,9 +96,11 @@ function isSignature(value) {
  *   maxHeldImageBytes?: number,
  *   maxInactiveRams?: number,
  *   onActivated?: (ram: object) => void,
+ *   persistPath?: string|null,
+ *   log?: (line: string) => void,
  * }} opts
  */
-export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram', pinata = null, pinRateLimit = DEFAULT_PIN_RATE_LIMIT, imagePinRateLimit = DEFAULT_IMAGE_PIN_RATE_LIMIT, maxHeldImageBytes = DEFAULT_MAX_HELD_IMAGE_BYTES, maxInactiveRams = DEFAULT_MAX_INACTIVE_RAMS, onActivated = null }) {
+export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, treasury = DEFAULT_TREASURY, createFeeLamports = CREATE_FEE_LAMPORTS, now = () => new Date().toISOString(), idPrefix = 'ram', pinata = null, pinRateLimit = DEFAULT_PIN_RATE_LIMIT, imagePinRateLimit = DEFAULT_IMAGE_PIN_RATE_LIMIT, maxHeldImageBytes = DEFAULT_MAX_HELD_IMAGE_BYTES, maxInactiveRams = DEFAULT_MAX_INACTIVE_RAMS, onActivated = null, persistPath = null, log = () => {} }) {
   if (typeof publicBaseUrl !== 'string' || !/^https?:\/\//.test(publicBaseUrl)) throw new TypeError('publicBaseUrl must be an http(s) URL');
   const base = publicBaseUrl.replace(/\/+$/, '');
   /** @type {Map<string, any>} */
@@ -89,6 +117,64 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
   const images = createImageStore({ publicBaseUrl: base, pinata, pinRateLimit: imagePinRateLimit, maxHeldBytes: maxHeldImageBytes, now });
 
   const copy = (r) => JSON.parse(JSON.stringify(r));
+
+  /**
+   * Writes the full current state (every RAM record, the mint reservations,
+   * and the id counter) to `persistPath` as one JSON file, atomically.
+   * No-op when `persistPath` is null (persistence not configured — the
+   * default, and every existing test). Called after every mutation below;
+   * see the module header for exactly what is, and isn't, included.
+   */
+  function persist() {
+    if (!persistPath) return;
+    writeJsonFileAtomic(persistPath, { version: 1, seq, rams: [...rams.values()], mintsInUse: [...mintsInUse.entries()] }, { log });
+  }
+
+  // Rehydrate from disk, if configured, before anything else below touches
+  // `rams`/`mintsInUse`/`seq`. A missing file (first boot, or local dev with
+  // no data dir) or a corrupt/foreign one both leave this registry exactly
+  // as empty as it is without persistence at all — readJsonFile has already
+  // logged the latter loudly; never a reason to fail construction.
+  if (persistPath) {
+    const loaded = readJsonFile(persistPath, { log });
+    if (loaded && Array.isArray(loaded.rams)) {
+      for (const ram of loaded.rams) {
+        if (ram && typeof ram.id === 'string') rams.set(ram.id, ram);
+      }
+      for (const entry of Array.isArray(loaded.mintsInUse) ? loaded.mintsInUse : []) {
+        const [mint, id] = entry;
+        if (typeof mint === 'string' && typeof id === 'string') mintsInUse.set(mint, id);
+      }
+      if (Number.isInteger(loaded.seq) && loaded.seq > seq) seq = loaded.seq;
+      // Slots are pure runtime state and were never persisted (see header):
+      // every rehydrated `active` RAM gets a fresh owned slot so it still
+      // resolves to a real one (ram-resolve.js expects that), idle and with
+      // no sandbox — the existing "no desk running, never started" messaging
+      // (sandbox-viewer.js deskWhy) is honest for that on its own, with no
+      // special-casing needed here. Funds/payouts intentionally stay as they
+      // were (reset): recreating the slot must never replay confirmLaunch's
+      // money side, so it calls the slot manager directly, not confirmLaunch.
+      let recreated = 0;
+      for (const ram of rams.values()) {
+        if (ram.status !== 'active') continue;
+        try {
+          const slot = slotManager.createOwnedSlot({ ramId: ram.id, owner: ram.owner, track: ram.track, approach: ram.approach, model: ram.model, brief: ram.approachDetail });
+          ram.slotId = slot.id;
+          recreated++;
+        } catch (err) {
+          // One bad/inconsistent record must never block the rest from
+          // rehydrating or stop the server booting: the RAM stays visible
+          // (Discover, GET /api/launchpad/rams) with its real launch
+          // signature; only its own slot page would 404 until fixed by hand.
+          log(`rams: could not recreate the owned slot for ${ram.id} on boot, continuing without it: ${err?.message || err}`);
+        }
+      }
+      log(`rams: rehydrated ${rams.size} RAM record(s) from ${persistPath} (${recreated} active slot(s) recreated).`);
+      persist(); // write back the new slot ids (and seq) now, not only on the next mutation
+    } else if (loaded) {
+      log(`rams: ${persistPath} did not have the expected shape ({ rams: [...] }), starting empty.`);
+    }
+  }
 
   function mustGet(id) {
     const ram = rams.get(id);
@@ -174,6 +260,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
             ram.token.uri = uri;
             ram.token.metadataCid = cid;
             ram.updatedAt = now();
+            persist(); // the metadata URI changed after createDraft's own persist() already ran
           }
           // A pinned URI over the limit is silently skipped (self-hosted URI
           // keeps serving); that should never actually happen at this
@@ -186,6 +273,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
         });
       pinPromises.set(id, pinned);
     }
+    persist();
     return copy(ram);
   }
 
@@ -218,6 +306,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     mintsInUse.set(mint, id);
     if (ram.status === 'draft') touch(ram, 'awaiting-signature');
     else ram.updatedAt = now();
+    persist();
     return copy(ram);
   }
 
@@ -252,6 +341,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
         // The launch stands; the hook's own state is the hook's problem.
       }
     }
+    persist();
     return copy(ram);
   }
 
@@ -260,6 +350,7 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     if (ram.status !== 'draft' && ram.status !== 'awaiting-signature') throw new Error(`RAM ${id} is ${ram.status}; it cannot be cancelled`);
     if (ram.token.mint) mintsInUse.delete(ram.token.mint);
     touch(ram, 'cancelled');
+    persist();
     return copy(ram);
   }
 
@@ -267,7 +358,9 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
   function recordCreatorFees(id, { lamports, ref, note }) {
     const ram = mustGet(id);
     if (ram.status !== 'active') throw new Error(`RAM ${id} is not active`);
-    return funds.credit(id, { kind: 'creator-fees', lamports, ref, note });
+    const result = funds.credit(id, { kind: 'creator-fees', lamports, ref, note });
+    persist(); // funds/payouts aren't persisted (see header), but matches the spec's write-through list
+    return result;
   }
 
   /**
@@ -277,7 +370,9 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
   function recordWin(id, { candidateRef, verdict, prizeLamports, evidence }) {
     const ram = mustGet(id);
     if (ram.status !== 'active') throw new Error(`RAM ${id} is not active`);
-    return payouts.recordOwed({ ramId: id, wallet: ram.owner, lamports: prizeLamports, track: ram.track, candidateRef, verdict, evidence });
+    const result = payouts.recordOwed({ ramId: id, wallet: ram.owner, lamports: prizeLamports, track: ram.track, candidateRef, verdict, evidence });
+    persist(); // funds/payouts aren't persisted (see header), but matches the spec's write-through list
+    return result;
   }
 
   /**
@@ -293,22 +388,35 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     return `${base}/herd#ram/${encodeURIComponent(id)}`;
   }
 
+  /** True for this server's own self-hosted image URL shape (never for a Pinata gateway URL). */
+  const isSelfHostedImageUrl = (url) => typeof url === 'string' && url.startsWith(`${base}/api/launchpad/images/`);
+
   /**
    * Token metadata JSON served at the RAM's metadata URI. `image` is the
    * token's logo: the Pinata gateway URL when the image was pinned, else this
-   * server's own /api/launchpad/images/<id>. It is left out only if a
-   * self-hosted image has since been dropped from memory, so the metadata
-   * never points at something that no longer serves.
+   * server's own /api/launchpad/images/<id>. Looked up from the (in-memory,
+   * never persisted) images store first, so an in-process eviction (memory
+   * pressure, see images.js) is reflected at once. If that store doesn't
+   * have it — after a restart, images.js's whole Map is always empty
+   * regardless of pinned/self-hosted (see rams.js's header), since it is
+   * never persisted either — falls back to the RAM record's own stored
+   * token.image, but ONLY when that URL is an external (Pinata) one: a
+   * self-hosted URL is never resurrected from the record, pinned or not,
+   * because the bytes behind it are genuinely gone and it would just 404.
+   * That keeps a Pinata-pinned image's real, always-valid URL in the
+   * metadata after a restart, while staying exactly as honest as before
+   * about a self-hosted image that no longer has bytes to serve.
    */
   function metadata(id) {
     const ram = mustGet(id);
     if (ram.status === 'cancelled') throw new RangeError(`RAM ${id} was cancelled`);
     const image = ram.token.imageId ? images.get(ram.token.imageId) : undefined;
+    const imageUrl = image ? image.url : (!isSelfHostedImageUrl(ram.token.image) ? ram.token.image : undefined);
     return {
       name: ram.token.name,
       symbol: ram.token.symbol,
       description: `HashRammers RAM ${ram.id}: an AI agent working on ${ram.hashFamily} (${ram.track}) with ${ram.model}. 100% of creator fees fund this RAM's compute via the HashRammers treasury.`,
-      ...(image ? { image: image.url } : {}),
+      ...(imageUrl ? { image: imageUrl } : {}),
       external_url: pageUrl(ram.id),
       attributes: [
         { trait_type: 'hash_family', value: ram.hashFamily },
@@ -342,6 +450,8 @@ export function createRamRegistry({ slotManager, funds, payouts, publicBaseUrl, 
     uploadImage: (bytes) => images.upload(bytes),
     getImage: (imageId) => images.get(imageId),
     imageFile: (imageId) => images.file(imageId),
+    /** Where this registry persists (null = in-memory only, every restart resets it). */
+    persistPath,
     stop: () => {
       pinLimiter?.stop();
       images.stop();
