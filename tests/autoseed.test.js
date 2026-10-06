@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { autoSeedPolicy, feeForSlots, seedRosterFunding, startRosterSandboxes } from '../server/lib/autoseed.js';
+import { autoSeedPolicy, feeForSlots, seedRosterFunding, startRosterSandboxes, shuffled } from '../server/lib/autoseed.js';
 import { computeAllocation } from '../server/lib/budget.js';
 import { ACTIVE_TRACKS } from '../server/lib/targets.js';
 import { createStore } from '../server/store.js';
@@ -259,6 +259,34 @@ test('startRosterSandboxes: one failed start is logged + on that slot\'s feed; t
   assert.ok(s2.feed.some((f) => f.type === 'sandbox-error' && /429/.test(f.message)));
   // recoverable: the same admin call (or a re-run) starts it once E2B allows
   await cleanup(store);
+});
+
+test('shuffled: same real elements, never the input array itself, and genuinely varies order across calls (not Array.sort\'s known-biased fake shuffle)', () => {
+  const input = Array.from({ length: 12 }, (_, i) => `slot-${i}`);
+  const a = shuffled(input);
+  assert.deepEqual(input, Array.from({ length: 12 }, (_, i) => `slot-${i}`), 'the input array is never mutated');
+  assert.equal(a.length, 12);
+  assert.deepEqual([...a].sort(), [...input].sort(), 'every real element is still present, exactly once');
+  // Over enough real calls, at least one actually differs from the input order -- vanishingly
+  // unlikely (1 in 12! ~ 1 in 479 million per call) to fail by chance for a real shuffle.
+  const differedAtLeastOnce = Array.from({ length: 20 }, () => shuffled(input)).some((s) => s.some((v, i) => v !== input[i]));
+  assert.equal(differedAtLeastOnce, true);
+});
+
+test('startRosterSandboxes: fairness fix, 2026-10-06 -- with more active slots than RAMHERD_SANDBOX_MAX, which slots actually get a sandbox genuinely varies across calls, instead of the same ones losing every single time', async () => {
+  const losersByRun = [];
+  for (let i = 0; i < 20; i++) {
+    const sdk = fakeSdk();
+    const { store, budgetConfig } = storeWith({ env: { ...SANDBOX_ENV, RAMHERD_SANDBOX_MAX: '2', RAMHERD_MAX_SLOTS: '5' }, sdk });
+    await seedRosterFunding(store, { budgetConfig });
+    const r = await startRosterSandboxes(store);
+    const losers = r.results.filter((x) => !x.ok).map((x) => x.slotId).sort();
+    losersByRun.push(losers.join(','));
+    await cleanup(store);
+  }
+  // Real randomness, not a guarantee of a specific distribution: just confirm it is not always
+  // literally the exact same pair of slots losing, run after run -- the real bug this fixes.
+  assert.ok(new Set(losersByRun).size > 1, `expected more than one distinct losing pair across 20 real runs, got: ${JSON.stringify(losersByRun)}`);
 });
 
 test('startRosterSandboxes: over RAMHERD_SANDBOX_MAX, extra starts fail cleanly instead of overspending', async () => {

@@ -108,12 +108,40 @@ export async function seedRosterFunding(store, { budgetConfig, rosterSize = ACTI
 }
 
 /**
+ * Fisher-Yates, real and unbiased (not Array.sort(() => Math.random() - 0.5),
+ * which is a known-biased shuffle) -- see startRosterSandboxes below for why
+ * this exists: whoever is first in line for a capped resource needs to
+ * actually change between calls, not just look randomized.
+ * @template T
+ * @param {T[]} arr
+ * @returns {T[]} a new, shuffled array; `arr` itself is never mutated
+ */
+export function shuffled(arr) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
  * Step 2: a sandbox for every active slot that has none -- roster AND owned
  * (launchpad) slots alike, so a real launched RAM's desk comes back on its
  * own after a restart, the same as the roster already did. Starts them in
  * parallel (the manager enforces RAMHERD_SANDBOX_MAX for roster slots; owned
  * slots are exempt from that cap, see sandbox.js's `exempt` Set -- a start
  * over the limit fails like any other and is logged). Never rejects.
+ *
+ * Real bug, found 2026-10-06: with more active roster slots than
+ * RAMHERD_SANDBOX_MAX, the cap check inside startSandbox runs synchronously
+ * before this function's own `await`, so whichever slots happen to be
+ * earliest in `getSlots()`'s fixed order (oldest-created first) always win
+ * the race -- confirmed live, the exact same two slots lost every single
+ * round, deterministically, not occasionally. Shuffling the start order each
+ * call doesn't raise the cap or add real cost, but means which slots lose
+ * actually changes across restarts, instead of the same two slots silently
+ * getting zero research time forever.
  *
  * @param {ReturnType<import('../store.js').createStore>} store
  * @param {{ log?: (line: string) => void }} [opts]
@@ -125,7 +153,7 @@ export async function startRosterSandboxes(store, { log = () => {} } = {}) {
     if (store.sandbox?.enabled) log(`auto-seed: no sandboxes started, ${why}.`);
     return { skipped: why, results: [] };
   }
-  const targets = store.slotManager.getSlots().filter((s) => (s.kind === 'roster' || s.kind === 'owned') && s.active && !isLive(s));
+  const targets = shuffled(store.slotManager.getSlots().filter((s) => (s.kind === 'roster' || s.kind === 'owned') && s.active && !isLive(s)));
   // startSandbox already exempts owned slots from RAMHERD_SANDBOX_MAX internally
   // (slots.js's startSandboxNow, keyed off slot.kind) -- nothing extra to pass here.
   const settled = await Promise.allSettled(targets.map((s) => store.slotManager.startSandbox(s.id)));
