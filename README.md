@@ -82,7 +82,8 @@ HashSmash's own `bash .yukon/setup.sh` passes with no pip installs (168 tests, 5
 |---|---|---|
 | `RAMHERD_PIPELINE=local` | off | all six roster tracks run the real local pipeline (free, credential-free) instead of the simulated step: five as a harness draft (`sha256-r31`, `sha3-256-r5`, `sha3-256-r6`, `blake3-r1`, `blake3-r2`), `sha256-r32` as the committed research package |
 | `RAMHERD_HASHSMASH_JUDGE=true` | off | allows the paid `judge`/`score` stages, **only** when `RAMHERD_LIVE=true` and `OPENROUTER_API_KEY` are also set |
-| `RAMHERD_HASHSMASH_SUBMIT=true` | off | recorded only, read nowhere. `submitLive()` always refuses; the real external path, if ever used, is `server/lib/yukon-submit.js` below, not this flag |
+| `RAMHERD_HASHSMASH_SUBMIT=true` | off | legacy, recorded only, read nowhere. The real switch is `RAMHERD_HASHSMASH_LIVE_SUBMIT` (see "Live submission" below) |
+| `RAMHERD_HASHSMASH_LIVE_SUBMIT=true` | off | **real, public, autonomous submission** to the HashSmash competition via `yukon submit`. Needs a real `YUKON_API_KEY`, `RAMHERD_PIPELINE=local` and E2B sandboxes. See "Live submission" below |
 
 Known environment gap: the real accepted r31 package declares a `python-message-pairs-v1`
 experiment, which HashSmash only runs in its pinned Docker sandbox, with no host fallback.
@@ -166,11 +167,46 @@ genuine improvement:** once a real submission ever succeeds, `slots.js` remember
 strictly lower `time_log2` than what was actually submitted last time — an equal or worse number is
 correctly never resubmitted. This still runs once per fresh sandbox session, not on a tight loop
 against Yukon's own CLI mid-session; a restart (E2B's own timeout, or `RAMHERD_SANDBOX_AUTORESTART`)
-is what gives it its real cadence. Today there is no real experiment runner for
-`blake3-r1-exploratory`, so the very first decision is always "no" and the feed says so honestly
-(`yukon-submit-skipped`), the same pattern as "no real runner for this track yet" elsewhere in this
-codebase. `tests/yukon-sandbox.test.js` covers all of it against a fake sandbox; its one
-non-negotiable test asserts the real CLI is never invoked while the gate is off.
+is what gives it its real cadence. **Since 2026-10-06 this workbench cycle never uploads**, even
+when that decision says yes: it never writes a candidate package into its clone, and `yukon submit`
+archives the clone's editable paths, so it would have sent the track's unchanged incumbent with a
+note claiming this RAM's numbers. Real uploads only go through "Live submission" below. Before
+install it now also runs a `prereq` step that makes sure `unzip` exists (Bun's installer, which
+Yukon's install script runs, exits 1 without it), and `yukon clone`'s real output
+(`$ cd '<dir>'`, ANSI-dimmed `$`) is now parsed correctly. `tests/yukon-sandbox.test.js` covers it
+against a fake sandbox; its one non-negotiable test asserts the real CLI is never invoked while the
+gate is off.
+
+### Live submission (`server/lib/live-submit.js`), off by default
+
+The real protocol is `yukon submit --track <track>` (reference/hash-smash/TASK.md, "Ranked Yukon
+submissions"). Yukon opens and promotes its own submission PRs, and solvers must not open one by
+hand. With `RAMHERD_HASHSMASH_LIVE_SUBMIT=true`, a real `YUKON_API_KEY`, `RAMHERD_PIPELINE=local` and
+E2B sandboxes on, `slots.js` calls `hashsmash.js`'s `submitLive()` after any cycle on any
+`PIPELINE_TRACKS` track that meets all of these:
+
+- the candidate is a loop-draft;
+- `submission_state` is `ready`, which only happens after a genuine adversarial verification PASS;
+- precheck is ok, and the real `check` and real `intake` both return `ok`;
+- success probability is at least 0.39.
+
+There is no further human or model checkpoint. Inside the RAM's running sandbox, the steps are:
+
+1. Ensure `unzip` is present, then install the Yukon CLI and run `yukon login`.
+2. `yukon clone` into a fresh directory.
+3. Confirm the clone's `benchmark.json` lists the track, then run `yukon switch <track>`.
+4. Read the incumbent's `time_log2`.
+5. Submit only if this candidate strictly beats both the incumbent and this harness's last real
+   submission on that track (a per-track ledger, persisted at
+   `$RAMHERD_DATA_DIR/live-submissions.json`).
+6. Write the exact package into the track's editable path.
+7. Re-run the organizer's `local_tracks.py check` in the clone.
+8. Write a note of at least 5 KiB from real content only. If the real content falls short, refuse
+   rather than pad it.
+9. `yukon submit --track <track> --model <RAM model> --harness "HashRammers RAM <slot>"`.
+
+The committed sha256-r32 research package and harness drafts are never auto-submitted. Tests:
+`tests/live-submit.test.js`, all against fakes.
 
 ## E2B desktop sandboxes (what's proven, what isn't)
 

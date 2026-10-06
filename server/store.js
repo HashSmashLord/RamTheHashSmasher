@@ -18,6 +18,7 @@ import { runWorkbenchTask } from './lib/sandbox-task.js';
 import { contextBanner } from './lib/sandbox-context.js';
 import { desktopActivity } from './lib/sandbox-activity.js';
 import * as yukonSandbox from './lib/yukon-sandbox.js';
+import { liveSubmitPolicy, createLiveSubmissionLedger } from './lib/live-submit.js';
 import { createCostLedger } from './lib/cost.js';
 import { createRamFunds } from './lib/ramfunds.js';
 import { createPayoutBook } from './lib/payouts.js';
@@ -83,7 +84,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   // Real HashSmash pipeline: opt-in with RAMHERD_PIPELINE=local (off by
   // default). Its credential-free stages are local and free; the paid judge
   // stage needs the live LLM gate plus RAMHERD_HASHSMASH_JUDGE=true; live
-  // competition submission is never available from here.
+  // competition submission needs RAMHERD_HASHSMASH_LIVE_SUBMIT (see below).
   const pipeline = pipelinePolicy(env);
   const pipelineRunner = pipeline.enabled
     ? createHashSmashRunner({ judgeAllowed: pipeline.judgeAllowed, env })
@@ -152,7 +153,21 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   // gated internally by RAMHERD_YUKON_SUBMIT + a real YUKON_API_KEY (see its
   // header). Passed whenever sandboxes are on at all, same as sandboxTask —
   // it is the module itself, not this wiring, that stays inert by default.
-  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, sandboxActivity: activeLoop ? desktopActivity : null, activeLoop, yukonSandbox: sandboxManager ? yukonSandbox : null, costLedger, modelOverride: modelOverride(env), autoRestart });
+  // REAL live submission to the HashSmash competition (live-submit.js): only
+  // wired in at all when the pipeline runs, sandboxes are on, AND
+  // RAMHERD_HASHSMASH_LIVE_SUBMIT=true with a real YUKON_API_KEY. Unset (the
+  // default) = null, and slots.js never reaches any submission code. The
+  // per-track "what we really submitted" ledger persists under
+  // RAMHERD_DATA_DIR so a restart can never cause a duplicate submission.
+  const liveSubmitGate = liveSubmitPolicy(env);
+  const liveSubmit = pipelineRunner && sandboxManager && pipeline.liveSubmitAllowed && liveSubmitGate.allowed
+    ? {
+      policy: liveSubmitGate,
+      env,
+      ledger: createLiveSubmissionLedger({ persistPath: env.RAMHERD_DATA_DIR ? join(env.RAMHERD_DATA_DIR, 'live-submissions.json') : null, log }),
+    }
+    : null;
+  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, sandboxActivity: activeLoop ? desktopActivity : null, activeLoop, yukonSandbox: sandboxManager ? yukonSandbox : null, liveSubmit, costLedger, modelOverride: modelOverride(env), autoRestart });
   // Same opt-in persistence pattern as rams.js below (RAMHERD_DATA_DIR, unset =
   // in-memory only, every existing createStore() test unaffected): real bug, found
   // 2026-10-06, a genuinely good approved idea silently wiped on every restart.

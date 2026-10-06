@@ -8,9 +8,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  YUKON_TRACK, YUKON_BENCHMARK_ID, YUKON_INSTALL_COMMAND,
+  YUKON_TRACK, YUKON_BENCHMARK_ID, YUKON_INSTALL_COMMAND, YUKON_PREREQ_COMMAND,
   isYukonSandboxTrack, parseCloneWorkspace, decideYukonSubmission, yukonStepMessage,
-  createSandboxRun, runYukonSandboxCycle, runYukonSandboxSubmit,
+  createSandboxRun, runYukonSandboxCycle, installYukonCli,
 } from '../server/lib/yukon-sandbox.js';
 import { createSandboxManager } from '../server/lib/sandbox.js';
 import { createSlotManager } from '../server/lib/slots.js';
@@ -36,6 +36,14 @@ test('parseCloneWorkspace finds the real "cd <dir>" line and never guesses one t
   assert.equal(parseCloneWorkspace('no cd instruction here at all'), null);
   assert.equal(parseCloneWorkspace(''), null);
   assert.equal(parseCloneWorkspace(undefined), null);
+});
+
+test('parseCloneWorkspace reads the REAL clone output format: ANSI-dimmed "$", single-quoted path (read from the real CLI bundle, printCloneNextSteps + shellQuote)', () => {
+  const ESC = '\x1b';
+  const real = `Challenge cloned\nbenchmark  hashsmash\n\nNext steps\n${ESC}[2mBenchmark work directory:${ESC}[22m\n${ESC}[2m$${ESC}[22m cd '/home/user/ramherd-live/hash-smash'\nBuild the harness, then run the benchmark:\n${ESC}[2m$${ESC}[22m yukon setup --track 'blake3-r1-exploratory'\n`;
+  assert.equal(parseCloneWorkspace(real), '/home/user/ramherd-live/hash-smash');
+  assert.equal(parseCloneWorkspace("$ cd 'it'\\''s here'\n"), "it's here", "shellQuote's '\\'' escape is undone");
+  assert.equal(parseCloneWorkspace('$ yukon submit --track x\n'), null, 'a non-cd "$" line is never mistaken for one');
 });
 
 test('decideYukonSubmission never says yes without a real numeric, genuinely positive measurement', () => {
@@ -153,6 +161,7 @@ function fakeYukonSandbox({ failAt = null, cloneOut = CLONE_OUT } = {}) {
     commands: {
       run: async (cmd, opts) => {
         calls.push({ cmd, opts });
+        if (cmd.includes(YUKON_PREREQ_COMMAND)) return failAt === 'prereq' ? fail() : ok('unzip already present: /usr/bin/unzip\n');
         if (cmd.includes(YUKON_INSTALL_COMMAND)) return failAt === 'install' ? fail() : ok('yukon installed\n');
         if (cmd.includes('yukon login')) return failAt === 'login' ? fail() : ok('logged in\n');
         if (cmd.startsWith('yukon clone')) return failAt === 'clone' ? fail() : ok(cloneOut);
@@ -187,12 +196,12 @@ test('THE important test: with the gate off, the real CLI is never invoked — n
 });
 
 test('a failure at any step stops the sequence there and never runs the later steps', async () => {
-  for (const failAt of ['install', 'login', 'clone', 'setup', 'run']) {
+  for (const failAt of ['prereq', 'install', 'login', 'clone', 'setup', 'run']) {
     const { sbx, calls } = fakeYukonSandbox({ failAt });
     const result = await runYukonSandboxCycle(sbx, { assignment: blake3Assignment(), env: ON_ENV });
     assert.equal(result.ok, false);
     assert.equal(result.failedStep, failAt);
-    const order = ['install', 'login', 'clone', 'setup', 'run'];
+    const order = ['prereq', 'install', 'login', 'clone', 'setup', 'run'];
     const idx = order.indexOf(failAt);
     assert.equal(result.steps.length, idx + 1, `expected exactly the steps up to and including ${failAt}`);
     assert.equal(calls.length, idx + 1);
@@ -226,68 +235,46 @@ test('a full success with no real measured result yet: ok, not submitted, honest
   assert.equal(calls.some((c) => c.cmd.startsWith('yukon submit')), false);
 });
 
-test('a full success with a genuine real measured result: submits for real (fake CLI), with the right model/harness and an honest note', async () => {
+test('a full success with a genuine result: the workbench cycle still NEVER uploads -- real bug 2026-10-06, it has no candidate package in its clone, so `yukon submit` would have sent the unchanged incumbent with a note claiming this RAM\'s numbers', async () => {
   const { sbx, calls, files } = fakeYukonSandbox();
-  const bestResult = { timeLog2: 86, successProbability: 0.2 };
-  const result = await runYukonSandboxCycle(sbx, { assignment: blake3Assignment(), env: ON_ENV, bestResult });
+  const result = await runYukonSandboxCycle(sbx, { assignment: blake3Assignment(), env: ON_ENV, bestResult: { timeLog2: 86, successProbability: 0.5 } });
   assert.equal(result.ok, true);
-  assert.equal(result.submitted, true);
-  assert.equal(result.submitResult.ok, true);
-  assert.equal(result.submitResult.model, 'deepseek/deepseek-v4-pro'); // this track's real roster model
-  assert.equal(result.submitResult.harness, 'HashRammers');
-  const submitCall = calls.find((c) => c.cmd.startsWith('yukon submit'));
-  assert.match(submitCall.cmd, /--model deepseek\/deepseek-v4-pro/);
-  assert.match(submitCall.cmd, /--harness HashRammers/);
-  assert.match(submitCall.cmd, /--note-file submission-note\.md/);
-  assert.equal(files.length, 1);
-  assert.match(files[0].path, /submission-note\.md$/);
-  assert.match(files[0].data, /time 2\^86, success probability 0\.2/);
-  assert.equal(/\bcollision found\b|\baccepted\b|\bwon\b/i.test(files[0].data), false);
-  // A real successful submit hands bestResult back as submittedResult, so the caller
-  // (slots.js) can remember it as this slot's new lastSubmittedResult.
-  assert.deepEqual(result.submittedResult, bestResult);
+  assert.equal(result.submitted, false);
+  assert.equal(result.decision.shouldSubmit, false);
+  assert.match(result.decision.reason, /never uploads/);
+  assert.match(result.decision.reason, /RAMHERD_HASHSMASH_LIVE_SUBMIT/);
+  assert.equal(calls.some((c) => c.cmd.startsWith('yukon submit')), false);
+  assert.equal(files.length, 0, 'not even a note file is written');
 });
 
-test('a genuine improvement over a real lastSubmitted still submits; a non-improvement is correctly skipped, never calling yukon submit', async () => {
-  const lastSubmitted = { timeLog2: 90, successProbability: 0.1 };
-  const better = await runYukonSandboxCycle(fakeYukonSandbox().sbx, {
-    assignment: blake3Assignment(), env: ON_ENV, bestResult: { timeLog2: 86, successProbability: 0.2 }, lastSubmitted,
-  });
-  assert.equal(better.submitted, true);
-  assert.deepEqual(better.submittedResult, { timeLog2: 86, successProbability: 0.2 });
-
+test('a non-improvement over a real lastSubmitted keeps its own honest reason (and never uploads either)', async () => {
   const { sbx, calls } = fakeYukonSandbox();
   const worse = await runYukonSandboxCycle(sbx, {
-    assignment: blake3Assignment(), env: ON_ENV, bestResult: { timeLog2: 95, successProbability: 0.5 }, lastSubmitted,
+    assignment: blake3Assignment(), env: ON_ENV, bestResult: { timeLog2: 95, successProbability: 0.5 }, lastSubmitted: { timeLog2: 90, successProbability: 0.1 },
   });
   assert.equal(worse.submitted, false);
-  assert.equal(worse.submittedResult, undefined);
   assert.match(worse.decision.reason, /not a genuine improvement/);
-  assert.equal(calls.some((c) => c.cmd.startsWith('yukon submit')), false, 'never actually calls yukon submit for a non-improvement');
+  assert.equal(calls.some((c) => c.cmd.startsWith('yukon submit')), false);
 });
 
-test('submittedResult is null, not the attempted bestResult, when the real yukon submit exits non-zero', async () => {
-  const { sbx } = fakeYukonSandbox({ failAt: 'submit' });
-  const result = await runYukonSandboxCycle(sbx, {
-    assignment: blake3Assignment(), env: ON_ENV, bestResult: { timeLog2: 86, successProbability: 0.2 },
-  });
-  assert.equal(result.submitted, true);
-  assert.equal(result.submitResult.ok, false);
-  assert.equal(result.submittedResult, null, 'a failed submit must never look like a recorded one to the next decision');
-});
+test('installYukonCli: unzip prereq runs BEFORE the Yukon install, its real output is recorded, and a prereq failure stops before install', async () => {
+  const seen = [];
+  const run = async (cmd, args) => { seen.push(args.join(' ')); return args[1] === YUKON_PREREQ_COMMAND ? { exitCode: 0, stdout: 'unzip missing; installing it with apt-get (bun.sh/install requires it)\nunzip installed: /usr/bin/unzip\n', stderr: '' } : { exitCode: 0, stdout: 'Installed yukon\n', stderr: '' }; };
+  const ok = await installYukonCli(run, {});
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.steps.map((st) => st.id), ['prereq', 'install']);
+  assert.match(yukonStepMessage(ok.steps[0]), /unzip installed/);
+  assert.equal(seen[0].includes('command -v unzip'), true);
+  assert.equal(seen[1].includes(YUKON_INSTALL_COMMAND), true);
 
-test('runYukonSandboxSubmit prefers a real attribution model/harness over the assignment default', async () => {
-  const { sbx, calls } = fakeYukonSandbox();
-  const result = await runYukonSandboxSubmit(sbx, {
-    assignment: blake3Assignment(),
-    workspaceDir: '/home/user/yukon-work/blake3-r1',
-    bestResult: { timeLog2: 90, successProbability: 0.1 },
-    attribution: { slotId: 'slot-4', model: 'anthropic/claude-opus-5.5', approach: 'structural-shortcut' },
-    env: ON_ENV,
-  });
-  assert.equal(result.model, 'anthropic/claude-opus-5.5');
-  assert.equal(result.harness, 'HashRammers RAM slot-4');
-  assert.equal(calls.some((c) => c.cmd.includes('--model anthropic/claude-opus-5.5')), true);
+  const failing = async (cmd, args) => (args[1] === YUKON_PREREQ_COMMAND ? { exitCode: 100, stdout: 'unzip missing; installing it', stderr: 'sudo: a password is required' } : { exitCode: 0, stdout: '', stderr: '' });
+  const bad = await installYukonCli(failing, {});
+  assert.equal(bad.ok, false);
+  assert.equal(bad.failedStep, 'prereq');
+  assert.equal(bad.steps.length, 1, 'the install script is never run after a failed prereq');
+  assert.match(bad.steps[0].stderr, /password is required/, 'the real failure output is kept, never swallowed');
+  // Never prompts: sudo is always non-interactive.
+  assert.match(YUKON_PREREQ_COMMAND, /sudo -n apt-get/);
 });
 
 // ---- wired into the slot manager (server/lib/slots.js) ----

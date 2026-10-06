@@ -195,6 +195,8 @@
 // (ramfunds.js), not the shared pool.
 
 import { assignmentForIndex, ACTIVE_TRACKS } from './targets.js';
+import { liveSubmitEligibility, runLiveSubmissionInSandbox } from './live-submit.js';
+import { yukonStepMessage } from './yukon-sandbox.js';
 import { contextPayload } from './sandbox-context.js';
 import {
   parseThinking, parseDraftAttempt, parseVerifyVerdict, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
@@ -346,13 +348,14 @@ function freezeCopy(value) {
  *   sandboxActivity?: typeof import('./sandbox-activity.js').desktopActivity|null,
  *   activeLoop?: { enabled?: boolean, live: boolean, stepPauseMs?: number, minStepPauseMs?: number, browseEvery?: number, maxThinkingPerSession?: number, maxDraftAttemptsPerSession?: number, maxFailures?: number }|null,
  *   yukonSandbox?: typeof import('./yukon-sandbox.js')|null,
+ *   liveSubmit?: { policy: { allowed: boolean }, ledger: ReturnType<typeof import('./live-submit.js').createLiveSubmissionLedger>, env?: NodeJS.ProcessEnv, runInSandbox?: typeof runLiveSubmissionInSandbox }|null,
  *   setTimer?: (fn: () => void, ms: number) => any,
  *   clearTimer?: (handle: any) => void,
  *   now?: () => string,
  *   idPrefix?: string,
  * }} opts
  */
-export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, autoRestart = null, sandboxActivity = null, activeLoop = null, yukonSandbox = null, setTimer = setTimeout, clearTimer = clearTimeout, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
+export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, autoRestart = null, sandboxActivity = null, activeLoop = null, yukonSandbox = null, liveSubmit = null, setTimer = setTimeout, clearTimer = clearTimeout, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createSlotManager requires an llmProvider with complete()');
   }
@@ -694,14 +697,84 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       pushFeed(slot, 'validated', slot.pipeline.candidate === 'research'
         ? `Research package passed HashSmash's real local intake for ${track} (mechanical checks only). Judge stage: ${judged?.outcome ?? 'not run'}; nothing was scored or submitted. Its claim still rests on disclosed exploratory heuristics; passing intake is not a verdict on them. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track} — not sent anywhere yet, there is no real external submission path.`
         : slot.pipeline.candidate === 'loop-draft'
-          ? `This RAM's own drafted candidate for ${track} passed HashSmash's real local intake (mechanical checks only; it stays a draft, so intake correctly still refuses to forward it to the judge). ${slot.pipeline.candidateDetail?.summary ?? ''} Nobody has reviewed or verified it. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track}.`
+          ? (slot.pipeline.candidateDetail?.submissionState === 'ready'
+            ? `This RAM's own drafted candidate for ${track} passed an independent adversarial verification call and HashSmash's real local intake (mechanical checks only), and is submission_state 'ready'. No human has reviewed it. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track}.`
+            : `This RAM's own drafted candidate for ${track} passed HashSmash's real local intake (mechanical checks only; it stays a draft, so intake correctly still refuses to forward it to the judge). ${slot.pipeline.candidateDetail?.summary ?? ''} Nobody has reviewed or verified it. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track}.`)
           : `Harness draft passed HashSmash's real local intake for ${track}. Integration check only: no attack is claimed, nothing was judged or submitted. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track}.`);
+      if (intake.outcome === 'ok') await maybeLiveSubmit(slot, cycle);
     } else {
       slot.status = 'failed';
       const blocked = intake?.outcome === 'environment-blocked';
       pushFeed(slot, blocked ? 'pipeline-blocked' : 'failed', blocked
         ? `HashSmash pipeline blocked by the local environment, not by the candidate: ${intake.detail}`
         : `HashSmash pipeline rejected the candidate for ${track}.`);
+    }
+  }
+
+  /**
+   * REAL live submission (live-submit.js), right after a cycle whose real
+   * intake came back ok. A no-op unless the operator wired `liveSubmit` in
+   * with its policy allowed (store.js does so only under
+   * RAMHERD_HASHSMASH_LIVE_SUBMIT=true + a real YUKON_API_KEY); then a no-op
+   * for anything liveSubmitEligibility rejects (harness drafts, the research
+   * package, unverified drafts, non-ok check/intake). For an eligible cycle
+   * there is no further checkpoint, human or model: it goes straight to
+   * hashsmash.js submitLive (which re-checks everything itself) and the real
+   * `yukon submit` in this RAM's own running sandbox. At most one submission
+   * per track in flight; the per-track ledger is updated only on a real exit 0.
+   * Never throws; every outcome is a feed line.
+   */
+  async function maybeLiveSubmit(slot, cycle) {
+    if (!liveSubmit || liveSubmit.policy?.allowed !== true) return;
+    const elig = liveSubmitEligibility(cycle);
+    if (!elig.eligible) {
+      if (cycle?.candidate?.kind === 'loop-draft') pushFeed(slot, 'live-submit-skipped', `Not live-submitting this candidate: ${elig.reasons.join('; ')}.`);
+      return;
+    }
+    const { track } = cycle;
+    if (!sandboxManager || typeof sandboxManager.runTask !== 'function' || slot.sandbox?.status !== 'running') {
+      pushFeed(slot, 'live-submit-skipped', `Not live-submitting: the Yukon CLI runs inside this RAM's own sandbox, and it has no running sandbox right now.`);
+      return;
+    }
+    if (!liveSubmit.ledger.tryLock(track)) {
+      pushFeed(slot, 'live-submit-skipped', `Not live-submitting: another submission for ${track} is already in flight.`);
+      return;
+    }
+    const runInSandbox = liveSubmit.runInSandbox ?? runLiveSubmissionInSandbox;
+    const { model, approach } = slot.assignment;
+    const attribution = { slotId: slot.id, model, approach, candidateKind: cycle.candidate.kind };
+    try {
+      pushFeed(slot, 'live-submit-started', `Live-submitting this RAM's verified candidate for ${track} to the real HashSmash competition via \`yukon submit\` (time 2^${cycle.candidate.timeLog2}, success probability ${cycle.candidate.successProbability}).`);
+      const result = await pipelineRunner.submitLive(cycle, {
+        submitter: (payload) => sandboxManager.runTask(slot.id, (sbx) => runInSandbox(sbx, {
+          ...payload,
+          model,
+          attribution,
+          lastSubmitted: liveSubmit.ledger.get(track),
+          env: liveSubmit.env ?? process.env,
+        })),
+      });
+      for (const step of result.steps ?? []) pushFeed(slot, 'live-submit-step', yukonStepMessage(step));
+      if (result.submitted) {
+        liveSubmit.ledger.record(track, {
+          timeLog2: cycle.candidate.timeLog2,
+          successProbability: cycle.candidate.successProbability,
+          slotId: slot.id,
+          model,
+          packageSha256: result.packageSha256 ?? null,
+          submittedAt: now(),
+        });
+        const out = (result.steps?.find((st) => st.id === 'submit')?.stdout ?? '').trim().replace(/\s+/g, ' ').slice(0, 300);
+        pushFeed(slot, 'live-submit-done', `Submitted to Yukon for real (model ${result.model}, harness "${result.harness}")${out ? `: ${out}` : ''}. Yukon's own judge decides from here; nothing is qualified or scored yet.`);
+      } else if (result.ok) {
+        pushFeed(slot, 'live-submit-skipped', `Not submitted: ${result.reason}.`);
+      } else {
+        pushFeed(slot, 'live-submit-error', `Live submission stopped at "${result.failedStep}": ${result.reason}.`);
+      }
+    } catch (err) {
+      pushFeed(slot, 'live-submit-error', `Live submission did not run: ${err.message}`);
+    } finally {
+      liveSubmit.ledger.unlock(track);
     }
   }
 

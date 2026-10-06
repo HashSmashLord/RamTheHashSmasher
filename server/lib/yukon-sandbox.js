@@ -43,22 +43,59 @@
 // resubmit of the same or a worse number, and never on a tight synchronous
 // loop against Yukon's own CLI mid-session.
 //
-// Honesty: `decideYukonSubmission` is the only thing that may ever lead to a
-// real `yukon submit` call, and it requires an actual numeric measurement
-// (`bestResult`, slots.js's own real-measurement tracker, `updateBestResult`)
-// with a genuinely positive success probability — never a guess, a draft, or
-// "a pipeline ran". Today there is no real experiment runner for
-// blake3-r1-exploratory (it is not in hashsmash.js's PIPELINE_TRACKS), so
-// `bestResult` is always null for this slot and this will always, correctly,
-// decide not to submit — the exact same honesty pattern slots.js already
-// uses for "no real runner for this track in this harness yet".
+// Honesty: `decideYukonSubmission` requires an actual numeric result
+// (`bestResult`, slots.js `updateBestResult`, which only moves on a genuinely
+// 'ready' candidate) with a genuinely positive success probability. Since
+// 2026-10-06 a loop-draft that passed the adversarial verification call IS
+// 'ready', so bestResult is no longer always null for blake3-r1. This
+// workbench cycle still never uploads anything: it has no candidate package
+// in its clone (see the comment at the end of runYukonSandboxCycle). Real
+// uploads only ever happen in live-submit.js, gated by
+// RAMHERD_HASHSMASH_LIVE_SUBMIT, for every PIPELINE_TRACKS track.
 
 import { shQuote } from './sandbox-task.js';
-import { yukonSubmitPolicy, yukonArgs, buildSubmissionNote } from './yukon-submit.js';
+import { yukonSubmitPolicy, yukonArgs } from './yukon-submit.js';
 
 export const YUKON_TRACK = 'blake3-r1-exploratory';
 export const YUKON_BENCHMARK_ID = '86d5040e-d37d-4f41-bab6-1f2cd57e7398';
 export const YUKON_INSTALL_COMMAND = 'curl -fsSL https://api.yukon.org/yukon/install.sh | sh';
+
+/**
+ * Runs BEFORE YUKON_INSTALL_COMMAND. Real bug, blake3-r1 "yukon install: exit
+ * status 1" (2026-10-06): api.yukon.org/yukon/install.sh bootstraps Bun with
+ * `curl -fsSL https://bun.sh/install | bash` whenever `bun` is missing, and
+ * bun.sh's installer starts with `command -v unzip >/dev/null || error 'unzip
+ * is required to install bun'` (both scripts read directly, 2026-10-06). E2B's
+ * public desktop template (github.com/e2b-dev/desktop, template/template.py:
+ * ubuntu:22.04 + an explicit apt list) installs curl, git, sudo, python3-pip
+ * ... but not `unzip`, which is the most likely cause. Not confirmed against
+ * a live sandbox (that costs real money and needs the operator's yes), so
+ * this step is written to settle it on its first real run: its own stdout
+ * says plainly whether unzip was already there or had to be installed, and
+ * that line lands in the feed via yukonStepMessage. It installs only if
+ * missing, through the template's real package manager (apt-get, via the
+ * template's own passwordless sudo, `-n` so it can never hang on a prompt).
+ * A failure here is reported as its own failed step with the real output,
+ * never swallowed and never retried blindly.
+ */
+export const YUKON_PREREQ_COMMAND = 'if command -v unzip >/dev/null 2>&1; then echo "unzip already present: $(command -v unzip)"; '
+  + 'else echo "unzip missing; installing it with apt-get (bun.sh/install requires it)"; '
+  + 'sudo -n apt-get update -qq && sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unzip && echo "unzip installed: $(command -v unzip)"; fi';
+
+/**
+ * The prereq + install pair, as two separately recorded steps so a failure
+ * names the real step that failed. Shared by runYukonSandboxCycle and the
+ * live-submission path (live-submit.js). Returns `{ ok, failedStep, steps }`.
+ */
+export async function installYukonCli(run, baseEnv) {
+  const steps = [];
+  const record = (id, res) => { const s = { id, exitCode: res.exitCode, stdout: res.stdout, stderr: res.stderr }; steps.push(s); return s; };
+  const prereq = record('prereq', await run('bash', ['-lc', YUKON_PREREQ_COMMAND], { env: baseEnv, timeoutMs: 240_000 }));
+  if (prereq.exitCode !== 0) return { ok: false, failedStep: 'prereq', reason: 'could not make sure unzip (required by the Bun installer Yukon\'s install script runs) is present', steps };
+  const install = record('install', await run('bash', ['-lc', YUKON_INSTALL_COMMAND], { env: baseEnv, timeoutMs: 180_000 }));
+  if (install.exitCode !== 0) return { ok: false, failedStep: 'install', reason: 'the install script exited non-zero', steps };
+  return { ok: true, failedStep: null, reason: null, steps };
+}
 export const YUKON_NOTE_FILE = 'submission-note.md';
 export const YUKON_HARNESS = 'HashRammers';
 
@@ -82,8 +119,19 @@ function scrub(text, apiKey) {
  * found; callers must then stop and say so honestly, not invent a path.
  */
 export function parseCloneWorkspace(stdout) {
-  const m = /(?:^|\n)\s*cd\s+(\S+)\s*(?:\n|$)/.exec(String(stdout ?? ''));
-  return m ? m[1] : null;
+  // Real format, read from the real CLI bundle (api.yukon.org/cli/yukon.js,
+  // printCloneNextSteps + shellQuote, 2026-10-06): `${muted("$")} cd
+  // ${shellQuote(workDir)}`, where muted() ALWAYS wraps the "$" in ANSI dim
+  // escapes (no TTY check) and shellQuote() ALWAYS single-quotes. The
+  // previous plain `cd <dir>` regex could never have matched that real line,
+  // so even a working install would have stopped at "clone". Strip ANSI,
+  // accept an optional "$ " prompt, and undo shellQuote's '\'' escaping.
+  const text = String(stdout ?? '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+  for (const line of text.split('\n')) {
+    const m = /^\s*(?:\$\s+)?cd\s+(?:'((?:[^']|'\\'')*)'|(\S+))\s*$/.exec(line);
+    if (m) return m[1] !== undefined ? m[1].replace(/'\\''/g, "'") : m[2];
+  }
+  return null;
 }
 
 /** Best-effort PATH covering common install.sh destinations, plus whatever the sandbox env already has. Nothing secret. */
@@ -148,7 +196,7 @@ export function createSandboxRun(sbx, { apiKey = null } = {}) {
  * process only via its environment (`YUKON_API_KEY`); the command text
  * itself only ever contains the shell variable reference, never the value.
  */
-async function sandboxLogin(run, apiKey, baseEnv) {
+export async function sandboxLogin(run, apiKey, baseEnv) {
   return run('bash', ['-lc', 'yukon login "$YUKON_API_KEY"'], { env: { ...baseEnv, YUKON_API_KEY: apiKey } });
 }
 
@@ -238,8 +286,9 @@ export async function runYukonSandboxCycle(sbx, { assignment, bestResult = null,
   const steps = [];
   const record = (id, res) => { const s = { id, exitCode: res.exitCode, stdout: res.stdout, stderr: res.stderr }; steps.push(s); return s; };
 
-  const install = record('install', await run('bash', ['-lc', YUKON_INSTALL_COMMAND], { env: baseEnv, timeoutMs: 180_000 }));
-  if (install.exitCode !== 0) return { skipped: false, ok: false, failedStep: 'install', reason: 'the install script exited non-zero', steps, workspaceDir: null };
+  const installed = await installYukonCli(run, baseEnv);
+  steps.push(...installed.steps);
+  if (!installed.ok) return { skipped: false, ok: false, failedStep: installed.failedStep, reason: installed.reason, steps, workspaceDir: null };
 
   const login = record('login', await sandboxLogin(run, env.YUKON_API_KEY, baseEnv));
   if (login.exitCode !== 0) return { skipped: false, ok: false, failedStep: 'login', reason: 'yukon login exited non-zero', steps, workspaceDir: null };
@@ -261,37 +310,25 @@ export async function runYukonSandboxCycle(sbx, { assignment, bestResult = null,
   if (!decision.shouldSubmit) {
     return { skipped: false, ok: true, steps, workspaceDir, submitted: false, decision };
   }
-
-  const submitResult = await runYukonSandboxSubmit(sbx, { assignment, workspaceDir, bestResult, attribution, env });
-  // bestResult travels back up only on a real, successful `yukon submit` exit, so the caller
-  // (slots.js) can record it as this slot's new lastSubmittedResult -- never recorded on a
-  // failed submit, so a resubmit attempt after a real failure is not mistaken for "no change".
-  return { skipped: false, ok: true, steps, workspaceDir, submitted: true, decision, submitResult, submittedResult: submitResult.ok ? bestResult : null };
-}
-
-/**
- * The real `yukon submit`, run only by `runYukonSandboxCycle` after
- * `decideYukonSubmission` said yes. Writes the honest note file (built from
- * real data only, `buildSubmissionNote`) inside the sandbox first.
- * `--model`/`--harness` come from this RAM's own real assignment unless a
- * real attribution record says otherwise.
- */
-export async function runYukonSandboxSubmit(sbx, { assignment, workspaceDir, bestResult, attribution = null, env = process.env }) {
-  const run = createSandboxRun(sbx, { apiKey: env.YUKON_API_KEY });
-  const baseEnv = baseSandboxEnv(env);
-  const model = attribution?.model || assignment.model;
-  const harness = attribution?.slotId ? `${YUKON_HARNESS} RAM ${attribution.slotId}` : YUKON_HARNESS;
-  const noteContent = buildSubmissionNote({
-    track: YUKON_TRACK,
-    candidate: {
-      kind: attribution?.candidateKind ?? 'research',
-      timeLog2: bestResult.timeLog2,
-      successProbability: bestResult.successProbability,
-      submissionState: 'ready',
+  // Real bug, found 2026-10-06 while building live-submit.js: this cycle never
+  // writes any candidate package into the fresh `yukon clone` above, and
+  // `yukon submit` archives the clone's editablePaths from the working tree
+  // (read from the real CLI bundle: createSubmissionArchive). Since verified
+  // loop-drafts now move `bestResult` (slots.js updateBestResult), submitting
+  // here would have uploaded the track's UNCHANGED incumbent package with a
+  // note claiming this RAM's numbers -- a mismatch real judges would see. So
+  // this workbench cycle never uploads. A real submission only ever goes
+  // through live-submit.js (RAMHERD_HASHSMASH_LIVE_SUBMIT), which writes the
+  // exact checked package into its clone first.
+  return {
+    skipped: false,
+    ok: true,
+    steps,
+    workspaceDir,
+    submitted: false,
+    decision: {
+      shouldSubmit: false,
+      reason: `${decision.reason}, but this workbench cycle never uploads: it has no candidate package in its clone. Real submissions go only through the RAMHERD_HASHSMASH_LIVE_SUBMIT path, which uploads the exact checked package`,
     },
-    attribution,
-  });
-  await sbx.files.write(`${workspaceDir}/${YUKON_NOTE_FILE}`, noteContent);
-  const res = await run('yukon', yukonArgs.submit({ track: YUKON_TRACK, model, harness, noteFile: YUKON_NOTE_FILE }), { env: baseEnv, cwd: workspaceDir, timeoutMs: 120_000 });
-  return { ok: res.exitCode === 0, exitCode: res.exitCode, stdout: res.stdout, stderr: res.stderr, model, harness, noteContent };
+  };
 }

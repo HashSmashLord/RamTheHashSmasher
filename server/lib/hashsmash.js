@@ -37,15 +37,18 @@
 //     which `pipelinePolicy()` grants only under the same RAMHERD_LIVE +
 //     OPENROUTER_API_KEY switch as the LLM provider PLUS its own
 //     RAMHERD_HASHSMASH_JUDGE=true flag.
-//   - Live submission to the real HashSmash/Yukon competition is not
-//     implemented at all. `submitLive()` always refuses; that step is manual
-//     and the operator's call.
+//   - Live submission to the real HashSmash/Yukon competition (`submitLive`,
+//     live-submit.js) refuses unless RAMHERD_HASHSMASH_LIVE_SUBMIT=true and a
+//     real YUKON_API_KEY are set (off by default), and then only for a
+//     'ready', adversarially verified loop-draft whose real check and intake
+//     both came back ok.
 
 import { spawn } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isLiveMode } from './llm.js';
+import { liveSubmitPolicy, liveSubmitEligibility, collectCandidateFiles, LIVE_SUBMIT_FLAG } from './live-submit.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const DEFAULT_REFERENCE_ROOT = join(PROJECT_ROOT, 'reference', 'hash-smash');
@@ -121,9 +124,11 @@ export function pipelinePolicy(env = process.env) {
   return Object.freeze({
     enabled,
     judgeAllowed,
-    // Recorded so the UI/logs can show someone asked for it; never acted on.
+    // Legacy flag: recorded so the UI/logs can show someone asked for it; never acted on.
     liveSubmitRequested: env.RAMHERD_HASHSMASH_SUBMIT === 'true',
-    liveSubmitAllowed: false,
+    // The real gate (live-submit.js): RAMHERD_HASHSMASH_LIVE_SUBMIT=true AND a
+    // real YUKON_API_KEY AND the pipeline itself on. Off by default.
+    liveSubmitAllowed: enabled && liveSubmitPolicy(env).allowed,
   });
 }
 
@@ -818,9 +823,41 @@ export function createHashSmashRunner({
     return classifyStage('score', await py(workspaceDir, ['scripts/hashsmash_pipeline.py', 'score', '--track', track]));
   }
 
-  /** Live submission to the real competition is deliberately not implemented. */
-  async function submitLive() {
-    throw new Error('live submission to the HashSmash/Yukon competition is not implemented in this harness; it is a manual step for the operator');
+  /**
+   * REAL live submission of one cycle's candidate to the HashSmash/Yukon
+   * competition (see live-submit.js for the protocol and why it is `yukon
+   * submit`, not a hand-opened PR). This function is the gatekeeper, not the
+   * transport: it refuses (throws) unless RAMHERD_HASHSMASH_LIVE_SUBMIT=true
+   * and a real YUKON_API_KEY are set, the track is a PIPELINE_TRACKS track,
+   * and liveSubmitEligibility(cycle) holds (a 'ready' loop-draft, precheck ok,
+   * real check ok, real intake ok, success probability >= 0.39). Then it
+   * re-reads the package from disk (collectCandidateFiles also refuses a
+   * claim.json that is not 'ready' or does not match the cycle's numbers) and
+   * hands exactly those files to `submitter` -- in production slots.js's
+   * runner for live-submit.js's runLiveSubmissionInSandbox inside the RAM's
+   * own sandbox. Injected so tests never make a real external call.
+   *
+   * @param {any} cycle - a runCycle() result
+   * @param {{ submitter: (payload: { track: string, files: Array<{path: string, content: string}>, packageSha256: string, candidate: any, checks: object }) => Promise<any> }} opts
+   */
+  async function submitLive(cycle, { submitter } = {}) {
+    const policy = liveSubmitPolicy(env);
+    if (!policy.enabled) throw new Error(`live submission refused: ${LIVE_SUBMIT_FLAG} is not "true"`);
+    if (!policy.hasKey) throw new Error(`live submission refused: ${LIVE_SUBMIT_FLAG}=true but no real YUKON_API_KEY is set`);
+    if (!PIPELINE_TRACKS.includes(cycle?.track)) throw new Error(`live submission refused: ${cycle?.track} is not a pipeline track`);
+    const elig = liveSubmitEligibility(cycle);
+    if (!elig.eligible) throw new Error(`live submission refused: ${elig.reasons.join('; ')}`);
+    if (typeof submitter !== 'function') throw new Error('live submission refused: no submitter given');
+    const pkg = collectCandidateFiles(cycle.candidateDir, cycle.candidate);
+    const stage = (name) => cycle.stages.find((s) => s.stage === name);
+    const checks = {
+      precheck: cycle.precheck.ok ? 'ok' : 'failed',
+      check: `${stage('check').outcome} (exit ${stage('check').exitCode}, status ${stage('check').status ?? 'none'})`,
+      intake: `${stage('intake').outcome} (exit ${stage('intake').exitCode}, status ${stage('intake').status ?? 'none'})`,
+      packageSha256: pkg.packageSha256,
+    };
+    const result = await submitter({ track: cycle.track, files: pkg.files, packageSha256: pkg.packageSha256, candidate: cycle.candidate, checks });
+    return { ...result, packageSha256: pkg.packageSha256 };
   }
 
   /**

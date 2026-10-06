@@ -111,6 +111,8 @@ export function buildSubmissionNote({ track, candidate, attribution }) {
   if (candidate?.kind === 'research') {
     lines.push('This is a research package extending an existing committed candidate, not a from-scratch claim.');
     if (candidate.summary) lines.push('', candidate.summary);
+  } else if (candidate?.kind === 'loop-draft') {
+    lines.push('This is a RAM\'s own loop-authored claim: three numbers and one disclosed heuristic written by its own model from its own research this session, on top of the organizer\'s `draft_claim()` template. It is an unreviewed estimate, not a proof.');
   } else {
     lines.push('This is a harness integration draft: the organizer\'s own unmodified `draft_claim()` template. No attack is claimed.');
   }

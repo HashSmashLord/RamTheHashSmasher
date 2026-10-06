@@ -311,8 +311,11 @@ test('even with the judge gate forced open, the real pipeline refuses to judge a
   assert.match(res.detail, /draft templates are not submitted to the judge/);
 });
 
-test('submitLive always refuses', async () => {
-  await assert.rejects(() => runner().submitLive(), /not implemented/);
+test('submitLive refuses with the live-submit flag off (the default), and never calls the submitter', async () => {
+  let called = 0;
+  const submitter = async () => { called += 1; return {}; };
+  await assert.rejects(() => runner().submitLive({ track: 'sha256-r31-exploratory' }, { submitter }), /RAMHERD_HASHSMASH_LIVE_SUBMIT is not "true"/);
+  assert.equal(called, 0);
 });
 
 // ---------------------------------------------------------------------------
