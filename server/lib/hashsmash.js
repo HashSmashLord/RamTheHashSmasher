@@ -100,6 +100,15 @@ export const RESEARCH_CANDIDATES = Object.freeze({
 export const HARNESS_MARKER = 'HashRammers harness integration test';
 
 /**
+ * Marker placed in claim.json restrictions and proof.md of a loop-authored
+ * draft (writeLoopDraftCandidate): a candidate whose claim.claim numbers and
+ * one heuristic were written by the active research loop's own model this
+ * session, from its own real research, instead of the organizer's empty
+ * draft_claim() template. See validateLoopAttempt and writeLoopDraftCandidate.
+ */
+export const LOOP_DRAFT_MARKER = 'HashRammers loop-authored draft';
+
+/**
  * Reads the env once and decides what the pipeline may do. Defaults are all
  * off: the pipeline only runs when RAMHERD_PIPELINE=local, and even then only
  * the credential-free local stages run unless the paid-judge gate is open.
@@ -183,6 +192,25 @@ export function validateAgainstSchema(schema, value, path = '$', errors = []) {
 }
 
 /**
+ * Counts proof.md's lines the exact same way HashSmash's own real verifier
+ * does (`verifier/intake.py`'s `_number_proof`: Python's `str.splitlines()`),
+ * so a `proof:<n>` evidence reference this precheck accepts is one the real
+ * `check`/`intake` will also accept. Deliberately NOT `text.split('\n')
+ * .length`: that overcounts by one whenever the text ends with a newline
+ * (JS's split leaves a trailing empty string; Python's splitlines does not),
+ * which would let this precheck pass a reference the real verifier rejects
+ * as "proof reference outside document" — exactly the gap a loop-authored
+ * draft's own computed evidence_ids must not fall into.
+ */
+export function countProofLines(text) {
+  const s = String(text ?? '');
+  if (s === '') return 0;
+  const parts = s.split('\n');
+  if (s.endsWith('\n')) parts.pop();
+  return parts.length;
+}
+
+/**
  * Precheck of a candidate package's shape against the repo contract
  * (brief section 1.1) and the real claim/certificate schemas. Returns every
  * problem found rather than stopping at the first.
@@ -231,7 +259,7 @@ export function precheckCandidate(candidateDir, repoRoot) {
     }
     // proof:<a>-<b> evidence references must fall inside proof.md's line count.
     if (existsSync(join(candidateDir, 'proof.md')) && Array.isArray(claim.heuristics)) {
-      const lines = readFileSync(join(candidateDir, 'proof.md'), 'utf8').split('\n').length;
+      const lines = countProofLines(readFileSync(join(candidateDir, 'proof.md'), 'utf8'));
       for (const h of claim.heuristics) {
         for (const ref of h?.evidence_ids || []) {
           const m = /^proof:(\d+)(?:-(\d+))?$/.exec(ref);
@@ -241,6 +269,59 @@ export function precheckCandidate(candidateDir, repoRoot) {
     }
   }
   return { ok: errors.length === 0, errors, claim };
+}
+
+/**
+ * Structural honesty gate for a loop-drafted candidate attempt (see
+ * sandbox-activity.js's parseDraftAttempt, slots.js's active loop), applied
+ * BEFORE any file is written and IN ADDITION TO the real schema/precheck
+ * every candidate goes through regardless. This is not a prompt instruction
+ * the model can forget to follow: a call that produces something shaped
+ * wrong, with an out-of-range number, or an unreal literature citation is
+ * rejected here, deterministically, every time.
+ *
+ * `lastSearchResults` must be the slot's own real IACR ePrint search results
+ * from THIS session (sandbox-activity.js's browseLiterature output) — never
+ * an arbitrary string the model typed. `attempt.citedPaperId` is required to
+ * be one of those real ids: the one place this harness checks that a loop's
+ * claim of "I looked this up" actually happened, rather than trusting the
+ * model's say-so.
+ *
+ * @param {ReturnType<typeof import('./sandbox-activity.js').parseDraftAttempt>} attempt
+ * @param {{ lastSearchResults?: Array<{id: string, title: string}> }} [ctx]
+ */
+export function validateLoopAttempt(attempt, { lastSearchResults = [] } = {}) {
+  const errors = [];
+  if (!attempt || typeof attempt !== 'object' || attempt.attempt !== true) {
+    return { ok: false, errors: ['no drafting attempt was actually made'] };
+  }
+  const num = (v) => typeof v === 'number' && Number.isFinite(v);
+  if (!num(attempt.timeLog2) || attempt.timeLog2 < 0) errors.push('TIME_LOG2 must be a real non-negative number');
+  if (!num(attempt.memoryLog2Bytes) || attempt.memoryLog2Bytes < 0) errors.push('MEMORY_LOG2_BYTES must be a real non-negative number');
+  if (!num(attempt.successProbability) || attempt.successProbability < 0.39 || attempt.successProbability > 1) {
+    errors.push('SUCCESS_PROBABILITY must be a real number between 0.39 and 1');
+  }
+  if (typeof attempt.heuristicId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(attempt.heuristicId)) {
+    errors.push('HEURISTIC_ID is missing or not a valid id');
+  }
+  for (const field of ['statement', 'scope', 'extrapolation', 'limitations']) {
+    if (typeof attempt[field] !== 'string' || attempt[field].trim().length < 20) {
+      errors.push(`${field.toUpperCase()} must be a real, specific, disclosed sentence (got nothing usable)`);
+    }
+  }
+  // Never let the loop write a limitations section that claims more certainty
+  // than one session of reading and thinking can honestly support.
+  if (/\b(proven|verified|confirmed collision|guaranteed|no doubt)\b/i.test(attempt.limitations || '')) {
+    errors.push('LIMITATIONS must not claim the bound is proven, verified or guaranteed; this is at most an estimate under disclosed premises');
+  }
+  // Real-grounding rail: the cited paper must be one this session actually
+  // fetched from the real ePrint search, not an invented or remembered id.
+  if (!attempt.citedPaperId || attempt.citedPaperId === 'NONE') {
+    errors.push('CITED_PAPER_ID is required: a loop-drafted claim must cite a real paper this session actually looked up');
+  } else if (!lastSearchResults.some((r) => r.id === attempt.citedPaperId)) {
+    errors.push(`CITED_PAPER_ID "${attempt.citedPaperId}" does not match any real result from this session's own ePrint search`);
+  }
+  return { ok: errors.length === 0, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +581,108 @@ export function createHashSmashRunner({
   }
 
   /**
+   * Replaces the slot workspace's candidate with a LOOP-AUTHORED draft: the
+   * organizer's own draft_claim() template, with exactly three numbers
+   * (time_log2, memory_log2_bytes, success_probability) and one heuristic
+   * replaced by what the active research loop's own model actually proposed
+   * this session (`attempt`, already passed through validateLoopAttempt by
+   * the caller — this function trusts that gate ran, it does not re-run it).
+   *
+   * Deliberate, structural honesty limits (not prompt-level, enforced here
+   * in code so nothing the model writes can bypass them):
+   *   - submission_state is force-kept 'draft', always. This harness never
+   *     lets an autonomous loop mark its own candidate 'ready'; HashSmash's
+   *     real intake therefore still stops it before any judge call, exactly
+   *     like every other harness draft.
+   *   - the heuristic's `role` is force-kept 'supporting', never
+   *     'score-critical': the loop's self-authored heuristic can never be
+   *     the thing a score would actually turn on.
+   *   - every structural field the loop did not genuinely originate
+   *     (target_profile, rounds, lane, baseline_improved, time_unit,
+   *     preprocessing_log2, nonuniform_advice_log2_bytes, ...) stays exactly
+   *     the organizer's own template value.
+   *   - `restrictions` always starts with a fixed, model-proof disclosure
+   *     (LOOP_DRAFT_MARKER) saying plainly that these numbers are this RAM's
+   *     own unverified estimate, and names the real paper it cited.
+   *   - evidence_ids are computed from the real proof.md this call writes,
+   *     not trusted from the model's own line-number guess.
+   */
+  async function writeLoopDraftCandidate(workspaceDir, track, { slotId = 'unknown', attempt, citedPaper }) {
+    assertTrack(track);
+    const candidateDir = candidateDirFor(workspaceDir, track);
+    if (relative(wsRoot, candidateDir).startsWith('..')) throw new Error('refusing to write outside the workspaces dir');
+    const tpl = await py(workspaceDir, [
+      '-c',
+      'import json,sys; from verifier.frontier_tracks import get_frontier_track; print(json.dumps(get_frontier_track(sys.argv[1]).draft_claim()))',
+      track,
+    ]);
+    if (tpl.exitCode !== 0) throw new Error(`could not load organizer draft template: ${tpl.stderr.trim()}`);
+    const claim = JSON.parse(tpl.stdout);
+    if (claim.submission_state !== 'draft') throw new Error('organizer template is not a draft; refusing to continue');
+
+    claim.claim = {
+      ...claim.claim,
+      time_log2: attempt.timeLog2,
+      memory_log2_bytes: attempt.memoryLog2Bytes,
+      success_probability: attempt.successProbability,
+    };
+    claim.submission_state = 'draft';
+    claim.restrictions = [
+      `${LOOP_DRAFT_MARKER} (RAM slot ${slotId}). The claim.claim numbers above and the one heuristic below were written by this RAM's own model this session from its own real research, not the organizer's empty template. submission_state is forced to draft: nobody has independently verified this heuristic, so HashSmash intake correctly refuses to forward it to the judge.`,
+      `This RAM cited IACR ePrint ${citedPaper.id} ("${citedPaper.title}") from its own real literature search this session as grounding. Citing a paper's title is not the same as having verified its applicability to this exact target, and that distinction is deliberate, not an oversight.`,
+    ];
+
+    const proofLines = [
+      `# ${LOOP_DRAFT_MARKER}: ${track}`,
+      '',
+      `Written autonomously by RAM slot \`${slotId}\` during its always-on research loop, from its own`,
+      'model, its own real literature search, and its own research so far this session. Nobody has',
+      'reviewed, judged, or independently verified any of it.',
+      '',
+      '## Cited literature',
+      '',
+      `- IACR ePrint ${citedPaper.id}: "${citedPaper.title}" — found via this session's real ePrint`,
+      '  search. Only the search result title was read; the paper itself was not fetched or read in',
+      '  this session.',
+      '',
+      `## Disclosed heuristic: ${attempt.heuristicId}`,
+      '',
+      `**Statement.** ${attempt.statement}`,
+      '',
+      `**Scope.** ${attempt.scope}`,
+      '',
+      `**Extrapolation.** ${attempt.extrapolation}`,
+      '',
+      `**Limitations.** ${attempt.limitations}`,
+      '',
+      '## What this is not',
+      '',
+      'No new collision, witness, or independently-reviewed proof was produced this session. This',
+      'candidate stays a draft on purpose; HashSmash intake does not forward drafts to the judge, so',
+      'nothing here is scored, ranked, or submitted.',
+      '',
+    ];
+    const proofText = proofLines.join('\n');
+    const proofLineCount = countProofLines(proofText);
+    claim.heuristics = [{
+      id: attempt.heuristicId,
+      statement: attempt.statement,
+      role: 'supporting',
+      scope: attempt.scope,
+      extrapolation: attempt.extrapolation,
+      evidence_ids: [`proof:1-${proofLineCount}`],
+      limitations: attempt.limitations,
+    }];
+
+    rmSync(candidateDir, { recursive: true, force: true });
+    mkdirSync(join(candidateDir, 'certificates'), { recursive: true });
+    writeFileSync(join(candidateDir, 'claim.json'), `${JSON.stringify(claim, null, 2)}\n`);
+    writeFileSync(join(candidateDir, 'certificates', 'manifest.json'), `${JSON.stringify({ schema_version: 2, certificates: [] }, null, 2)}\n`);
+    writeFileSync(join(candidateDir, 'proof.md'), proofText);
+    return { candidateDir, claim };
+  }
+
+  /**
    * Replaces the slot workspace's candidate with the committed research
    * package for `track` (RESEARCH_CANDIDATES). Copies exactly the listed
    * files, byte for byte; refuses anything else.
@@ -560,24 +743,40 @@ export function createHashSmashRunner({
 
   /**
    * One full slot research cycle on a pipeline track: fresh workspace ->
-   * research package (if the track has one) or harness draft -> JS precheck
+   * research package (if the track has one) or harness draft or, if the
+   * caller already has an active-loop draft attempt that passed
+   * validateLoopAttempt (`loopDraft`), a loop-authored draft -> JS precheck
    * -> real `check` -> real `intake` -> (judge/score only if gated on AND the
-   * package is `ready`; a harness draft never is, and the judge gate is off
-   * by default, so a ready research package stops at a `gated` judge stage).
+   * package is `ready`; a harness draft or loop draft never is, and the
+   * judge gate is off by default, so a ready research package stops at a
+   * `gated` judge stage).
+   *
+   * `loopDraft`, when given, is `{ attempt, citedPaper }` — the caller
+   * (slots.js) is expected to have already run validateLoopAttempt and only
+   * pass a draft that passed. This function does not re-validate it; it
+   * trusts the caller's gate the same way it trusts RESEARCH_CANDIDATES'
+   * committed files. Ignored entirely for a track with a committed research
+   * package (sha256-r32-exploratory): the loop never overwrites that one.
    */
-  async function runCycle({ slotId, track, model = null, approach = null, modelSource = null }) {
+  async function runCycle({ slotId, track, model = null, approach = null, modelSource = null, loopDraft = null }) {
     const ws = await prepareWorkspace(slotId);
     const research = RESEARCH_CANDIDATES[track];
     const { candidateDir, claim } = research
       ? writeResearchCandidate(ws.dir, track)
-      : await writeHarnessDraft(ws.dir, track, { slotId });
+      : loopDraft
+        ? await writeLoopDraftCandidate(ws.dir, track, { slotId, attempt: loopDraft.attempt, citedPaper: loopDraft.citedPaper })
+        : await writeHarnessDraft(ws.dir, track, { slotId });
     const candidate = {
-      kind: research ? 'research' : 'harness-draft',
+      kind: research ? 'research' : loopDraft ? 'loop-draft' : 'harness-draft',
       submissionState: claim.submission_state,
       timeLog2: claim.claim?.time_log2 ?? null,
       successProbability: claim.claim?.success_probability ?? null,
       heuristics: (claim.heuristics || []).map((h) => h.id),
-      summary: research ? research.summary : 'labeled harness draft (organizer template, no attack claimed)',
+      summary: research
+        ? research.summary
+        : loopDraft
+          ? `this RAM's own disclosed heuristic ("${loopDraft.attempt.heuristicId}"), citing ePrint ${loopDraft.citedPaper.id}, forced to stay a draft`
+          : 'labeled harness draft (organizer template, no attack claimed)',
     };
     const attribution = writeAttribution({ slotId, track, model, approach, modelSource, candidate, head: ws.head });
     const precheck = precheckCandidate(candidateDir, ws.dir);
@@ -606,6 +805,7 @@ export function createHashSmashRunner({
     prepareWorkspace,
     candidateDirFor,
     writeHarnessDraft,
+    writeLoopDraftCandidate,
     writeResearchCandidate,
     writeAttribution,
     precheck: precheckCandidate,

@@ -99,7 +99,7 @@
 // calls are made by the host, never from inside the sandbox.
 
 import { randomInt } from 'node:crypto';
-import { DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC, DEFAULT_BROWSE_EVERY, DEFAULT_MAX_THINKING_PER_SESSION } from './sandbox-activity.js';
+import { DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC, DEFAULT_BROWSE_EVERY, DEFAULT_MAX_THINKING_PER_SESSION, DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION } from './sandbox-activity.js';
 
 const DEFAULT_TEMPLATE = 'desktop';
 const DEFAULT_TIMEOUT_MIN = 15;
@@ -208,6 +208,10 @@ export function sandboxPolicy(env = process.env) {
     activeLoopStepPauseMs: intInRange(env.RAMHERD_SANDBOX_ACTIVE_LOOP_PAUSE_SEC, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC) * 1000,
     activeLoopBrowseEvery: intInRange(env.RAMHERD_SANDBOX_ACTIVE_LOOP_BROWSE_EVERY, DEFAULT_BROWSE_EVERY, 1, 100),
     activeLoopMaxThinking: intInRange(env.RAMHERD_SANDBOX_ACTIVE_LOOP_MAX_CALLS, DEFAULT_MAX_THINKING_PER_SESSION, 1, 1000),
+    // Bounded, separate cap on the loop's rarer "do you really have
+    // something to draft" call (slots.js's runLoopDraftAttempt). Kept small
+    // and apart from activeLoopMaxThinking on purpose.
+    activeLoopMaxDraftAttempts: intInRange(env.RAMHERD_SANDBOX_ACTIVE_LOOP_MAX_DRAFT_ATTEMPTS, DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION, 1, 50),
   });
 }
 

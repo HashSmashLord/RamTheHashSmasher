@@ -19,9 +19,11 @@ import {
   pipelinePolicy,
   precheckCandidate,
   validateAgainstSchema,
+  validateLoopAttempt,
   classifyStage,
   DEFAULT_REFERENCE_ROOT,
   HARNESS_MARKER,
+  LOOP_DRAFT_MARKER,
   PIPELINE_TRACKS,
   RESEARCH_CANDIDATES,
 } from '../server/lib/hashsmash.js';
@@ -476,6 +478,137 @@ test('a RAM slot on sha256-r32-exploratory runs the research package, not the em
   assert.match(last, /mechanical checks only/);
   assert.match(last, /not a verdict/);
   assert.doesNotMatch(last, /accepted|broken|collision found/i);
+});
+
+// ---------------------------------------------------------------------------
+// Loop-authored drafts (slots.js's active loop drafting one of its own
+// candidate claims instead of only ever resubmitting the organizer's empty
+// template). validateLoopAttempt is the structural honesty gate; it runs
+// in-process and needs no python. writeLoopDraftCandidate/runCycle(loopDraft)
+// need the real vendored repo + python3, same as every other pipeline test.
+// ---------------------------------------------------------------------------
+
+const REAL_SEARCH_RESULTS = [
+  { id: '2026/1120', title: 'Pushing Collision Attacks on SHA-2 to 39 Steps' },
+  { id: '2026/1080', title: 'A 35-Step Collision Characteristic for Reduced SHA-256' },
+];
+
+/** A well-formed attempt that validateLoopAttempt should accept outright. */
+function validAttempt(overrides = {}) {
+  return {
+    attempt: true,
+    timeLog2: 131,
+    memoryLog2Bytes: 40,
+    successProbability: 0.42,
+    heuristicId: 'loop-step-extension-1',
+    citedPaperId: '2026/1120',
+    statement: 'Extending the cited paper\'s filtering idea to this track\'s fixed table may raise its first-block acceptance rate.',
+    scope: 'Applies only to the fixed first-block filter this harness draft template uses, not to the full reduced-round construction.',
+    extrapolation: 'This session read the cited search result\'s title only and reasoned qualitatively about applicability; no new computation ran this session.',
+    limitations: 'No collision was found or measured this session; this is an unverified estimate based only on a paper title, not its contents.',
+    ...overrides,
+  };
+}
+
+test('validateLoopAttempt accepts a well-formed attempt that cites a real search result', () => {
+  const res = validateLoopAttempt(validAttempt(), { lastSearchResults: REAL_SEARCH_RESULTS });
+  assert.deepEqual(res, { ok: true, errors: [] });
+});
+
+test('validateLoopAttempt rejects a non-attempt ("ATTEMPT: no" or malformed) outright', () => {
+  assert.equal(validateLoopAttempt(null).ok, false);
+  assert.equal(validateLoopAttempt({ attempt: false }).ok, false);
+  assert.equal(validateLoopAttempt({}).ok, false);
+});
+
+test('validateLoopAttempt rejects a citation that is not a real result from this session\'s own search', () => {
+  const res = validateLoopAttempt(validAttempt({ citedPaperId: '2099/9999' }), { lastSearchResults: REAL_SEARCH_RESULTS });
+  assert.equal(res.ok, false);
+  assert.match(res.errors.join(' '), /does not match any real result/);
+});
+
+test('validateLoopAttempt rejects a missing citation the same way as a fake one', () => {
+  const res = validateLoopAttempt(validAttempt({ citedPaperId: null }), { lastSearchResults: REAL_SEARCH_RESULTS });
+  assert.equal(res.ok, false);
+  assert.match(res.errors.join(' '), /CITED_PAPER_ID is required/);
+});
+
+test('validateLoopAttempt rejects numbers out of the schema\'s own range', () => {
+  assert.equal(validateLoopAttempt(validAttempt({ successProbability: 0.1 }), { lastSearchResults: REAL_SEARCH_RESULTS }).ok, false);
+  assert.equal(validateLoopAttempt(validAttempt({ successProbability: 1.5 }), { lastSearchResults: REAL_SEARCH_RESULTS }).ok, false);
+  assert.equal(validateLoopAttempt(validAttempt({ timeLog2: null }), { lastSearchResults: REAL_SEARCH_RESULTS }).ok, false);
+  assert.equal(validateLoopAttempt(validAttempt({ memoryLog2Bytes: -1 }), { lastSearchResults: REAL_SEARCH_RESULTS }).ok, false);
+});
+
+test('validateLoopAttempt rejects a heuristic id, or any disclosed field, that is missing or too thin', () => {
+  assert.equal(validateLoopAttempt(validAttempt({ heuristicId: '' }), { lastSearchResults: REAL_SEARCH_RESULTS }).ok, false);
+  assert.equal(validateLoopAttempt(validAttempt({ heuristicId: 'bad id with spaces' }), { lastSearchResults: REAL_SEARCH_RESULTS }).ok, false);
+  for (const field of ['statement', 'scope', 'extrapolation', 'limitations']) {
+    assert.equal(validateLoopAttempt(validAttempt({ [field]: 'too short' }), { lastSearchResults: REAL_SEARCH_RESULTS }).ok, false, field);
+  }
+});
+
+test('validateLoopAttempt rejects limitations that claim more certainty than one session can honestly support', () => {
+  const res = validateLoopAttempt(validAttempt({ limitations: 'This is proven and the collision is guaranteed to exist under the stated premise.' }), { lastSearchResults: REAL_SEARCH_RESULTS });
+  assert.equal(res.ok, false);
+  assert.match(res.errors.join(' '), /must not claim the bound is proven/);
+  // "unverified" must not false-positive against the "verified" ban.
+  assert.equal(validateLoopAttempt(validAttempt(), { lastSearchResults: REAL_SEARCH_RESULTS }).ok, true);
+});
+
+test('loop-authored draft: a genuinely valid attempt is written, passes real check, and real intake stops it as a draft', { skip: SKIP }, async () => {
+  const r = runner();
+  const attempt = validAttempt();
+  const citedPaper = REAL_SEARCH_RESULTS[0];
+  assert.equal(validateLoopAttempt(attempt, { lastSearchResults: REAL_SEARCH_RESULTS }).ok, true);
+
+  const res = await r.runCycle({ slotId: 'loop-draft-ok', track: TRACK, loopDraft: { attempt, citedPaper } });
+  assert.equal(res.precheck.ok, true, res.precheck.errors.join('; '));
+  assert.equal(res.candidate.kind, 'loop-draft');
+
+  const claim = JSON.parse(readFileSync(join(res.candidateDir, 'claim.json'), 'utf8'));
+  // Forced honesty limits: a loop draft is never 'ready' and never 'score-critical',
+  // no matter what the model proposed.
+  assert.equal(claim.submission_state, 'draft');
+  assert.equal(claim.heuristics.length, 1);
+  assert.equal(claim.heuristics[0].role, 'supporting');
+  assert.equal(claim.heuristics[0].id, attempt.heuristicId);
+  assert.ok(claim.restrictions[0].includes(LOOP_DRAFT_MARKER));
+  assert.ok(claim.restrictions.some((x) => x.includes(citedPaper.id)));
+  // Exactly the model's three proposed numbers; everything else is the organizer's own template.
+  assert.equal(claim.claim.time_log2, attempt.timeLog2);
+  assert.equal(claim.claim.memory_log2_bytes, attempt.memoryLog2Bytes);
+  assert.equal(claim.claim.success_probability, attempt.successProbability);
+  const tpl = JSON.parse(execFileSync('python3', ['-c',
+    `import json; from verifier.frontier_tracks import get_frontier_track; print(json.dumps(get_frontier_track("${TRACK}").draft_claim()))`,
+  ], { cwd: res.workspace, encoding: 'utf8' }));
+  assert.equal(claim.target_profile, tpl.target_profile);
+  assert.equal(claim.rounds, tpl.rounds);
+  assert.equal(claim.lane, tpl.lane);
+  assert.equal(claim.baseline_improved, tpl.baseline_improved);
+  assert.equal(claim.claim.preprocessing_log2, tpl.claim.preprocessing_log2);
+  assert.equal(claim.claim.nonuniform_advice_log2_bytes, tpl.claim.nonuniform_advice_log2_bytes);
+
+  const proof = readFileSync(join(res.candidateDir, 'proof.md'), 'utf8');
+  assert.match(proof, new RegExp(citedPaper.id.replace('/', '\\/')));
+  assert.match(proof, /No new collision, witness, or independently-reviewed proof/);
+
+  const [check, intake, ...rest] = res.stages;
+  assert.equal(check.status, 'mechanically_valid');
+  assert.equal(check.parsed[0].submission_state, 'draft');
+  assert.equal(intake.outcome, 'draft-not-submitted');
+  assert.equal(intake.exitCode, 2);
+  assert.match(intake.parsed.package_sha256, /^[0-9a-f]{64}$/);
+  assert.deepEqual(rest, [], 'a loop-authored draft never proceeds to judge or score either');
+});
+
+test('loop-authored draft: the committed sha256-r32 research package is never touched by a draft attempt', { skip: SKIP }, async () => {
+  const r = runner();
+  const attempt = validAttempt();
+  const res = await r.runCycle({ slotId: 'loop-draft-r32-noop', track: R32, loopDraft: { attempt, citedPaper: REAL_SEARCH_RESULTS[0] } });
+  // RESEARCH_CANDIDATES wins over loopDraft: the real committed package is used, unmodified.
+  assert.equal(res.candidate.kind, 'research');
+  assert.deepEqual(readFileSync(join(res.candidateDir, 'claim.json')), readFileSync(join(R32_PACKAGE, 'claim.json')));
 });
 
 function compilerOk() {

@@ -98,7 +98,10 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   // top of RAMHERD_SANDBOX=e2b. `live` is llm.js's own switch: in mock mode the
   // loop never starts (slots.js says so in the feed instead).
   const activeLoop = sandboxManager && sandbox.activeLoop
-    ? { enabled: true, live: isLiveMode(env), stepPauseMs: sandbox.activeLoopStepPauseMs, browseEvery: sandbox.activeLoopBrowseEvery, maxThinkingPerSession: sandbox.activeLoopMaxThinking }
+    ? {
+      enabled: true, live: isLiveMode(env), stepPauseMs: sandbox.activeLoopStepPauseMs, browseEvery: sandbox.activeLoopBrowseEvery,
+      maxThinkingPerSession: sandbox.activeLoopMaxThinking, maxDraftAttemptsPerSession: sandbox.activeLoopMaxDraftAttempts,
+    }
     : null;
   // yukon-sandbox.js: scoped to the one blake3-r1-exploratory roster slot,
   // gated internally by RAMHERD_YUKON_SUBMIT + a real YUKON_API_KEY (see its

@@ -6,12 +6,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSandboxManager, sandboxPolicy } from '../server/lib/sandbox.js';
-import { createSlotManager, LOOP_THINKING_SYSTEM } from '../server/lib/slots.js';
+import { createSlotManager, LOOP_THINKING_SYSTEM, LOOP_DRAFT_SYSTEM } from '../server/lib/slots.js';
 import { createMockLlmProvider } from '../server/lib/llm.js';
 import { createStore } from '../server/store.js';
 import { loadConfig } from '../server/config.js';
 import {
-  parseThinking, asciiText, noteBlock, eprintSearchUrl, notesFile, ensureNotepad, typeIntoNotepad,
+  parseThinking, parseDraftAttempt, asciiText, noteBlock, eprintSearchUrl, notesFile, ensureNotepad, typeIntoNotepad,
   repoInspectSteps, researchTerminalTitle, ensureResearchTerminal, inspectRepoFile,
   MAX_IDLE_MS, MAX_TYPED_CHARS,
 } from '../server/lib/sandbox-activity.js';
@@ -144,11 +144,65 @@ const types = (snap) => snap.feed.map((f) => f.type);
 
 test('parseThinking takes the model\'s last SEARCH line out of the note and sanitizes it', () => {
   assert.deepEqual(parseThinking('I will re-derive the 31-step characteristic.\nSEARCH: SHA-256 "31-step" collision; rm -rf /'), {
-    note: 'I will re-derive the 31-step characteristic.', search: 'SHA-256 31-step collision rm -rf',
+    note: 'I will re-derive the 31-step characteristic.', search: 'SHA-256 31-step collision rm -rf', draftReason: null,
   });
-  assert.deepEqual(parseThinking('Just a plan.'), { note: 'Just a plan.', search: null });
+  assert.deepEqual(parseThinking('Just a plan.'), { note: 'Just a plan.', search: null, draftReason: null });
   assert.equal(parseThinking('x\n**SEARCH:** ab').search, null, 'too short after sanitizing');
   assert.equal(parseThinking(`x\nsearch: ${'a'.repeat(200)}`).search.length, 80);
+});
+
+test('parseThinking takes the model\'s DRAFT line out of the note too, independently of SEARCH', () => {
+  assert.deepEqual(parseThinking('I will try X next.\nDRAFT: I found a specific disclosed heuristic.'), {
+    note: 'I will try X next.', search: null, draftReason: 'I found a specific disclosed heuristic.',
+  });
+  // Both lines can appear in the same step and are extracted independently.
+  assert.deepEqual(
+    parseThinking('Plan.\nSEARCH: some query\nDRAFT: a real reason here'),
+    { note: 'Plan.', search: 'some query', draftReason: 'a real reason here' },
+  );
+  assert.equal(parseThinking('x\nDRAFT: hi').draftReason, null, 'too short after trimming');
+  assert.equal(parseThinking('No draft line here.').draftReason, null);
+});
+
+test('parseDraftAttempt: "ATTEMPT: no" (in any casing/order) is a clean decline, never a guess', () => {
+  assert.deepEqual(parseDraftAttempt('ATTEMPT: no'), { attempt: false });
+  assert.deepEqual(parseDraftAttempt('attempt: No, I do not have anything real.'), { attempt: false });
+  assert.deepEqual(parseDraftAttempt(''), { attempt: false });
+  assert.deepEqual(parseDraftAttempt('TIME_LOG2: 80'), { attempt: false }, 'no ATTEMPT line at all is a decline, not a guess');
+});
+
+test('parseDraftAttempt: a well-formed "ATTEMPT: yes" answer is parsed field by field', () => {
+  const text = [
+    'ATTEMPT: yes',
+    'TIME_LOG2: 90.5',
+    'MEMORY_LOG2_BYTES: 40',
+    'SUCCESS_PROBABILITY: 0.6',
+    'HEURISTIC_ID: loop-heuristic-1',
+    'CITED_PAPER_ID: 2026/1234',
+    'STATEMENT: A specific disclosed statement about the construction.',
+    'SCOPE: Exactly the construction and parameters this applies to.',
+    'EXTRAPOLATION: What was actually measured this session and how far this extends it.',
+    'LIMITATIONS: No collision was found; this is an estimate under one premise.',
+  ].join('\n');
+  assert.deepEqual(parseDraftAttempt(text), {
+    attempt: true,
+    timeLog2: 90.5,
+    memoryLog2Bytes: 40,
+    successProbability: 0.6,
+    heuristicId: 'loop-heuristic-1',
+    citedPaperId: '2026/1234',
+    statement: 'A specific disclosed statement about the construction.',
+    scope: 'Exactly the construction and parameters this applies to.',
+    extrapolation: 'What was actually measured this session and how far this extends it.',
+    limitations: 'No collision was found; this is an estimate under one premise.',
+  });
+});
+
+test('parseDraftAttempt: a missing numeric field becomes null, never a silent 0', () => {
+  const attempt = parseDraftAttempt('ATTEMPT: yes\nHEURISTIC_ID: x\nCITED_PAPER_ID: 2026/1\nSTATEMENT: s\nSCOPE: sc\nEXTRAPOLATION: e\nLIMITATIONS: l');
+  assert.equal(attempt.timeLog2, null);
+  assert.equal(attempt.memoryLog2Bytes, null);
+  assert.equal(attempt.successProbability, null);
 });
 
 test('asciiText, noteBlock and the ePrint URL produce plain, bounded, typeable text', () => {
@@ -462,4 +516,176 @@ test('failed steps back off (always under the idle ceiling) and stop the loop af
   const feed = r.m.getSlot('slot-0').feed;
   assert.equal(feed.at(-1).type, 'sandbox-loop-stopped');
   assert.equal(feed.filter((f) => f.type === 'sandbox-loop-error').length, 3);
+});
+
+// ---------------------------------------------------------------------------
+// Loop-authored drafting: the wiring in slots.js that decides WHETHER a
+// dedicated drafting call happens at all, and what it does with the answer.
+// The real validateLoopAttempt/writeLoopDraftCandidate/real-pipeline proof
+// lives in tests/hashsmash.test.js (real python, real repo); this file
+// keeps a FAKE pipelineRunner (same pattern as tests/slots.test.js's
+// fakeRunner) so these stay fast and deterministic, and asserts exactly
+// when runLoopDraftAttempt fires and what it does with each real outcome.
+// ---------------------------------------------------------------------------
+
+const DRAFT_TRACK = 'sha256-r31-exploratory'; // slot-0's real assignment (first in ACTIVE_TRACKS)
+
+function stubPipelineRunner({ track = DRAFT_TRACK, kind = 'harness-draft' } = {}) {
+  const calls = [];
+  return {
+    calls,
+    supportsTrack: (t) => t === track,
+    candidateKindFor: (t) => (t === track ? kind : 'research'),
+    async runCycle(args) {
+      calls.push(args);
+      return {
+        head: 'abc123', workspace: '/ws', workspaceRelative: 'ws', precheck: { ok: true, errors: [] },
+        stages: [
+          { stage: 'check', outcome: 'ok', exitCode: 0, status: 'mechanically_valid', detail: '' },
+          { stage: 'intake', outcome: 'draft-not-submitted', exitCode: 2, status: 'draft_not_submitted', detail: '' },
+        ],
+        candidate: {
+          kind: args.loopDraft ? 'loop-draft' : 'harness-draft', submissionState: 'draft',
+          timeLog2: args.loopDraft?.attempt.timeLog2 ?? null, successProbability: args.loopDraft?.attempt.successProbability ?? null,
+          heuristics: args.loopDraft ? [args.loopDraft.attempt.heuristicId] : [],
+          summary: args.loopDraft ? 'loop-authored draft (stub)' : 'labeled harness draft (stub)',
+        },
+      };
+    },
+  };
+}
+
+const VALID_DRAFT_ANSWER = [
+  'ATTEMPT: yes',
+  'TIME_LOG2: 131',
+  'MEMORY_LOG2_BYTES: 40',
+  'SUCCESS_PROBABILITY: 0.42',
+  'HEURISTIC_ID: loop-step-extension-1',
+  'CITED_PAPER_ID: 2026/1120', // matches fakeActivity()'s default browse result
+  'STATEMENT: Extending the cited paper\'s filtering idea to this candidate\'s fixed table may raise its acceptance rate.',
+  'SCOPE: Applies only to the fixed first-block filter this harness draft template uses.',
+  'EXTRAPOLATION: This session read the cited result\'s title only and reasoned qualitatively; no new computation ran.',
+  'LIMITATIONS: No collision was found or measured this session; this is an unverified estimate from a paper title alone.',
+].join('\n');
+
+test('no real search this session: a DRAFT line alone never attempts a draft, and the pipeline runs exactly as before', async () => {
+  const runner = stubPipelineRunner();
+  const r = rig({ pipelineRunner: runner, answers: ['Trying a tighter filter.\nDRAFT: I might have something.'] });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // idle -> thinking (no SEARCH line: no browse, slot.lastSearch stays null)
+  await r.step(); // thinking -> running-experiment
+  await r.step(); // running-experiment -> the real pipeline (never the drafting call: no real search yet)
+  assert.equal(r.llm.calls.length, 1, 'only the one thinking call; no dedicated drafting call');
+  assert.equal(runner.calls.length, 1);
+  assert.equal(runner.calls[0].loopDraft, null);
+  assert.equal(r.m.getSlot('slot-0').status, 'validated');
+  assert.equal(r.m.getSlot('slot-0').pipeline.candidate, 'harness-draft');
+});
+
+test('a dedicated drafting call only ever happens after a real search, and asks LOOP_DRAFT_SYSTEM', async () => {
+  const runner = stubPipelineRunner();
+  const r = rig({
+    pipelineRunner: runner,
+    answers: ['Trying a tighter filter.\nSEARCH: sha256 reduced round collision\nDRAFT: I might have something.', VALID_DRAFT_ANSWER],
+    activeLoop: { browseEvery: 1 },
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // idle -> thinking: asks for a search, and a draft
+  await r.step(); // thinking -> running-experiment (a real browse already happened inside step 1)
+  assert.ok(r.m.getSlot('slot-0').feed.some((f) => f.type === 'sandbox-browse'), 'the real browse must have actually happened');
+  await r.step(); // running-experiment -> the dedicated drafting call fires now
+  assert.equal(r.llm.calls.length, 2);
+  assert.equal(r.llm.calls[1].system, LOOP_DRAFT_SYSTEM);
+  assert.match(r.llm.calls[1].prompt, /you said/i);
+});
+
+test('a drafted claim citing a paper this session never actually looked up is honestly rejected before the real pipeline ever runs', async () => {
+  const runner = stubPipelineRunner();
+  const badAnswer = VALID_DRAFT_ANSWER.replace('CITED_PAPER_ID: 2026/1120', 'CITED_PAPER_ID: 2099/9999');
+  const r = rig({
+    pipelineRunner: runner,
+    answers: ['Trying a tighter filter.\nSEARCH: sha256 reduced round collision\nDRAFT: I might have something.', badAnswer],
+    activeLoop: { browseEvery: 1 },
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // idle -> thinking + real browse
+  await r.step(); // thinking -> running-experiment
+  await r.step(); // running-experiment -> drafting call -> rejected
+  const slot = r.m.getSlot('slot-0');
+  assert.equal(slot.status, 'failed');
+  assert.equal(slot.feed.at(-1).type, 'pipeline-loop-draft-rejected');
+  assert.match(slot.feed.at(-1).message, /does not match any real result/);
+  assert.equal(runner.calls.length, 0, 'the real pipeline must never run on a rejected attempt');
+});
+
+test('a genuinely valid drafted claim reaches the real pipeline, forced to stay a draft, and is reported honestly', async () => {
+  const runner = stubPipelineRunner();
+  const r = rig({
+    pipelineRunner: runner,
+    answers: ['Trying a tighter filter.\nSEARCH: sha256 reduced round collision\nDRAFT: I might have something.', VALID_DRAFT_ANSWER],
+    activeLoop: { browseEvery: 1 },
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // idle -> thinking + real browse
+  await r.step(); // thinking -> running-experiment
+  await r.step(); // running-experiment -> drafting call -> valid -> real pipeline
+  assert.equal(runner.calls.length, 1);
+  assert.equal(runner.calls[0].loopDraft.attempt.heuristicId, 'loop-step-extension-1');
+  assert.equal(runner.calls[0].loopDraft.citedPaper.id, '2026/1120');
+  const slot = r.m.getSlot('slot-0');
+  assert.equal(slot.status, 'validated');
+  assert.equal(slot.pipeline.candidate, 'loop-draft');
+  assert.ok(slot.feed.some((f) => f.type === 'pipeline-loop-draft-attempt'));
+  assert.match(slot.feed.at(-1).message, /stays a draft/);
+});
+
+test('mocked answers are never treated as a real drafting decision; the loop keeps running on the normal pipeline instead', async () => {
+  const runner = stubPipelineRunner();
+  // fakeLiveLlm reports mocked:false for every answer by default; simulate a
+  // provider that, just for the drafting call, comes back mocked (dry-run).
+  const calls = [];
+  const provider = {
+    kind: 'openrouter',
+    async complete(req) {
+      calls.push(req);
+      if (req.system === LOOP_DRAFT_SYSTEM) return { text: VALID_DRAFT_ANSWER, mocked: true, model: req.model, usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: null } };
+      return { text: 'Trying a tighter filter.\nSEARCH: sha256 reduced round collision\nDRAFT: I might have something.', mocked: false, model: req.model, usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, costUsd: 0.001 } };
+    },
+  };
+  const r = rig({ pipelineRunner: runner, llm: { calls, provider }, activeLoop: { browseEvery: 1 } });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step();
+  await r.step();
+  await r.step();
+  assert.equal(r.m.getSlot('slot-0').feed.some((f) => f.type === 'pipeline-loop-draft-skipped'), true);
+  assert.equal(runner.calls.length, 1, 'the real pipeline still ran, on the normal harness draft');
+  assert.equal(runner.calls[0].loopDraft, null);
+  assert.equal(r.m.getSlot('slot-0').status, 'validated');
+});
+
+test('drafting attempts are bounded: after maxDraftAttemptsPerSession, further DRAFT requests fall back to the normal pipeline', async () => {
+  const runner = stubPipelineRunner();
+  const answers = [
+    'Try A.\nSEARCH: sha256 reduced round collision\nDRAFT: first real reason.', VALID_DRAFT_ANSWER, // cycle 1: draft attempt #1 (allowed)
+    'Try B.\nDRAFT: second real reason.', // cycle 2: no SEARCH needed, lastSearch already real from cycle 1
+  ];
+  const r = rig({ pipelineRunner: runner, answers, activeLoop: { browseEvery: 1, maxDraftAttemptsPerSession: 1, maxThinkingPerSession: 10 } });
+  r.m.setSlotCount(1);
+  await r.boot();
+  // Cycle 1: idle -> thinking -> running-experiment (drafting call #1, valid) -> validated -> idle.
+  for (let i = 0; i < 5; i++) await r.step();
+  assert.equal(runner.calls.length, 1);
+  assert.ok(runner.calls[0].loopDraft, 'cycle 1 drafted for real');
+  // Cycle 2: idle -> thinking (asks again) -> running-experiment: the cap (1) is already spent, so no second drafting call.
+  await r.step(); // idle -> thinking
+  await r.step(); // thinking -> running-experiment
+  await r.step(); // running-experiment -> straight to the normal pipeline, no drafting call
+  assert.equal(r.llm.calls.length, 3, 'thinking, drafting #1, thinking #2 — no drafting #2');
+  assert.equal(runner.calls.length, 2);
+  assert.equal(runner.calls[1].loopDraft, null, 'the cap held: cycle 2 got the ordinary harness draft');
 });

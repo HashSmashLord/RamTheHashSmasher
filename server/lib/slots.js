@@ -122,6 +122,27 @@
 // best REAL measured result so far this session (`slot.bestResult`,
 // `updateBestResult`) with an explicit standing goal of beating it, honestly,
 // rather than just cycling through statuses (LOOP_THINKING_SYSTEM).
+//
+// On a pipeline track that only ever writes the organizer's empty
+// draft_claim() template (every harness-draft track except sha256-r32,
+// which keeps the one committed research package), a thinking step may end
+// with one more line, "DRAFT: <reason>" (LOOP_THINKING_SYSTEM), when its own
+// real research this session genuinely gives it something specific and
+// disclosed to propose. That alone never writes anything: the NEXT
+// running-experiment step, only if the slot has also done at least one real
+// literature search this session and is under `maxDraftAttemptsPerSession`
+// (runLoopDraftAttempt), makes one more dedicated call (LOOP_DRAFT_SYSTEM)
+// asking for a strict, narrow set of fields. Honesty is enforced in code,
+// not just the prompt: validateLoopAttempt (hashsmash.js) rejects anything
+// out of range, malformed, or citing a paper this session did not actually
+// look up, before any file is written; a candidate that passes that gate
+// still goes through the exact same real precheck/schema/check/intake as
+// every other candidate (hashsmash.js's writeLoopDraftCandidate), with
+// submission_state forced to 'draft' and the heuristic's role forced to
+// 'supporting' — this harness never lets an autonomous loop mark its own
+// candidate 'ready' or score-critical. The realistic, honest default stays
+// "no attack found": most sessions never reach this path at all, and most
+// that do will be told "no" or rejected, same as the ordinary harness draft.
 // Guardrails:
 //   - never starts in mock mode (`activeLoop.live`, from llm.js isLiveMode),
 //     and stops itself if a thinking call ever comes back mocked;
@@ -166,9 +187,11 @@
 import { assignmentForIndex, ACTIVE_TRACKS } from './targets.js';
 import { contextPayload } from './sandbox-context.js';
 import {
-  parseThinking, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
+  parseThinking, parseDraftAttempt, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
   DEFAULT_BROWSE_EVERY, DEFAULT_MAX_THINKING_PER_SESSION, LOOP_THINKING_MAX_TOKENS,
+  DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION, LOOP_DRAFT_MAX_TOKENS,
 } from './sandbox-activity.js';
+import { validateLoopAttempt } from './hashsmash.js';
 
 // 'validated' = the candidate passed HashSmash's real local intake (mechanical
 // checks only). It is not judged, not scored, and not submitted anywhere.
@@ -190,7 +213,24 @@ export const LOOP_THINKING_SYSTEM = 'You are a HashSmash solver agent whose work
   + 'you are not just cycling through statuses, you are trying to genuinely improve on what you have actually produced. '
   + 'In two or three short sentences, say the next concrete thing you will try on this target, why, and how it could beat your best result so far. '
   + 'Never claim a result, a found collision or progress you do not have; if you have no real result yet, or cannot beat your best one, say that plainly instead of pretending otherwise. '
-  + 'If looking up published literature would genuinely help this step, end with one line "SEARCH: <a short query for the IACR ePrint archive>"; otherwise do not add that line.';
+  + 'If looking up published literature would genuinely help this step, end with one line "SEARCH: <a short query for the IACR ePrint archive>"; otherwise do not add that line. '
+  + 'Separately: if, and only if, what you have actually read and thought about this session gives you something specific and disclosed you could honestly put in an improved candidate claim '
+  + '(a real heuristic with a stated scope and limitations, citing a real paper you actually looked up this session), end with one more line "DRAFT: <one short reason>" so you can be asked for it properly next step. '
+  + 'The honest default is that you do not have this yet; most steps should not add that line, and adding it when you are not sure is worse than leaving it off.';
+
+/** System prompt for the dedicated, rarer "do you really have something to draft" call (see runLoopDraftAttempt). */
+export const LOOP_DRAFT_SYSTEM = 'You are the same HashSmash solver agent, now asked a narrower question than before. '
+  + 'You said you might have something specific and disclosed to propose as an improved candidate claim. Decide honestly, one more time, whether you really do. '
+  + 'The honest default is still no: most of the time, on reflection, you will not, and saying so plainly is the right and expected answer. '
+  + 'Answer in EXACTLY this plain-text format and nothing else, no markdown, nothing before or after it. First line: "ATTEMPT: yes" or "ATTEMPT: no". '
+  + 'If, and only if, yes, add every one of these lines, each with a real, specific, honestly-limited value, in this order: '
+  + 'TIME_LOG2: <plain number>, MEMORY_LOG2_BYTES: <plain number>, SUCCESS_PROBABILITY: <plain number between 0.39 and 1>, '
+  + 'HEURISTIC_ID: <short slug, letters/digits/._- only>, CITED_PAPER_ID: <the exact IACR ePrint id, e.g. 2026/1234, from your own last real search results below — never invent or remember one from elsewhere>, '
+  + 'STATEMENT: <the specific heuristic you are proposing, one or two sentences>, SCOPE: <exactly what construction, parameters or premise this is argued or measured for>, '
+  + 'EXTRAPOLATION: <what you actually did this session that supports it, and precisely how far beyond that you are extending it>, '
+  + 'LIMITATIONS: <what is NOT proven here, stated as plainly as the sha256-r32 research package does it — no collision found, an estimate under one disclosed premise, etc.>. '
+  + 'Never write that something is proven, verified, confirmed or guaranteed when it is only estimated or argued from a short literature read. '
+  + 'If you cannot honestly give a real CITED_PAPER_ID taken from the results you were actually given this session, answer "ATTEMPT: no".';
 
 /** Feed entry types that are the RAM's research history (what a thinking step is grounded in). */
 const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|pipeline-.*|sandbox-browse|sandbox-task-done|suggestion-attached)$/;
@@ -251,7 +291,7 @@ function freezeCopy(value) {
  *   modelOverride?: string|null,
  *   autoRestart?: { enabled?: boolean, baseDelayMs?: number, maxDelayMs?: number, maxFailures?: number }|null,
  *   sandboxActivity?: typeof import('./sandbox-activity.js').desktopActivity|null,
- *   activeLoop?: { enabled?: boolean, live: boolean, stepPauseMs?: number, minStepPauseMs?: number, browseEvery?: number, maxThinkingPerSession?: number, maxFailures?: number }|null,
+ *   activeLoop?: { enabled?: boolean, live: boolean, stepPauseMs?: number, minStepPauseMs?: number, browseEvery?: number, maxThinkingPerSession?: number, maxDraftAttemptsPerSession?: number, maxFailures?: number }|null,
  *   yukonSandbox?: typeof import('./yukon-sandbox.js')|null,
  *   setTimer?: (fn: () => void, ms: number) => any,
  *   clearTimer?: (handle: any) => void,
@@ -293,6 +333,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       stepPauseMs: Math.min(MAX_STEP_PAUSE_SEC * 1000, Math.max(floor, activeLoop.stepPauseMs ?? DEFAULT_STEP_PAUSE_SEC * 1000)),
       browseEvery: Math.max(1, activeLoop.browseEvery ?? DEFAULT_BROWSE_EVERY),
       maxThinkingPerSession: Math.max(1, activeLoop.maxThinkingPerSession ?? DEFAULT_MAX_THINKING_PER_SESSION),
+      maxDraftAttemptsPerSession: Math.max(1, activeLoop.maxDraftAttemptsPerSession ?? DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION),
       maxFailures: Math.max(1, activeLoop.maxFailures ?? 5),
       shutDown: false,
     };
@@ -491,11 +532,12 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         ? { model, system: LOOP_THINKING_SYSTEM, prompt: `${base}${loopGrounding(slot)}`, maxTokens: LOOP_THINKING_MAX_TOKENS }
         : { model, system: 'You are a HashSmash solver agent. Describe, in one sentence, the next concrete thing you will try.', prompt: base });
       let text = result.text;
-      slot.lastThink = { mocked: Boolean(result.mocked), search: null };
+      slot.lastThink = { mocked: Boolean(result.mocked), search: null, draftReason: null };
       if (fromLoop) {
-        const { note, search } = parseThinking(result.text);
+        const { note, search, draftReason } = parseThinking(result.text);
         text = note || '(the model returned no text for this step)';
         slot.lastThink.search = result.mocked ? null : search;
+        slot.lastThink.draftReason = result.mocked ? null : draftReason;
       }
       slot.status = 'thinking';
       pushFeed(slot, 'thinking', text);
@@ -504,21 +546,30 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       }
     } else if (slot.status === 'thinking') {
       slot.status = 'running-experiment';
+      const willDraft = draftAttemptEligible(slot, track, fromLoop);
       pushFeed(
         slot,
         'running-experiment',
         pipelineRunner?.supportsTrack(track)
           ? (pipelineRunner.candidateKindFor?.(track) === 'research'
             ? `Next step runs HashSmash's real local pipeline (check + intake) on this RAM's committed research package for ${track}.`
-            : `Next step runs HashSmash's real local pipeline (check + intake) on a labeled harness draft for ${track}.`)
+            : willDraft
+              ? `Next step asks this RAM's own model, one more time and narrowly, whether it really has something specific and disclosed to draft for ${track}; if it does, the drafted claim still has to pass the same real local pipeline as any other candidate, forced to stay a draft.`
+              : `Next step runs HashSmash's real local pipeline (check + intake) on a labeled harness draft for ${track}.`)
           : fromLoop
             ? `Next: the ${approach} experiment on ${track}. This harness has no real experiment runner for ${track} yet, so nothing will be executed for it this cycle.`
             : `Running ${approach} experiment against ${track}.`,
       );
     } else if (slot.status === 'running-experiment' && pipelineRunner?.supportsTrack(track)) {
       // Real pipeline step. Any caller-supplied `outcome` is ignored here: the
-      // HashSmash pipeline's own verdict decides the slot's status.
-      await runRealPipeline(slot);
+      // HashSmash pipeline's own verdict decides the slot's status. When the
+      // slot's own real research this session earned it a shot at drafting
+      // its own candidate (draftAttemptEligible), that dedicated, narrower
+      // call happens first; it still ends by running the same real pipeline
+      // (or, if it fails this harness's own honesty gate, by honestly
+      // failing instead — never by silently falling back).
+      if (draftAttemptEligible(slot, track, fromLoop)) await runLoopDraftAttempt(slot);
+      else await runRealPipeline(slot);
     } else if (slot.status === 'running-experiment' && fromLoop) {
       // No runner for this track: say so, never "drafted".
       slot.status = 'failed';
@@ -541,11 +592,11 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     return snapshot(slot);
   }
 
-  async function runRealPipeline(slot) {
+  async function runRealPipeline(slot, { loopDraft = null } = {}) {
     const { track, model, approach, modelSource } = slot.assignment;
     let cycle;
     try {
-      cycle = await pipelineRunner.runCycle({ slotId: slot.id, track, model, approach, modelSource });
+      cycle = await pipelineRunner.runCycle({ slotId: slot.id, track, model, approach, modelSource, loopDraft });
     } catch (err) {
       slot.status = 'failed';
       slot.pipeline = { track, error: err.message, ranAt: now() };
@@ -587,7 +638,9 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       const judged = slot.pipeline.stages.find((st) => st.stage === 'judge');
       pushFeed(slot, 'validated', slot.pipeline.candidate === 'research'
         ? `Research package passed HashSmash's real local intake for ${track} (mechanical checks only). Judge stage: ${judged?.outcome ?? 'not run'}; nothing was scored or submitted. Its claim still rests on disclosed exploratory heuristics; passing intake is not a verdict on them. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track} — not sent anywhere yet, there is no real external submission path.`
-        : `Harness draft passed HashSmash's real local intake for ${track}. Integration check only: no attack is claimed, nothing was judged or submitted. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track}.`);
+        : slot.pipeline.candidate === 'loop-draft'
+          ? `This RAM's own drafted candidate for ${track} passed HashSmash's real local intake (mechanical checks only; it stays a draft, so intake correctly still refuses to forward it to the judge). ${slot.pipeline.candidateDetail?.summary ?? ''} Nobody has reviewed or verified it. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track}.`
+          : `Harness draft passed HashSmash's real local intake for ${track}. Integration check only: no attack is claimed, nothing was judged or submitted. Attribution recorded: RAM ${slot.id}, model ${model}, track ${track}.`);
     } else {
       slot.status = 'failed';
       const blocked = intake?.outcome === 'environment-blocked';
@@ -595,6 +648,79 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         ? `HashSmash pipeline blocked by the local environment, not by the candidate: ${intake.detail}`
         : `HashSmash pipeline rejected the candidate for ${track}.`);
     }
+  }
+
+  /**
+   * Whether the active loop may even ATTEMPT to draft its own candidate
+   * claim this cycle, instead of writing the organizer's empty harness-draft
+   * template. Every condition is real, checkable session state, never just
+   * "the model asked nicely":
+   *   - only the loop itself attempts this, never an admin-triggered advance
+   *     (`fromLoop`; in practice `slot.lastThink.draftReason` is only ever
+   *     set when `fromLoop` was true, but this checks it explicitly too);
+   *   - never on a track with a committed research package: sha256-r32's
+   *     real package is never overwritten by anything this function reaches;
+   *   - the slot's own last thinking step must have actually asked for it
+   *     (a real "DRAFT: ..." line, parsed into `slot.lastThink.draftReason`);
+   *   - the slot must have done at least one real IACR ePrint search this
+   *     session (`slot.lastSearch`) — no real search yet, no attempt;
+   *   - bounded: at most `maxDraftAttemptsPerSession` per slot (falls back
+   *     to sandbox-activity.js's default when no active loop is configured,
+   *     so this stays bounded even when a caller drives `advance()` by hand).
+   * Passing this only means a dedicated, narrower drafting CALL is made
+   * (runLoopDraftAttempt) — most of those calls should still honestly come
+   * back "no" (LOOP_DRAFT_SYSTEM), and even a "yes" still has to pass
+   * validateLoopAttempt and the real HashSmash pipeline.
+   */
+  function draftAttemptEligible(slot, track, fromLoop) {
+    return Boolean(
+      fromLoop
+      && slot.lastThink?.draftReason
+      && pipelineRunner?.candidateKindFor?.(track) !== 'research'
+      && slot.lastSearch
+      && (slot.draftAttempts ?? 0) < (loopCfg?.maxDraftAttemptsPerSession ?? DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION),
+    );
+  }
+
+  /**
+   * The dedicated, rarer drafting call: asks the model one more time, more
+   * narrowly, whether it really has something to propose (LOOP_DRAFT_SYSTEM),
+   * then either runs the real pipeline on what it proposed (if it passes
+   * hashsmash.js's validateLoopAttempt first) or reports a real, honest,
+   * non-hidden outcome — declined, malformed, or a mocked answer — and falls
+   * back to the ordinary labeled harness draft for this cycle, EXCEPT when
+   * the attempt was genuinely made and failed validation: that is reported
+   * as a real failed attempt, not quietly replaced by something else.
+   */
+  async function runLoopDraftAttempt(slot) {
+    const { track, model, approach, modelSource } = slot.assignment;
+    slot.draftAttempts = (slot.draftAttempts ?? 0) + 1;
+    const lastSearchResults = slot.lastSearch?.results ?? [];
+    const prompt = `${loopGrounding(slot)} Earlier this cycle you said: "${slot.lastThink.draftReason}". Decide now, honestly and specifically.`;
+    const result = await llmProvider.complete({ model, system: LOOP_DRAFT_SYSTEM, prompt, maxTokens: LOOP_DRAFT_MAX_TOKENS });
+    if (costLedger && result.usage) {
+      costLedger.record({ slotId: slot.id, ramId: slot.ramId, model, usage: result.usage, ref: now() });
+    }
+    if (result.mocked) {
+      pushFeed(slot, 'pipeline-loop-draft-skipped', 'The drafting call came back as a mock (dry-run) answer; that is never treated as a real decision. Running the normal labeled harness draft for this cycle instead.');
+      await runRealPipeline(slot);
+      return;
+    }
+    const attempt = parseDraftAttempt(result.text);
+    if (!attempt.attempt) {
+      pushFeed(slot, 'pipeline-loop-draft-declined', 'On this closer look, this RAM honestly did not have a specific, disclosed heuristic to put in a real candidate this cycle. Running the normal labeled harness draft instead.');
+      await runRealPipeline(slot);
+      return;
+    }
+    const check = validateLoopAttempt(attempt, { lastSearchResults });
+    if (!check.ok) {
+      slot.status = 'failed';
+      pushFeed(slot, 'pipeline-loop-draft-rejected', `This RAM's model tried to draft its own candidate claim for ${track} but it failed this harness's own honesty/structure checks before HashSmash's real validation even ran: ${check.errors.join('; ')}. This is a real failed attempt, not a hidden one; nothing was submitted or shown as a result.`);
+      return;
+    }
+    const citedPaper = lastSearchResults.find((r) => r.id === attempt.citedPaperId);
+    pushFeed(slot, 'pipeline-loop-draft-attempt', `This RAM's model proposed its own candidate claim for ${track} (heuristic "${attempt.heuristicId}", citing ePrint ${citedPaper.id}); it still has to pass the exact same real HashSmash pipeline as any other candidate, and stays a draft either way.`);
+    await runRealPipeline(slot, { loopDraft: { attempt, citedPaper } });
   }
 
   /**
@@ -880,6 +1006,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       maxIdleMs: MAX_IDLE_MS,
       browseEvery: loopCfg?.browseEvery ?? null,
       maxThinkingPerSession: loopCfg?.maxThinkingPerSession ?? null,
+      maxDraftAttemptsPerSession: loopCfg?.maxDraftAttemptsPerSession ?? null,
       loops: [...loops].map(([slotId, e]) => ({
         slotId, sessionId: e.sessionId, startedAt: e.startedAt, steps: e.steps, thinking: e.thinking, browses: e.browses, inspects: e.inspects,
         failures: e.failures, maxGapMs: e.maxGapMs, unverifiedTyping: e.unverifiedTyping, history: e.history.map((h) => ({ ...h })),

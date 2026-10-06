@@ -51,6 +51,16 @@ export const DEFAULT_BROWSE_EVERY = 2;
 /** Hard cap on real thinking (LLM) calls one sandbox session may make before the loop stops. */
 export const DEFAULT_MAX_THINKING_PER_SESSION = 60;
 /**
+ * Hard cap, per slot, on how many times the loop makes a dedicated "do you
+ * really have something to draft" call (slots.js's runLoopDraftAttempt).
+ * Deliberately small and separate from DEFAULT_MAX_THINKING_PER_SESSION:
+ * most cycles should never even reach this, and this cap keeps it that way
+ * even if a model gets enthusiastic about proposing drafts.
+ */
+export const DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION = 3;
+/** max_tokens for the dedicated drafting call (slots.js's LOOP_DRAFT_SYSTEM). */
+export const LOOP_DRAFT_MAX_TOKENS = 700;
+/**
  * max_tokens for a loop thinking call. Measured on the real roster model
  * (anthropic/claude-opus-5.5 via OpenRouter, 2026-10-05): reasoning is
  * mandatory on that endpoint and used all of the default 300 tokens, leaving
@@ -77,20 +87,74 @@ export function asciiText(text) {
 }
 
 /**
- * Splits a model's thinking text into the note and an optional search query
- * (its last "SEARCH: ..." line). The query is reduced to a safe charset.
+ * Splits a model's thinking text into the note and two optional trailing
+ * signal lines: a "SEARCH: ..." query, and a "DRAFT: ..." line the model
+ * uses only when it believes its real research this session gives it
+ * something specific and disclosed to propose as an improved candidate
+ * claim (slots.js's active loop then decides, with its own real gates,
+ * whether to act on that — this function only extracts what was said).
  */
 export function parseThinking(text) {
   const lines = String(text ?? '').split('\n');
   let search = null;
+  let draft = null;
   const kept = [];
   for (const line of lines) {
-    const m = /^\s*\**\s*SEARCH\s*:\s*(.+)$/i.exec(line);
-    if (m) search = m[1];
+    const mSearch = /^\s*\**\s*SEARCH\s*:\s*(.+)$/i.exec(line);
+    const mDraft = /^\s*\**\s*DRAFT\s*:\s*(.+)$/i.exec(line);
+    if (mSearch) search = mSearch[1];
+    else if (mDraft) draft = mDraft[1];
     else kept.push(line);
   }
   const query = search ? search.replace(/[^A-Za-z0-9 .+-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
-  return { note: kept.join('\n').trim(), search: query.length >= 3 ? query : null };
+  const reason = draft ? draft.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+  return {
+    note: kept.join('\n').trim(),
+    search: query.length >= 3 ? query : null,
+    draftReason: reason.length >= 5 ? reason : null,
+  };
+}
+
+/**
+ * Parses the strict plain-text answer format of the dedicated drafting call
+ * (slots.js's LOOP_DRAFT_SYSTEM): "ATTEMPT: yes|no" plus, only when yes, a
+ * fixed set of labeled fields. Deliberately forgiving about surrounding text
+ * (a model may add stray words despite the instruction) but strict about
+ * what each field actually contains: a label not found is `null`, never a
+ * guess. Numeric fields are parsed as plain numbers only; non-numeric text
+ * in a numeric field becomes `null`, which validateLoopAttempt (hashsmash.js)
+ * then correctly rejects rather than silently coercing to 0.
+ *
+ * This never decides whether a drafted claim is honest or valid — that is
+ * entirely hashsmash.js's validateLoopAttempt, against real, independent
+ * session state (the real last search results). This function only turns
+ * text into fields.
+ */
+export function parseDraftAttempt(text) {
+  const raw = String(text ?? '');
+  const field = (label) => {
+    const m = new RegExp(`^\\s*\\**\\s*${label}\\s*:\\s*(.+)$`, 'im').exec(raw);
+    return m ? m[1].trim().replace(/\*+$/, '').trim() : null;
+  };
+  const attemptLine = (field('ATTEMPT') ?? '').toLowerCase();
+  if (!attemptLine.startsWith('yes')) return { attempt: false };
+  const num = (s) => {
+    if (s === null) return null;
+    const n = Number(String(s).match(/-?\d+(\.\d+)?/)?.[0] ?? '');
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    attempt: true,
+    timeLog2: num(field('TIME_LOG2')),
+    memoryLog2Bytes: num(field('MEMORY_LOG2_BYTES')),
+    successProbability: num(field('SUCCESS_PROBABILITY')),
+    heuristicId: field('HEURISTIC_ID'),
+    citedPaperId: field('CITED_PAPER_ID'),
+    statement: field('STATEMENT'),
+    scope: field('SCOPE'),
+    extrapolation: field('EXTRAPOLATION'),
+    limitations: field('LIMITATIONS'),
+  };
 }
 
 export function eprintSearchUrl(query) {
