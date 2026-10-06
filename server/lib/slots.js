@@ -254,9 +254,23 @@ const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|
  * moved by anything else. Lives on the slot (in-memory, per slot), not in the
  * public snapshot. Returns the slot's best record (or null if `detail` had
  * nothing numeric yet).
+ *
+ * `detail.kind === 'harness-draft'` is refused here, not just skipped by
+ * whoever calls this: real bug, found 2026-10-06 while wiring real Yukon
+ * submission — the organizer's own draft_claim() template (frontier_tracks.py)
+ * is NOT numberless. It carries a real positive success_probability (0.39,
+ * the generic birthday bound) and a real time_log2 (digest_bits/2) alongside
+ * `heuristics: []` and `submission_state: "draft"` -- those numbers used to
+ * flow straight into bestResult on every single harness-draft cycle (five of
+ * six tracks, constantly), which decideYukonSubmission (yukon-sandbox.js)
+ * would have read as "a real measured result" and happily submitted: the
+ * organizer's own non-claim placeholder, represented to real judges as this
+ * RAM's own finding. Only a genuine 'research' or 'loop-draft' candidate
+ * (hashsmash.js's writeResearchCandidate / writeLoopDraftCandidate, both
+ * already honesty-gated) may ever move this number.
  */
 export function updateBestResult(slot, detail) {
-  if (!detail) return slot.bestResult ?? null;
+  if (!detail || detail.kind === 'harness-draft') return slot.bestResult ?? null;
   if (!slot.bestResult) slot.bestResult = { timeLog2: null, successProbability: null };
   if (typeof detail.timeLog2 === 'number' && (slot.bestResult.timeLog2 === null || detail.timeLog2 < slot.bestResult.timeLog2)) {
     slot.bestResult.timeLog2 = detail.timeLog2;

@@ -27,6 +27,22 @@ test('updateBestResult only ever moves toward a genuinely better REAL number, ne
   assert.deepEqual(slot.bestResult, { timeLog2: 86, successProbability: 0.9 });
 });
 
+test('updateBestResult refuses a harness-draft candidate outright, even with real-looking positive numbers -- real bug, 2026-10-06: the organizer\'s own draft_claim() template carries success_probability 0.39 and a real time_log2, which used to flow straight into bestResult (and from there, into a real Yukon submission decision) as if it were this RAM\'s own finding', () => {
+  const fresh = { bestResult: null };
+  updateBestResult(fresh, { kind: 'harness-draft', timeLog2: 128, successProbability: 0.39 });
+  assert.equal(fresh.bestResult, null, 'a harness-draft never establishes a first bestResult, however real-looking its numbers are');
+
+  const withGenuine = { bestResult: { timeLog2: 86, successProbability: 0.3 } };
+  updateBestResult(withGenuine, { kind: 'harness-draft', timeLog2: 10, successProbability: 0.99 });
+  assert.deepEqual(withGenuine.bestResult, { timeLog2: 86, successProbability: 0.3 }, 'a harness-draft never overwrites a genuine prior result either, however much "better" its placeholder numbers look');
+
+  // A genuine candidate kind still works exactly as before.
+  updateBestResult(withGenuine, { kind: 'loop-draft', timeLog2: 80, successProbability: 0.35 });
+  assert.deepEqual(withGenuine.bestResult, { timeLog2: 80, successProbability: 0.35 });
+  updateBestResult(withGenuine, { kind: 'research', timeLog2: 70, successProbability: 0.4 });
+  assert.deepEqual(withGenuine.bestResult, { timeLog2: 70, successProbability: 0.4 });
+});
+
 test('loopGrounding asks the model to beat its real best so far, or says honestly there is none yet', () => {
   const slot = { feed: [], bestResult: null, lastSearch: null };
   assert.match(loopGrounding(slot), /no real measured result yet this session/);
