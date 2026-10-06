@@ -17,9 +17,24 @@ export function isLaunched(ram) {
   return Boolean(ram) && ram.status === LAUNCHED_STATUS;
 }
 
-/** Every real launched RAM out of a GET /api/launchpad/rams list, in the server's own order. */
+/**
+ * Every real launched RAM out of a GET /api/launchpad/rams list, newest launch first ("the
+ * last made tokens"). Sorted by `updatedAt`, not `createdAt`: server/lib/rams.js only bumps
+ * updatedAt on a status change (touch()), and nothing after confirmLaunch() touches an active
+ * RAM's record again (recordCreatorFees/recordWin credit funds, never the RAM itself) — so for
+ * every launched RAM, updatedAt is frozen at the exact moment confirmLaunch() made it active.
+ * createdAt is the earlier, less honest answer: it's when the draft was first started, which
+ * for a RAM someone sat on for days before launching is not "last made" at all. A RAM missing
+ * updatedAt (should not happen for an active one) sorts after ones that have it, rather than
+ * crashing or jumping the queue.
+ */
 export function launchedRams(rams) {
-  return Array.isArray(rams) ? rams.filter(isLaunched) : [];
+  if (!Array.isArray(rams)) return [];
+  return rams.filter(isLaunched).sort((a, b) => {
+    const at = a.updatedAt ? Date.parse(a.updatedAt) : -Infinity;
+    const bt = b.updatedAt ? Date.parse(b.updatedAt) : -Infinity;
+    return bt - at;
+  });
 }
 
 /** "SHA-256 r31": the same short round label the herd board prints (src/ui.js roundShort), built from the RAM's own recorded fields — never the track id's raw string. */
