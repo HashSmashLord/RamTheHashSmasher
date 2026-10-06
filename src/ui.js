@@ -90,6 +90,29 @@ export function slotIdFor(agent) {
 // page itself the hash alone is enough (and keeps the opener for focus restore).
 export const ramHref = (id, { samePage = false } = {}) => `${samePage ? "" : "/herd"}#ram/${encodeURIComponent(id)}`;
 
+/**
+ * Runs `mutate` (a live board's periodic tile/desk update), then restores whatever
+ * window.scrollY was right before it if it moved -- a routine content update (a status
+ * line changing length, a desk switching from "no desk running" text to a live iframe)
+ * reflows the page and silently drags an already-scrolled reader along with it,
+ * otherwise. Checked three times, not once (real-tested 2026-10-06 against herd.js/
+ * board.js: a single synchronous check right after `mutate` still missed real jumps --
+ * a desk iframe is `loading="lazy"`, so its real layout impact can land a frame or two
+ * after `refresh()` itself already returned): once synchronously, once after the next
+ * paint (requestAnimationFrame), and once after a short delay for anything slower than
+ * that. A reader's own scrolling, any time after `mutate` starts, is never fought --
+ * only a change already in flight when `mutate` was called is ever reverted.
+ * @param {() => void | Promise<void>} mutate
+ */
+export async function preserveScroll(mutate) {
+  const scrollY = window.scrollY;
+  const restore = () => { if (window.scrollY !== scrollY) window.scrollTo(0, scrollY); };
+  await mutate();
+  restore();
+  requestAnimationFrame(restore);
+  setTimeout(restore, 150);
+}
+
 // ---------------------------------------------------------------------------
 // The one authored motion: a new or changed line is printed, left to right, in steps.
 // ---------------------------------------------------------------------------

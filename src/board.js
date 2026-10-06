@@ -4,7 +4,7 @@
 
 import { RAMherdAPI } from "./mock-data.js";
 import { createDeskViewer, createDeskDirectory, deskFeedAvailable } from "./sandbox-viewer.js";
-import { $, isStale, judgeMarkup, print, ramHref, roundShort, slotIdFor, write, writeNowLine, writePath } from "./ui.js";
+import { $, isStale, judgeMarkup, preserveScroll, print, ramHref, roundShort, slotIdFor, write, writeNowLine, writePath } from "./ui.js";
 
 // Every screen re-checks its stream this often (a sandbox may start or stop); never harder.
 export const DESK_POLL_MS = 10_000;
@@ -123,38 +123,42 @@ export function mountBoard({ feed }) {
     // or shrinking on a routine update (a longer status line, a judge score appearing, and
     // so on) reflows the whole grid and silently moves an already-scrolled reader's position,
     // even with the tile count unchanged (confirmed: tiles stayed at 16, scrollY still jumped
-    // ~800px on an ordinary tick). Snapshotting scrollY around the mutations and restoring it
-    // right after cancels exactly that shift, while a reader's own scrolling between ticks is
-    // untouched -- same "preserve what the reader was looking at through a reflow" intent as
-    // ram-page.js's board-return scroll restore, just for this page's own live updates instead
-    // of a navigation.
-    const scrollY = window.scrollY;
-    const seen = new Set();
-    for (const agent of fleet) {
-      seen.add(agent.id);
-      let t = tiles.get(agent.id);
-      const first = !t;
-      if (first) {
-        t = buildTile(agent, feed);
-        tiles.set(agent.id, t);
-        grid.appendChild(t.el);
-        t.desk.refresh();
+    // ~800px on an ordinary tick). preserveScroll (ui.js) cancels exactly that shift, while a
+    // reader's own scrolling between ticks is untouched -- same "preserve what the reader was
+    // looking at through a reflow" intent as ram-page.js's board-return scroll restore, just
+    // for this page's own live updates instead of a navigation.
+    await preserveScroll(() => {
+      const seen = new Set();
+      for (const agent of fleet) {
+        seen.add(agent.id);
+        let t = tiles.get(agent.id);
+        const first = !t;
+        if (first) {
+          t = buildTile(agent, feed);
+          tiles.set(agent.id, t);
+          grid.appendChild(t.el);
+          t.desk.refresh();
+        }
+        updateTile(t, agent, first);
       }
-      updateTile(t, agent, first);
-    }
-    for (const [id, t] of tiles) {
-      if (!seen.has(id)) {
-        t.desk.destroy();
-        t.el.remove();
-        tiles.delete(id);
+      for (const [id, t] of tiles) {
+        if (!seen.has(id)) {
+          t.desk.destroy();
+          t.el.remove();
+          tiles.delete(id);
+        }
       }
-    }
-    if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
+    });
     return fleet;
   }
 
-  function refreshDesks() {
-    for (const t of tiles.values()) t.desk.refresh();
+  async function refreshDesks() {
+    // Same preserveScroll reasoning as render() above: a desk switching between its "no
+    // desk running" text and a live (lazy-loaded) iframe is exactly the kind of height
+    // change that reflows the grid and drags a scrolled reader along with it.
+    await preserveScroll(() => {
+      for (const t of tiles.values()) t.desk.refresh();
+    });
   }
 
   return { render, refreshDesks };
