@@ -8,12 +8,20 @@
 import { RAMherdAPI } from "./mock-data.js";
 import { initNav } from "./nav.js";
 import { $, ramHref } from "./ui.js";
-import { launchedRams, pumpFunUrl, ramRoundLabel, tokenImageUrl } from "./discover-view.js";
+import { launchedRams, matchesQuery, pumpFunUrl, ramRoundLabel, sortRams, tokenImageUrl } from "./discover-view.js";
 
 initNav();
 
 const grid = $("discover-grid");
 const empty = $("discover-empty");
+const noMatch = $("discover-no-match");
+const noMatchQuery = $("discover-no-match-query");
+const searchInput = $("discover-search");
+const sortSelect = $("discover-sort");
+
+// The full launched list from the last successful fetch, kept so the search/sort controls
+// can re-render instantly without waiting on the next poll.
+let lastLaunched = [];
 
 function card(ram) {
   const art = document.createElement("article");
@@ -90,12 +98,26 @@ function card(ram) {
   return art;
 }
 
+/** Re-applies the current search + sort to the last-fetched list and redraws the grid. */
+function applyView() {
+  const query = searchInput.value;
+  const matched = lastLaunched.filter((r) => matchesQuery(r, query));
+  const shown = sortRams(matched, sortSelect.value);
+  grid.replaceChildren(...shown.map(card));
+  const hasAny = lastLaunched.length > 0;
+  empty.hidden = hasAny;
+  noMatch.hidden = !hasAny || shown.length > 0 || !query.trim();
+  if (!noMatch.hidden) noMatchQuery.textContent = query.trim();
+}
+
 async function render() {
   const res = await RAMherdAPI.launchpad.listRams();
-  const rams = launchedRams(res.body?.rams);
-  grid.replaceChildren(...rams.map(card));
-  empty.hidden = rams.length > 0;
+  lastLaunched = launchedRams(res.body?.rams);
+  applyView();
 }
+
+searchInput.addEventListener("input", applyView);
+sortSelect.addEventListener("change", applyView);
 
 // Same rule as every other page's first tick (herd.js, index.js): a failed first fetch must
 // not reject this module's top-level await, or the poll below never starts.

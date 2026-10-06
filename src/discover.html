@@ -68,8 +68,22 @@
       <h2 id="discover-heading">Discover</h2>
       <p class="sec-lead">Every RAM that has actually launched through the launchpad, independent of knowing its id: its token, its hash family and round, its model, and a link to its own page on <a href="/herd">the Herd</a>. A launch shows up here only once the operator has confirmed its launch transaction's signature and approved the owner's brief — a saved draft or an unsigned entry never appears.</p>
     </header>
+    <div class="disc-toolbar">
+      <label class="disc-search-label" for="discover-search">
+        <svg class="disc-search-icon" viewBox="0 0 10 10" aria-hidden="true" shape-rendering="crispEdges"><path d="M1 1h4v1h-4zM1 2h1v3h-1zM4 2h1v3h-1zM1 5h4v1h-4zM5 6h1v1h-1zM6 7h1v1h-1zM7 8h2v2h-2z"/></svg>
+        <input class="ctl" id="discover-search" type="search" placeholder="Search by name or ticker" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="disc-sort-label" for="discover-sort">
+        Sort
+        <select class="ctl" id="discover-sort">
+          <option value="newest" selected>Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+      </label>
+    </div>
     <div class="disc-grid" id="discover-grid"></div>
     <p class="disc-empty" id="discover-empty" hidden>No RAMs have launched yet.</p>
+    <p class="disc-empty" id="discover-no-match" hidden>No launched RAM matches "<span id="discover-no-match-query"></span>".</p>
   </section>
 
 </main>

@@ -10,7 +10,7 @@ import bs58 from 'bs58';
 import { randomBytes } from 'node:crypto';
 import { startApp } from './helpers/harness.js';
 import { makePng } from './helpers/png.js';
-import { isLaunched, launchedRams, pumpFunUrl, ramRoundLabel, tokenImageUrl } from '../src/discover-view.js';
+import { isLaunched, launchedRams, matchesQuery, pumpFunUrl, ramRoundLabel, sortRams, tokenImageUrl } from '../src/discover-view.js';
 import { RAMherdAPI } from '../src/mock-data.js';
 
 const wallet = () => Keypair.generate().publicKey.toBase58();
@@ -52,6 +52,35 @@ test('launchedRams: newest launch first ("the last made tokens"), by updatedAt -
     { id: 'no-updatedAt', status: 'active' },
   ];
   assert.deepEqual(launchedRams(missing).map((r) => r.id), ['has-one', 'no-updatedAt']);
+});
+
+test('sortRams: "oldest" reverses the order; "newest" (or no argument) matches launchedRams\' own default; never mutates its input', () => {
+  const rams = [
+    { id: 'old', updatedAt: '2026-01-01T00:00:00Z' },
+    { id: 'newest', updatedAt: '2026-01-09T00:00:00Z' },
+    { id: 'middle', updatedAt: '2026-01-05T00:00:00Z' },
+  ];
+  const original = [...rams];
+  assert.deepEqual(sortRams(rams, 'newest').map((r) => r.id), ['newest', 'middle', 'old']);
+  assert.deepEqual(sortRams(rams, 'oldest').map((r) => r.id), ['old', 'middle', 'newest']);
+  assert.deepEqual(sortRams(rams).map((r) => r.id), ['newest', 'middle', 'old'], 'defaults to newest first');
+  assert.deepEqual(rams, original, 'the input array is never reordered in place');
+  assert.deepEqual(sortRams(null), []);
+  assert.deepEqual(sortRams(undefined), []);
+});
+
+test('matchesQuery: case-insensitive match against the token\'s own name or symbol; empty query matches everything', () => {
+  const ram = { token: { name: 'Ram Thirty Two', symbol: 'R32' } };
+  assert.equal(matchesQuery(ram, ''), true);
+  assert.equal(matchesQuery(ram, '   '), true);
+  assert.equal(matchesQuery(ram, undefined), true);
+  assert.equal(matchesQuery(ram, 'thirty'), true, 'matches the name, case-insensitively');
+  assert.equal(matchesQuery(ram, 'R32'), true);
+  assert.equal(matchesQuery(ram, 'r32'), true, 'symbol match is case-insensitive too');
+  assert.equal(matchesQuery(ram, 'nope'), false);
+  assert.equal(matchesQuery({ token: {} }, 'anything'), false);
+  assert.equal(matchesQuery({}, 'anything'), false);
+  assert.equal(matchesQuery(null, 'anything'), false);
 });
 
 test('ramRoundLabel: the RAM\'s own recorded family and rounds, never the raw track id', () => {

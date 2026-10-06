@@ -30,11 +30,34 @@ export function isLaunched(ram) {
  */
 export function launchedRams(rams) {
   if (!Array.isArray(rams)) return [];
-  return rams.filter(isLaunched).sort((a, b) => {
-    const at = a.updatedAt ? Date.parse(a.updatedAt) : -Infinity;
-    const bt = b.updatedAt ? Date.parse(b.updatedAt) : -Infinity;
-    return bt - at;
-  });
+  return sortRams(rams.filter(isLaunched), "newest");
+}
+
+/**
+ * Sorts an already-filtered list of RAMs by launch time. `order` is "newest" (default,
+ * matches launchedRams) or "oldest". Same `updatedAt` field and same missing-value handling
+ * as launchedRams -- see its own comment for why updatedAt, not createdAt, is "when it launched".
+ */
+export function sortRams(rams, order = "newest") {
+  if (!Array.isArray(rams)) return [];
+  const list = [...rams];
+  const time = (r) => (r?.updatedAt ? Date.parse(r.updatedAt) : -Infinity);
+  list.sort((a, b) => (order === "oldest" ? time(a) - time(b) : time(b) - time(a)));
+  return list;
+}
+
+/**
+ * True if `ram`'s token name or symbol contains `query`, case-insensitively. An empty/
+ * whitespace-only query matches everything (the default, unfiltered state).
+ */
+export function matchesQuery(ram, query) {
+  const q = typeof query === "string" ? query.trim().toLowerCase() : "";
+  if (!q) return true;
+  const token = ram && ram.token;
+  if (!token) return false;
+  const name = typeof token.name === "string" ? token.name.toLowerCase() : "";
+  const symbol = typeof token.symbol === "string" ? token.symbol.toLowerCase() : "";
+  return name.includes(q) || symbol.includes(q);
 }
 
 /** "SHA-256 r31": the same short round label the herd board prints (src/ui.js roundShort), built from the RAM's own recorded fields — never the track id's raw string. */
