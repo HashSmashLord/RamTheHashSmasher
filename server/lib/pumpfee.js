@@ -28,6 +28,7 @@
 // other real fee from being counted.
 
 import { PublicKey } from '@solana/web3.js';
+import { readJsonFile, writeJsonFileAtomic } from './persist.js';
 
 /** pump.fun's real fee-sharing program (bonding-curve era), confirmed from a live transaction's own logs. */
 export const PUMP_FEE_SHARING_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
@@ -230,16 +231,32 @@ export function createJupiterPriceSource({ fetchImpl = fetch } = {}) {
  * signatures newer than the last one already counted (`until`), so a long-
  * running server does not re-scan its whole history on every refresh.
  *
+ * Persistence (opt-in, `persistPath`; same atomic-write pattern as
+ * rams.js/moderation.js/persist.js): real bug, found 2026-10-06 -- without
+ * this, `totalLamports`/`tokenTotals`/`newestSeenSignature`/`scannedAny` all
+ * lived in plain in-memory variables, so every restart (every deploy) reset
+ * `scannedAny` to false and forced the NEXT fetchTotal() back into the
+ * bounded first-scan path (`maxSignaturesFirstScan`, newest-first) instead
+ * of the real incremental one. For a treasury with more history than that
+ * cap, that silently re-derived a smaller "lifetime" total than what had
+ * already been correctly counted before the restart -- a real total that
+ * should only ever grow instead visibly dropping (or recomputing to some
+ * other value) on every deploy. Persisting the running totals + scan
+ * position means a restart resumes the real incremental scan exactly where
+ * it left off, never re-walks capped history, and the lifetime figure never
+ * regresses.
+ *
  * @param {{
  *   connection: { getSignaturesForAddress: Function, getTransaction: Function },
  *   treasury: string,
  *   priceSource: { fetchSolUsd: () => Promise<number> },
  *   tokenPriceSource?: { fetchTokenUsd: (mint: string) => Promise<number> },
  *   maxSignaturesFirstScan?: number,
+ *   persistPath?: string|null,
  *   log?: (line: string) => void,
  * }} opts
  */
-export function createPumpFeeSource({ connection, treasury, priceSource, tokenPriceSource = null, maxSignaturesFirstScan = 2000, log = () => {} }) {
+export function createPumpFeeSource({ connection, treasury, priceSource, tokenPriceSource = null, maxSignaturesFirstScan = 2000, persistPath = null, log = () => {} }) {
   if (!connection) throw new TypeError('createPumpFeeSource requires a connection');
   if (typeof treasury !== 'string' || !treasury) throw new TypeError('createPumpFeeSource requires a treasury address');
   if (!priceSource || typeof priceSource.fetchSolUsd !== 'function') throw new TypeError('createPumpFeeSource requires a priceSource');
@@ -251,6 +268,33 @@ export function createPumpFeeSource({ connection, treasury, priceSource, tokenPr
   const tokenTotals = new Map(); // mint -> { rawAmount, decimals }
   let newestSeenSignature = null;
   let scannedAny = false;
+
+  // Rehydrate the real scan state, if any, so a restart resumes the
+  // incremental scan instead of starting the bounded first-scan path over.
+  // A missing file (first boot, or no persistPath at all) or a corrupt one
+  // both leave this exactly as it would be without persistence -- readJsonFile
+  // has already logged the latter.
+  if (persistPath) {
+    const loaded = readJsonFile(persistPath, { log });
+    if (loaded && typeof loaded.totalLamports === 'number' && Array.isArray(loaded.tokenTotals)) {
+      totalLamports = loaded.totalLamports;
+      newestSeenSignature = loaded.newestSeenSignature ?? null;
+      scannedAny = Boolean(loaded.scannedAny);
+      for (const [mint, entry] of loaded.tokenTotals) tokenTotals.set(mint, entry);
+      log(`pumpfee: rehydrated a real scan state from ${persistPath} (totalLamports=${totalLamports}, ${tokenTotals.size} mint(s) tracked, scannedAny=${scannedAny}).`);
+    } else if (loaded) {
+      log(`pumpfee: ${persistPath} did not have the expected shape, starting from an unscanned state.`);
+    }
+  }
+
+  function persist() {
+    if (!persistPath) return;
+    writeJsonFileAtomic(
+      persistPath,
+      { version: 1, totalLamports, newestSeenSignature, scannedAny, tokenTotals: [...tokenTotals.entries()] },
+      { log },
+    );
+  }
 
   async function collectSince(untilSignature, cap) {
     const out = [];
@@ -292,6 +336,7 @@ export function createPumpFeeSource({ connection, treasury, priceSource, tokenPr
     }
     totalLamports += newLamports;
     scannedAny = true;
+    persist();
     const solUsd = await priceSource.fetchSolUsd();
     let totalUsd = (totalLamports / 1e9) * solUsd;
     for (const [mint, { rawAmount, decimals }] of tokenTotals) {

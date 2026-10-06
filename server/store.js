@@ -40,12 +40,20 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   // number) stays the default everywhere else, including every existing test, exactly
   // like every other opt-in real integration in this file.
   const pumpFee = pumpFeePolicy(env);
+  // Same opt-in persistence pattern as rams.js/moderation.js below (RAMHERD_DATA_DIR,
+  // unset = in-memory only): real bug, found 2026-10-06, the operator saw the real
+  // "Fees collected, lifetime" figure regress/recompute across restarts because the
+  // scan state (totalLamports, scan position) lived only in memory. See pumpfee.js's
+  // createPumpFeeSource header for the full story.
+  const pumpFeePersistPath = env.RAMHERD_DATA_DIR ? join(env.RAMHERD_DATA_DIR, 'pumpfee.json') : null;
   const feeSource =
     pumpFee.enabled && launchpad.treasury
       ? createPumpFeeSource({
           connection: pumpFeeConnectionAdapter(new Connection(launchpad.rpcUrl || 'https://api.mainnet-beta.solana.com', 'confirmed')),
           treasury: launchpad.treasury,
           priceSource: createCoinGeckoPriceSource(),
+          persistPath: pumpFeePersistPath,
+          log,
           // CollectCoinCreatorFee (post-migration) fees are paid in the migrated token
           // itself, not SOL -- found real 2026-10-06 after the operator reported real
           // fees well above what the SOL-only mechanism alone was counting.

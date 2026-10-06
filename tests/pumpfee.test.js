@@ -4,7 +4,14 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { creatorFeeLamportsOf, creatorFeeTokenDeltasOf, createPumpFeeSource, createCoinGeckoPriceSource, createCoinGeckoZecPriceSource, createJupiterPriceSource, connectionAdapter, pumpFeePolicy } from '../server/lib/pumpfee.js';
+
+function tmpDir() {
+  return mkdtempSync(join(tmpdir(), 'ramherd-pumpfee-persist-test-'));
+}
 
 const TREASURY = 'Treasury111111111111111111111111111111111';
 const OTHER = 'Other1111111111111111111111111111111111111';
@@ -239,6 +246,115 @@ test('createPumpFeeSource: the first scan is bounded by maxSignaturesFirstScan, 
   const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1), maxSignaturesFirstScan: 1500 });
   await source.fetchTotal();
   assert.equal(calls, 2, 'stops paginating once the cap is reached, not after exhausting the whole real history');
+});
+
+test('createPumpFeeSource: persistence -- the real scan state survives a "restart" instead of resetting the lifetime total', async () => {
+  const dir = tmpDir();
+  const path = join(dir, 'pumpfee.json');
+  try {
+    const connection = fakeConnection({
+      pages: [[{ signature: 's2', err: null }, { signature: 's1', err: null }]],
+      txs: {
+        s2: distributeTx({ pre: [0, 2_000_000], post: [0, 2_005_000] }), // +5000 lamports
+        s1: distributeTx({ pre: [0, 1_000_000], post: [0, 1_010_468] }), // +10468 lamports
+      },
+    });
+    const first = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1_000_000), persistPath: path });
+    const firstTotal = await first.fetchTotal();
+    assert.ok(firstTotal > 0, 'sanity: this round of fees is real and non-trivial, not rounded away to $0.00');
+
+    // "Restart": a fresh source pointed at the same file, with a connection that
+    // (correctly, per the real incremental scan) returns NO new signatures at all --
+    // simulating that the treasury has had no new activity since the last scan.
+    const noNewSigsConnection = { async getSignaturesForAddress() { return []; }, async getTransaction() { throw new Error('should never be called'); } };
+    const second = createPumpFeeSource({ connection: noNewSigsConnection, treasury: TREASURY, priceSource: fakePriceSource(1_000_000), persistPath: path });
+    const secondTotal = await second.fetchTotal();
+    assert.equal(secondTotal, firstTotal, 'the real lifetime total must never reset/regress across a restart with no new activity');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createPumpFeeSource: persistence -- a "restart" resumes the real incremental scan from the persisted newestSeenSignature, never re-running the bounded first-scan path', async () => {
+  const dir = tmpDir();
+  const path = join(dir, 'pumpfee.json');
+  try {
+    const connection = fakeConnection({
+      pages: [[{ signature: 's1', err: null }]],
+      txs: { s1: distributeTx({ pre: [0, 0], post: [0, 1000] }) },
+    });
+    const first = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1), persistPath: path });
+    await first.fetchTotal();
+
+    // A fresh source, same file. If it incorrectly started an unscanned first-scan,
+    // `opts.until` would be undefined; the real incremental scan must pass the
+    // persisted newestSeenSignature ('s1') as `until`, and return one more real fee.
+    const seen = [];
+    const resumedConnection = {
+      async getSignaturesForAddress(address, opts) {
+        seen.push(opts);
+        return opts.until === 's1' ? [{ signature: 's2', err: null }] : [];
+      },
+      async getTransaction(sig) {
+        return sig === 's2' ? distributeTx({ pre: [0, 0], post: [0, 500] }) : null;
+      },
+    };
+    const second = createPumpFeeSource({ connection: resumedConnection, treasury: TREASURY, priceSource: fakePriceSource(1), persistPath: path });
+    const total = await second.fetchTotal();
+    assert.equal(seen[0].until, 's1', 'resumed from the persisted scan position, not an unbounded/unscanned restart');
+    assert.equal(total, Math.round(((1000 + 500) / 1e9) * 1 * 100) / 100, 'the restored total (1000 lamports) plus the one genuinely new fee (500)');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createPumpFeeSource: persistence -- real token totals (mint + raw amount) survive a restart too, not just the SOL side', async () => {
+  const dir = tmpDir();
+  const path = join(dir, 'pumpfee.json');
+  try {
+    const connection = fakeConnection({ pages: [[{ signature: 'tok1', err: null }]], txs: { tok1: collectTx() } });
+    const first = createPumpFeeSource({
+      connection, treasury: TREASURY, priceSource: fakePriceSource(1),
+      tokenPriceSource: fakeTokenPriceSource({ [MINT]: 1373.97 }), persistPath: path,
+    });
+    const firstTotal = await first.fetchTotal();
+    assert.ok(firstTotal > 0);
+
+    const noNewSigsConnection = { async getSignaturesForAddress() { return []; }, async getTransaction() { throw new Error('should never be called'); } };
+    const second = createPumpFeeSource({
+      connection: noNewSigsConnection, treasury: TREASURY, priceSource: fakePriceSource(1),
+      tokenPriceSource: fakeTokenPriceSource({ [MINT]: 1373.97 }), persistPath: path,
+    });
+    const secondTotal = await second.fetchTotal();
+    assert.equal(secondTotal, firstTotal, 'the real token-denominated fee total must survive a restart too');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createPumpFeeSource: persistence -- a missing or corrupt file never throws, source just starts unscanned', async () => {
+  const dir = tmpDir();
+  try {
+    const connection = fakeConnection({ pages: [[{ signature: 's1', err: null }]], txs: { s1: distributeTx() } });
+    const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1_000_000), persistPath: join(dir, 'does-not-exist.json') });
+    assert.ok((await source.fetchTotal()) > 0, 'a missing persistence file is an honest unscanned start, never a throw');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createPumpFeeSource: without a persistPath, behaviour is exactly today\'s in-memory-only default', async () => {
+  const connection = fakeConnection({
+    pages: [[{ signature: 's1', err: null }]],
+    txs: { s1: distributeTx() },
+  });
+  const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1_000_000) }); // no persistPath
+  const total = await source.fetchTotal();
+  assert.ok(total > 0);
+  // A fresh source with its own default (still no persistPath) starts genuinely unscanned --
+  // there is nothing on disk for it to have rehydrated from.
+  const fresh = createPumpFeeSource({ connection: fakeConnection({ pages: [[{ signature: 's1', err: null }]], txs: { s1: distributeTx() } }), treasury: TREASURY, priceSource: fakePriceSource(1_000_000) });
+  assert.equal(await fresh.fetchTotal(), total, 'no persistence configured -> every instance independently re-derives from scratch, same as before this feature existed');
 });
 
 test('createPumpFeeSource requires its real collaborators, never silently running with none', () => {
