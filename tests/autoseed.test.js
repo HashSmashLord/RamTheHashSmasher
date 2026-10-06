@@ -11,6 +11,9 @@ import { computeAllocation } from '../server/lib/budget.js';
 import { ACTIVE_TRACKS } from '../server/lib/targets.js';
 import { createStore } from '../server/store.js';
 import { loadConfig } from '../server/config.js';
+import { createFeeLedger } from '../server/lib/ledger.js';
+import { createSlotManager } from '../server/lib/slots.js';
+import { createMockLlmProvider } from '../server/lib/llm.js';
 
 const FAKE_KEY = 'e2b_fakekeyfortests0123456789';
 const SANDBOX_ENV = { RAMHERD_SANDBOX: 'e2b', E2B_API_KEY: FAKE_KEY, RAMHERD_SANDBOX_RECONCILE_SEC: '0' };
@@ -133,19 +136,66 @@ test('seedRosterFunding leaves owned (launchpad) slots alone', async () => {
   assert.equal(after.assignment.approach, 'mine');
 });
 
-test('seedRosterFunding never throws: a non-mock fee source or zero fraction is logged and skipped', async () => {
+test('seedRosterFunding never throws: zero fraction or a failed refresh is logged and skipped', async () => {
   const { store, budgetConfig } = storeWith();
   const logs = [];
   const zero = await seedRosterFunding(store, { budgetConfig: { ...budgetConfig, allocationFraction: 0 }, log: (l) => logs.push(l) });
   assert.equal(zero.ok, false);
   assert.equal(store.slotManager.getActiveCount(), 0);
-  const realish = { ...store, feeSource: { ...store.feeSource, kind: 'onchain' } };
-  const skipped = await seedRosterFunding(realish, { budgetConfig, log: (l) => logs.push(l) });
-  assert.equal(skipped.ok, false);
   const broken = { ...store, ledger: { refresh: async () => { throw new Error('boom'); } } };
   const failed = await seedRosterFunding(broken, { budgetConfig, log: (l) => logs.push(l) });
   assert.equal(failed.ok, false);
-  assert.equal(logs.length, 3);
+  assert.equal(logs.length, 2);
+});
+
+/**
+ * A minimal real store-shape for exactly what seedRosterFunding touches
+ * (feeSource, ledger, reallocateSlotsFromBudget, slotManager), wired the same
+ * way server/store.js really wires them -- NOT a spread copy of a real
+ * createStore() result: reallocateSlotsFromBudget there is a closure over
+ * that specific call's own ledger/slotManager, so overriding `.ledger` or
+ * `.feeSource` on a shallow copy of it silently changes nothing (confirmed
+ * real while writing this test: it kept reading the original mock's $0 no
+ * matter what `.feeSource`/`.ledger` were overridden to).
+ */
+function fakeStoreWithFeeSource(feeSource, budgetConfig) {
+  const ledger = createFeeLedger({ source: feeSource });
+  const slotManager = createSlotManager({ llmProvider: createMockLlmProvider() });
+  return {
+    feeSource,
+    ledger,
+    slotManager,
+    reallocateSlotsFromBudget() {
+      const allocation = computeAllocation(ledger.getSnapshot().totalUsd, budgetConfig);
+      slotManager.setSlotCount(allocation.slotCount);
+      return allocation;
+    },
+  };
+}
+
+test('seedRosterFunding on a non-mock fee source: skips only the synthetic bootstrap bump, never the reallocation itself -- regression, 2026-10-06: a restart with RAMHERD_FEE_SOURCE=onchain dropped the whole roster to 0 active slots because reallocation used to be skipped too', async () => {
+  const { budgetConfig } = storeWith();
+  const logs = [];
+
+  // A real source reporting $0: the bootstrap bump is correctly skipped (never "set" on a
+  // real source, which has no such mutator), but the step itself still succeeds and reallocates.
+  const zeroReal = fakeStoreWithFeeSource({ kind: 'onchain', async fetchTotal() { return 0; } }, budgetConfig);
+  const okButEmpty = await seedRosterFunding(zeroReal, { budgetConfig, log: (l) => logs.push(l) });
+  assert.equal(okButEmpty.ok, true, 'a non-mock source is not an error condition on its own');
+  assert.equal(okButEmpty.rosterSlotIds.length, 0, 'nothing real to fund yet, so correctly 0 active, not a skip');
+  assert.ok(logs.some((l) => /not mock-controllable/.test(l) && /still reallocating/.test(l)));
+
+  // A real source reporting a genuinely sufficient total: the roster actually comes up, same
+  // as it always did for the mock -- this is the exact case that regressed. An abundant real
+  // total allocates off computeAllocation() directly (capped only by budgetConfig.maxSlots),
+  // not off seedRosterFunding's own ACTIVE_TRACKS.length-sized bootstrap target -- a real
+  // treasury with far more than 6 roster seats' worth of fees correctly funds more than 6.
+  const fundedReal = fakeStoreWithFeeSource({ kind: 'onchain', async fetchTotal() { return 1_000_000; } }, budgetConfig);
+  const funded = await seedRosterFunding(fundedReal, { budgetConfig, log: (l) => logs.push(l) });
+  assert.equal(funded.ok, true);
+  assert.ok(funded.rosterSlotIds.length > 0, 'the real fee total actually funds and activates the roster, not just reports it');
+  assert.equal(funded.rosterSlotIds.length, budgetConfig.maxSlots, 'an abundant real total is capped by maxSlots, not by the 6-slot bootstrap target');
+  assert.equal(fundedReal.slotManager.getActiveCount(), funded.rosterSlotIds.length);
 });
 
 // ---- sandboxes ----

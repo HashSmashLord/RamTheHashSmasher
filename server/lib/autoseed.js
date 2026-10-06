@@ -72,9 +72,17 @@ const isLive = (slot) => slot.sandbox && (slot.sandbox.status === 'running' || s
  */
 export async function seedRosterFunding(store, { budgetConfig, rosterSize = ACTIVE_TRACKS.length, log = () => {} }) {
   try {
-    if (store.feeSource.kind !== 'mock') {
-      log(`auto-seed: skipped, fee source is "${store.feeSource.kind}", not mock-controllable.`);
-      return { ok: false, reason: 'fee source is not mock-controllable' };
+    // Slots are pure runtime state (never persisted), so EVERY restart starts the
+    // roster at zero active slots until reallocateSlotsFromBudget() runs once -- that
+    // call must always happen here, real fee source or mock, or a restart with a real
+    // source silently loses the whole roster even though the real fee total already
+    // funds it many times over (confirmed real 2026-10-06: turning RAMHERD_FEE_SOURCE
+    // on dropped all 6 roster slots to 0, because the old early return below skipped
+    // reallocation entirely for anything that wasn't mock -- only the mock-only bootstrap
+    // bump needs that guard, not the reallocation itself).
+    const mockBootstrap = store.feeSource.kind === 'mock';
+    if (!mockBootstrap) {
+      log(`auto-seed: fee source is "${store.feeSource.kind}", not mock-controllable -- skipping the synthetic bootstrap bump, but still reallocating off its real current total.`);
     }
     const need = feeForSlots(rosterSize, budgetConfig);
     if (!need) {
@@ -85,7 +93,7 @@ export async function seedRosterFunding(store, { budgetConfig, rosterSize = ACTI
       log(`auto-seed: RAMHERD_MAX_SLOTS=${budgetConfig.maxSlots} caps the roster at ${need.targetSlots} of ${rosterSize} RAMs.`);
     }
     const before = (await store.ledger.refresh()).totalUsd;
-    if (before < need.feeUsd) {
+    if (mockBootstrap && before < need.feeUsd) {
       store.feeSource.set(need.feeUsd, `auto-seed on boot: fund ${need.targetSlots} roster RAM(s)`);
       await store.ledger.refresh();
     }
