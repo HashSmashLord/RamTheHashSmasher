@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import {
   YUKON_TRACK, YUKON_BENCHMARK_ID, YUKON_INSTALL_COMMAND, YUKON_PREREQ_COMMAND,
   isYukonSandboxTrack, parseCloneWorkspace, decideYukonSubmission, yukonStepMessage,
-  createSandboxRun, runYukonSandboxCycle, installYukonCli,
+  createSandboxRun, runYukonSandboxCycle, installYukonCli, baseSandboxEnv,
 } from '../server/lib/yukon-sandbox.js';
 import { createSandboxManager } from '../server/lib/sandbox.js';
 import { createSlotManager } from '../server/lib/slots.js';
@@ -20,6 +20,13 @@ import { assignmentForIndex } from '../server/lib/targets.js';
 const KEY = 'yk_fake_real_looking_key_0123456789';
 const ON_ENV = { RAMHERD_YUKON_SUBMIT: 'true', YUKON_API_KEY: KEY, HOME: '/home/user', PATH: '/usr/bin:/bin' };
 const CLONE_OUT = `Cloning benchmark 86d5040e-d37d-4f41-bab6-1f2cd57e7398...\nDone. Now run:\n  cd ~/yukon-work/blake3-r1\n`;
+
+test('baseSandboxEnv: HOME is always the sandbox\'s own real home, never the calling process\'s $HOME -- real bug, confirmed against a live E2B sandbox 2026-10-06: Bun\'s installer (run by Yukon\'s own install.sh) tried to create "<host HOME>/.bun/bin" inside the sandbox and failed with a permission error, because the sandbox\'s real home is always /home/user regardless of what machine or user the Node server process runs as', () => {
+  assert.equal(baseSandboxEnv({ HOME: '/Users/useruser' }).HOME, '/home/user');
+  assert.equal(baseSandboxEnv({ HOME: '/root' }).HOME, '/home/user');
+  assert.equal(baseSandboxEnv({}).HOME, '/home/user');
+  assert.match(baseSandboxEnv({ HOME: '/Users/useruser' }).PATH, /^\/home\/user\/\.local\/bin:/);
+});
 
 // ---- pure helpers ----
 

@@ -170,12 +170,22 @@ against Yukon's own CLI mid-session; a restart (E2B's own timeout, or `RAMHERD_S
 is what gives it its real cadence. **Since 2026-10-06 this workbench cycle never uploads**, even
 when that decision says yes: it never writes a candidate package into its clone, and `yukon submit`
 archives the clone's editable paths, so it would have sent the track's unchanged incumbent with a
-note claiming this RAM's numbers. Real uploads only go through "Live submission" below. Before
-install it now also runs a `prereq` step that makes sure `unzip` exists (Bun's installer, which
-Yukon's install script runs, exits 1 without it), and `yukon clone`'s real output
-(`$ cd '<dir>'`, ANSI-dimmed `$`) is now parsed correctly. `tests/yukon-sandbox.test.js` covers it
-against a fake sandbox; its one non-negotiable test asserts the real CLI is never invoked while the
-gate is off.
+note claiming this RAM's numbers. Real uploads only go through "Live submission" below.
+
+The real blake3-r1 `yukon install: exit status 1` failure (confirmed live against a real E2B
+sandbox, 2026-10-06) was never a missing `unzip` — that was an earlier, reasoned-but-unconfirmed
+guess, and the live test disproved it (`unzip` was already present on the template). The real
+cause: `baseSandboxEnv` defaulted `HOME` from the *calling Node process's own* `$HOME` instead of
+the sandbox's real home, so Bun's installer (which Yukon's install script runs) tried to create
+`<host's HOME>/.bun/bin` inside the sandbox and failed with a permission error — the sandbox's real
+home is always `/home/user`, regardless of what machine or user the server process itself runs as.
+Fixed by hardcoding it. The harmless `unzip` prereq step stays (a correct no-op when it's already
+present), and `yukon clone`'s real output (`$ cd '<dir>'`, ANSI-dimmed `$`) is still parsed
+correctly. A live run after the fix (same sandbox, same approved spend) confirmed install, login,
+and `yukon clone` of the blake3-r1 benchmark id all succeed for real, and that clone's own
+`benchmark.json` genuinely lists all six tracks. `tests/yukon-sandbox.test.js` covers the HOME fix
+and the rest against a fake sandbox; its one non-negotiable test asserts the real CLI is never
+invoked while the gate is off.
 
 ### Live submission (`server/lib/live-submit.js`), off by default
 
@@ -192,8 +202,10 @@ E2B sandboxes on, `slots.js` calls `hashsmash.js`'s `submitLive()` after any cyc
 
 There is no further human or model checkpoint. Inside the RAM's running sandbox, the steps are:
 
-1. Ensure `unzip` is present, then install the Yukon CLI and run `yukon login`.
-2. `yukon clone` into a fresh directory.
+1. Ensure `unzip` is present (harmless no-op if it already is), then install the Yukon CLI and run
+   `yukon login`.
+2. `yukon clone` into a fresh directory. Confirmed live, 2026-10-06 (real sandbox, real spend): this
+   genuinely succeeds and the clone's own `benchmark.json` genuinely lists all six tracks.
 3. Confirm the clone's `benchmark.json` lists the track, then run `yukon switch <track>`.
 4. Read the incumbent's `time_log2`.
 5. Submit only if this candidate strictly beats both the incumbent and this harness's last real

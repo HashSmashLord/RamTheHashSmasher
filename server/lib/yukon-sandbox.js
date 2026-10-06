@@ -134,12 +134,37 @@ export function parseCloneWorkspace(stdout) {
   return null;
 }
 
-/** Best-effort PATH covering common install.sh destinations, plus whatever the sandbox env already has. Nothing secret. */
+/**
+ * Best-effort PATH covering common install.sh destinations, plus whatever the sandbox env
+ * already has. Nothing secret.
+ *
+ * Real bug, found 2026-10-06 against a live E2B sandbox (operator-approved spend, confirming
+ * the operator's own open question about the earlier "unzip missing" diagnosis): `HOME` was
+ * defaulting to `env.HOME` -- the CALLING Node process's own `$HOME` (this machine's
+ * `/Users/useruser` in a real local run; a Fly container's `/root` in production) -- instead
+ * of the sandbox's own real home directory. The E2B "desktop" template's shell user is always
+ * `user`, home always `/home/user` (every other hardcoded path in this file and in
+ * live-submit.js already assumes exactly this), regardless of what machine or user the Node
+ * server process itself runs as. That mismatch is why Bun's installer (run by Yukon's
+ * install.sh) failed: it tried to create `<host's own HOME>/.bun/bin` inside the sandbox,
+ * which does not exist there and the sandbox's real user cannot create. A live test proved
+ * this directly: with the bug, install failed with `mkdir: cannot create directory '/Users':
+ * Permission denied`; recreated with `HOME` forced to the sandbox's real `/home/user`,
+ * install, login, and clone all succeeded for real, and NEVER needed `unzip` to be installed
+ * (it was already present on the template -- the earlier "unzip missing" hypothesis was
+ * wrong, confirmed live, not just re-reasoned). The YUKON_PREREQ_COMMAND unzip check/install
+ * above is harmless and stays (a correct no-op when unzip is present), but it was never the
+ * real fix for the real failure.
+ *
+ * `env` is still accepted (for PATH's existing-entries fallback and LANG), but HOME is never
+ * taken from it -- only ever the sandbox's own real home.
+ */
 export function baseSandboxEnv(env = process.env) {
   const existing = env.PATH || '/usr/bin:/bin';
+  const sandboxHome = '/home/user';
   return {
-    PATH: `${env.HOME || '/home/user'}/.local/bin:/usr/local/bin:${existing}`,
-    HOME: env.HOME || '/home/user',
+    PATH: `${sandboxHome}/.local/bin:/usr/local/bin:${existing}`,
+    HOME: sandboxHome,
     LANG: env.LANG || 'en_US.UTF-8',
   };
 }
