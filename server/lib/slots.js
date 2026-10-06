@@ -9,15 +9,22 @@
 // budget or fee changes on its own.
 //
 // Optional `pipelineRunner` (server/lib/hashsmash.js): when given, a slot whose
-// track the runner supports (today: sha256-r31 and sha256-r32 exploratory)
-// stops simulating its experiment step and instead drives HashSmash's REAL
-// local pipeline. On sha256-r31 it writes an honestly-labeled harness DRAFT
-// into its own clone of the vendored repo; on sha256-r32 it writes the
-// committed research package (research/sha256-r32/package/). Either way it
-// then runs the real `local_tracks.py check` and `hashsmash_pipeline.py
-// intake`, and the slot's outcome is whatever that real pipeline returns.
-// Passing intake is a mechanical verdict, never reported as an accepted
-// cryptanalysis result. Other tracks keep the mock lifecycle.
+// track the runner supports (today: all six active exploratory tracks —
+// sha256-r31/r32, sha3-256-r5/r6, blake3-r1/r2 — hashsmash.js's
+// PIPELINE_TRACKS) stops simulating its experiment step and instead drives
+// HashSmash's REAL local pipeline. On five of the six (every track except
+// sha256-r32) it writes an honestly-labeled harness DRAFT into its own clone
+// of the vendored repo, built from that track's own organizer template
+// (verifier.frontier_tracks.get_frontier_track(track).draft_claim(), already
+// generic per hash function/rounds — nothing here special-cases SHA-256 vs
+// SHA3-256/BLAKE3); on sha256-r32 it writes the committed research package
+// (research/sha256-r32/package/), the only track with real research content.
+// Either way it then runs the real `local_tracks.py check` and
+// `hashsmash_pipeline.py intake`, and the slot's outcome is whatever that
+// real pipeline returns. Passing intake is a mechanical verdict, never
+// reported as an accepted cryptanalysis result. A track outside
+// PIPELINE_TRACKS (none, currently — all six manifest tracks are covered)
+// would keep the mock lifecycle.
 //
 // Per-RAM models: each slot's assignment carries `model` (its track's roster
 // model from targets.js) and `modelSource` ('roster' | 'override'). When the

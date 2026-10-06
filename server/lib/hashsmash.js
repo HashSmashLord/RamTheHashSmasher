@@ -9,9 +9,13 @@
 //   verdict (exit code, status, package_sha256, evidence file). Nothing here
 //   re-implements or mocks the Python; the Python decides.
 //
-//   NOT CLAIMED by the harness path: any cryptanalysis result. For
-//   sha256-r31 the candidate this module writes is a harness-test DRAFT built
-//   from the organizer's own `draft_claim()` template, labeled as a test in
+//   NOT CLAIMED by the harness path: any cryptanalysis result. For every
+//   harness-draft track (sha256-r31, sha3-256-r5, sha3-256-r6, blake3-r1,
+//   blake3-r2 — see PIPELINE_TRACKS) the candidate this module writes is a
+//   harness-test DRAFT built from the organizer's own per-track
+//   `LaneTrack.draft_claim()` template (verifier/frontier_tracks.py; the
+//   template logic is already generic across every frontier family —
+//   nothing here reimplements it per hash function), labeled as a test in
 //   both claim.json and proof.md. HashSmash's intake refuses to send a draft
 //   to the judge (`draft_not_submitted`), so that package can never be judged,
 //   scored, or ranked.
@@ -54,13 +58,29 @@ export const DEFAULT_WORKSPACES_DIR = join(PROJECT_ROOT, '.ramherd', 'workspaces
 export const DEFAULT_ATTRIBUTION_DIR = join(PROJECT_ROOT, '.ramherd', 'attribution');
 
 /**
- * Tracks this runner drives today. sha256-r31-exploratory is the research
- * brief's recommended first target (docs/research/hashsmash-technical-brief.md
- * section 5) and runs the labeled harness draft. sha256-r32-exploratory runs
- * the committed research package below. Other tracks keep the slot manager's
+ * Tracks this runner drives today: every active exploratory track in the
+ * manifest (targets.js's ACTIVE_TRACKS / the real repo's six solver
+ * assignments). sha256-r31-exploratory is the research brief's recommended
+ * first target (docs/research/hashsmash-technical-brief.md section 5) and
+ * runs the labeled harness draft; so do sha3-256-r5/r6 and blake3-r1/r2 —
+ * verified against the real vendored repo (`verifier.frontier_tracks.
+ * get_frontier_track(track).draft_claim()`, `scripts/local_tracks.py check`,
+ * `scripts/hashsmash_pipeline.py intake`) to land on the same honest
+ * draft_not_submitted verdict as sha256-r31, nothing assumed. sha256-r32-
+ * exploratory runs the committed research package below (RESEARCH_CANDIDATES);
+ * it is still the only track with real research content. No other tracks
+ * are currently defined as active manifest assignments (see frontier-v1.json
+ * in the vendored repo): a track outside this list keeps the slot manager's
  * mock lifecycle.
  */
-export const PIPELINE_TRACKS = Object.freeze(['sha256-r31-exploratory', 'sha256-r32-exploratory']);
+export const PIPELINE_TRACKS = Object.freeze([
+  'sha256-r31-exploratory',
+  'sha256-r32-exploratory',
+  'sha3-256-r5-exploratory',
+  'sha3-256-r6-exploratory',
+  'blake3-r1-exploratory',
+  'blake3-r2-exploratory',
+]);
 
 /**
  * Tracks with real research content. A slot on one of these copies the

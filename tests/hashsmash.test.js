@@ -200,6 +200,68 @@ test('harness draft: organizer template, labeled, passes real check and real int
   assert.equal(evidence.submission.intake_report.submission_state, 'draft');
 });
 
+// ---------------------------------------------------------------------------
+// The other four harness-draft tracks (sha3-256-r5/r6, blake3-r1/r2): the
+// same honest, no-attack-claimed, organizer-template pattern as sha256-r31
+// above, verified for real per track rather than assumed to transfer
+// unchanged from SHA-256. get_frontier_track()/draft_claim() in the vendored
+// repo's verifier/frontier_tracks.py is already generic across hash
+// families, so this is the same code path as sha256-r31 (writeHarnessDraft
+// in hashsmash.js is not SHA-256-specific); these tests prove that against
+// the real Python, not just read the source and assume it.
+// ---------------------------------------------------------------------------
+
+const NEW_HARNESS_TRACKS = ['sha3-256-r5-exploratory', 'sha3-256-r6-exploratory', 'blake3-r1-exploratory', 'blake3-r2-exploratory'];
+
+test('the four newly-wired tracks are harness-draft (not research) and are in PIPELINE_TRACKS', () => {
+  for (const track of NEW_HARNESS_TRACKS) {
+    assert.ok(PIPELINE_TRACKS.includes(track), `${track} must be a pipeline track`);
+    assert.equal(RESEARCH_CANDIDATES[track], undefined, `${track} has no committed research content`);
+    assert.equal(runner().candidateKindFor(track), 'harness-draft');
+  }
+  assert.equal(PIPELINE_TRACKS.length, 6, 'all six active manifest tracks should now be real pipeline tracks');
+});
+
+for (const track of NEW_HARNESS_TRACKS) {
+  test(`harness draft on ${track}: organizer's own per-track template, labeled, passes real check and real intake stops it as a draft`, { skip: SKIP }, async () => {
+    const r = runner();
+    const res = await r.runCycle({ slotId: `cycle-${track}`, track });
+    assert.equal(res.precheck.ok, true, res.precheck.errors.join('; '));
+    assert.equal(res.candidate.kind, 'harness-draft');
+
+    const claim = JSON.parse(readFileSync(join(res.candidateDir, 'claim.json'), 'utf8'));
+    assert.equal(claim.submission_state, 'draft');
+    assert.ok(claim.restrictions[0].includes(HARNESS_MARKER));
+    assert.deepEqual(claim.heuristics, []);
+    assert.match(readFileSync(join(res.candidateDir, 'proof.md'), 'utf8'), /No attack is claimed/);
+
+    // Numbers are this track's own organizer draft_claim(), byte-for-byte —
+    // not copy-pasted from sha256-r31: each family's digest_bits differ
+    // (SHA3-256/BLAKE3 are 256-bit like SHA-256 here, but this reads the
+    // real per-track value from the organizer's own code, not an assumption).
+    const tpl = JSON.parse(execFileSync('python3', ['-c',
+      'import json,sys; from verifier.frontier_tracks import get_frontier_track; print(json.dumps(get_frontier_track(sys.argv[1]).draft_claim()))',
+      track,
+    ], { cwd: res.workspace, encoding: 'utf8' }));
+    assert.deepEqual(claim.claim, tpl.claim);
+    assert.equal(claim.target_profile, tpl.target_profile);
+    assert.equal(claim.baseline_improved, tpl.baseline_improved);
+
+    const [check, intake, ...rest] = res.stages;
+    assert.equal(check.outcome, 'ok');
+    assert.equal(check.status, 'mechanically_valid');
+    assert.equal(check.parsed[0].submission_state, 'draft');
+    assert.equal(intake.outcome, 'draft-not-submitted');
+    assert.equal(intake.exitCode, 2);
+    assert.match(intake.parsed.package_sha256, /^[0-9a-f]{64}$/);
+    assert.deepEqual(rest, [], 'a draft never proceeds to judge or score');
+
+    const evidence = JSON.parse(readFileSync(intake.evidencePath, 'utf8'));
+    assert.equal(evidence.submission.intake_report.package_sha256, intake.parsed.package_sha256);
+    assert.equal(evidence.submission.intake_report.submission_state, 'draft');
+  });
+}
+
 test('real intake genuinely rejects a broken package (it is not a rubber stamp)', { skip: SKIP }, async () => {
   const r = runner();
   const ws = await r.prepareWorkspace('broken');
@@ -297,7 +359,7 @@ test('writeAttribution tolerates an unknown model/approach (defaults to null) an
 
 test('a RAM slot on sha256-r31-exploratory drives the real pipeline through its lifecycle', { skip: SKIP }, async () => {
   const m = createSlotManager({ llmProvider: createMockLlmProvider(), pipelineRunner: runner(), idPrefix: 'itest' });
-  m.setSlotCount(3); // 0 -> sha256-r31, 1 -> sha256-r32 (research package), 2 -> sha3-256-r5 (mock)
+  m.setSlotCount(3); // 0 -> sha256-r31, 1 -> sha256-r32 (research package), 2 -> sha3-256-r5 (harness draft)
   const [r31, , r5] = m.getSlots();
   assert.equal(r31.assignment.track, TRACK);
 
@@ -313,13 +375,16 @@ test('a RAM slot on sha256-r31-exploratory drives the real pipeline through its 
   assert.match(done.feed.at(-1).message, /no attack is claimed/);
   assert.equal((await m.advance(r31.id)).status, 'idle');
 
-  // Unsupported track keeps the mock lifecycle (no pipeline run).
+  // sha3-256-r5 is now also a real pipeline track (harness draft), not the
+  // mock lifecycle: every roster track runs the real pipeline today.
   assert.equal(r5.assignment.track, 'sha3-256-r5-exploratory');
-  await m.advance(r5.id);
-  await m.advance(r5.id);
-  const mock = await m.advance(r5.id);
-  assert.equal(mock.status, 'submitted');
-  assert.equal(mock.pipeline, null);
+  await m.advance(r5.id); // idle -> thinking (mock LLM)
+  await m.advance(r5.id); // thinking -> running-experiment
+  const r5Done = await m.advance(r5.id, { outcome: 'submitted' }); // real pipeline; caller outcome ignored
+  assert.equal(r5Done.status, 'validated');
+  assert.equal(r5Done.pipeline.candidate, 'harness-draft');
+  assert.deepEqual(r5Done.pipeline.stages.map((s) => [s.stage, s.outcome]), [['check', 'ok'], ['intake', 'draft-not-submitted']]);
+  assert.match(r5Done.feed.at(-1).message, /no attack is claimed/);
 });
 
 

@@ -17,9 +17,16 @@ primary_region = "lhr"
     path = "/api/health"
     timeout = "5s"
 
-# No [[mounts]] yet: all state is in memory and resets on every deploy/restart.
-# Add a volume here once launchpad / RAM ownership data must survive restarts.
+# Launchpad RAM records (server/lib/rams.js, opt-in via RAMHERD_DATA_DIR) persist here,
+# so they survive a restart/redeploy -- most other state (fee ledger, roster slots,
+# sandboxes, funding/payout history) is still in-memory only and still resets.
+[[mounts]]
+  source = "ramherd_data"
+  destination = "/data"
 
 [[vm]]
   size = "performance-1x"
   memory = "2048mb"
+
+[env]
+  RAMHERD_DATA_DIR = "/data"
