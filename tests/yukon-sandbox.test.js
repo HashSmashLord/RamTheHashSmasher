@@ -50,6 +50,23 @@ test('decideYukonSubmission never says yes without a real numeric, genuinely pos
   assert.match(yes.reason, /time 2\^86, success probability 0\.3/);
 });
 
+test('decideYukonSubmission with a real lastSubmitted: only a genuine improvement (strictly lower time_log2) says yes again', () => {
+  const lastSubmitted = { timeLog2: 90, successProbability: 0.2 };
+  // Worse or equal: no.
+  const worse = decideYukonSubmission({ bestResult: { timeLog2: 90, successProbability: 0.5 }, lastSubmitted });
+  assert.equal(worse.shouldSubmit, false);
+  assert.match(worse.reason, /already submitted time 2\^90/);
+  assert.match(worse.reason, /not a genuine improvement/);
+  const same = decideYukonSubmission({ bestResult: { timeLog2: 95, successProbability: 0.9 }, lastSubmitted });
+  assert.equal(same.shouldSubmit, false, 'higher time_log2 is worse, not better -- never resubmitted');
+  // A genuine improvement: yes, and the reason says so against the real previous number.
+  const better = decideYukonSubmission({ bestResult: { timeLog2: 86, successProbability: 0.3 }, lastSubmitted });
+  assert.equal(better.shouldSubmit, true);
+  assert.match(better.reason, /beating the submitted 2\^90/);
+  // No lastSubmitted at all: behaves exactly like the first-ever submission (already covered above).
+  assert.equal(decideYukonSubmission({ bestResult: { timeLog2: 86, successProbability: 0.3 }, lastSubmitted: null }).shouldSubmit, true);
+});
+
 test('yukonStepMessage is a short, real, one-line summary', () => {
   assert.equal(yukonStepMessage({ id: 'setup', exitCode: 0, stdout: 'Track ready.\n' }), 'yukon setup: exit 0 — Track ready.');
   assert.equal(yukonStepMessage({ id: 'run', exitCode: 1, stdout: '', stderr: 'boom' }), 'yukon run: exit 1 — boom');
@@ -189,6 +206,37 @@ test('a full success with a genuine real measured result: submits for real (fake
   assert.match(files[0].path, /submission-note\.md$/);
   assert.match(files[0].data, /time 2\^86, success probability 0\.2/);
   assert.equal(/\bcollision found\b|\baccepted\b|\bwon\b/i.test(files[0].data), false);
+  // A real successful submit hands bestResult back as submittedResult, so the caller
+  // (slots.js) can remember it as this slot's new lastSubmittedResult.
+  assert.deepEqual(result.submittedResult, bestResult);
+});
+
+test('a genuine improvement over a real lastSubmitted still submits; a non-improvement is correctly skipped, never calling yukon submit', async () => {
+  const lastSubmitted = { timeLog2: 90, successProbability: 0.1 };
+  const better = await runYukonSandboxCycle(fakeYukonSandbox().sbx, {
+    assignment: blake3Assignment(), env: ON_ENV, bestResult: { timeLog2: 86, successProbability: 0.2 }, lastSubmitted,
+  });
+  assert.equal(better.submitted, true);
+  assert.deepEqual(better.submittedResult, { timeLog2: 86, successProbability: 0.2 });
+
+  const { sbx, calls } = fakeYukonSandbox();
+  const worse = await runYukonSandboxCycle(sbx, {
+    assignment: blake3Assignment(), env: ON_ENV, bestResult: { timeLog2: 95, successProbability: 0.5 }, lastSubmitted,
+  });
+  assert.equal(worse.submitted, false);
+  assert.equal(worse.submittedResult, undefined);
+  assert.match(worse.decision.reason, /not a genuine improvement/);
+  assert.equal(calls.some((c) => c.cmd.startsWith('yukon submit')), false, 'never actually calls yukon submit for a non-improvement');
+});
+
+test('submittedResult is null, not the attempted bestResult, when the real yukon submit exits non-zero', async () => {
+  const { sbx } = fakeYukonSandbox({ failAt: 'submit' });
+  const result = await runYukonSandboxCycle(sbx, {
+    assignment: blake3Assignment(), env: ON_ENV, bestResult: { timeLog2: 86, successProbability: 0.2 },
+  });
+  assert.equal(result.submitted, true);
+  assert.equal(result.submitResult.ok, false);
+  assert.equal(result.submittedResult, null, 'a failed submit must never look like a recorded one to the next decision');
 });
 
 test('runYukonSandboxSubmit prefers a real attribution model/harness over the assignment default', async () => {
@@ -281,6 +329,31 @@ test('slots.js only calls into yukon-sandbox.js for the blake3-r1-exploratory sl
   const feed = m.getSlot(slots[4].id).feed;
   assert.equal(feed.at(-1).type, 'yukon-setup-skipped');
   assert.match(feed.at(-1).message, /test stub: gate off/);
+});
+
+test('slots.js records a real successful submission as the slot\'s lastSubmittedResult, and feeds it into the NEXT sandbox start as lastSubmitted', async () => {
+  const recorded = [];
+  const fake = {
+    isYukonSandboxTrack: (track) => track === YUKON_TRACK,
+    runYukonSandboxCycle: async (sbx, opts) => {
+      recorded.push(opts.lastSubmitted);
+      return { skipped: false, ok: true, steps: [], workspaceDir: '/x', submitted: true, decision: { reason: 'test' }, submitResult: { ok: true, model: 'm', harness: 'h', exitCode: 0, stdout: '' }, submittedResult: { timeLog2: 86, successProbability: 0.2 } };
+    },
+    yukonStepMessage: (s) => `yukon ${s.id}: exit ${s.exitCode}`,
+  };
+  const { m } = slotsWithYukon({ yukonSandbox: fake });
+  m.setSlotCount(5);
+  const id = m.getSlots()[4].id;
+
+  await m.startSandbox(id);
+  await m.waitForSandboxTask(id);
+  assert.equal(recorded[0], null, 'nothing submitted yet on the first ever sandbox start for this slot');
+  assert.equal(m.getSlot(id).feed.at(-1).type, 'yukon-submit-done');
+
+  await m.stopSandbox(id);
+  await m.startSandbox(id); // a fresh sandbox session (e.g. after a restart)
+  await m.waitForSandboxTask(id);
+  assert.deepEqual(recorded[1], { timeLog2: 86, successProbability: 0.2 }, 'the next session is told about the real previous submission');
 });
 
 test('without a yukonSandbox dependency, the blake3-r1-exploratory slot behaves exactly as before (no-op, no yukon-* feed)', async () => {

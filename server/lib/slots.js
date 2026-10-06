@@ -856,6 +856,10 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       const result = await sandboxManager.runTask(slot.id, (sbx) => yukonSandbox.runYukonSandboxCycle(sbx, {
         assignment: slot.assignment,
         bestResult: slot.bestResult ?? null,
+        // Real previous submission, if this slot has one -- see yukon-sandbox.js's
+        // decideYukonSubmission: with this set, a second submission only fires on a
+        // genuine improvement, never a resubmit of the same or a worse number.
+        lastSubmitted: slot.lastSubmittedResult ?? null,
       }));
       if (!current()) return;
       if (result.skipped) {
@@ -873,6 +877,11 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         return;
       }
       const sub = result.submitResult;
+      // Only a real, successful `yukon submit` exit updates the slot's record of what it
+      // last told Yukon -- a failed attempt must never look like "already submitted this
+      // number" to the next decideYukonSubmission call, or a genuine result could go
+      // unreported forever because of one bad network blip.
+      if (result.submittedResult) slot.lastSubmittedResult = result.submittedResult;
       pushFeed(slot, sub.ok ? 'yukon-submit-done' : 'yukon-submit-error', `yukon submit (model ${sub.model}, harness "${sub.harness}"): exit ${sub.exitCode ?? 'n/a'}${sub.stdout ? ` — ${sub.stdout.trim().slice(0, 300)}` : ''}`);
     } catch (err) {
       if (current()) pushFeed(slot, 'yukon-setup-error', `Yukon CLI integration did not finish: ${err.message}`);

@@ -32,7 +32,16 @@
 // called exactly once, right after the one-time workbench task finishes (ok
 // or not) on a freshly started sandbox — see slots.js's `runSandboxTask`. It
 // is not part of the always-on research loop; a fresh sandbox (a restart)
-// runs it again from scratch, same as the workbench task.
+// runs it again from scratch, same as the workbench task. That restart --
+// E2B's own hard timeout, or RAMHERD_SANDBOX_AUTORESTART -- is also what
+// gives a RAM's real "keep improving, resubmit when it's actually better"
+// behavior its cadence: each fresh session re-evaluates this slot's current
+// `bestResult` against its own real `lastSubmittedResult` (recorded by
+// slots.js only after a real, successful previous `yukon submit`; see
+// `decideYukonSubmission`), so a second submission only ever fires on a
+// genuine improvement over what was actually sent last time, never a
+// resubmit of the same or a worse number, and never on a tight synchronous
+// loop against Yukon's own CLI mid-session.
 //
 // Honesty: `decideYukonSubmission` is the only thing that may ever lead to a
 // real `yukon submit` call, and it requires an actual numeric measurement
@@ -134,16 +143,41 @@ async function sandboxLogin(run, apiKey, baseEnv) {
  * success probability — never a guess, a draft, or "a pipeline ran". See the
  * header for why this is always `false` today for this track.
  *
- * @param {{ bestResult?: { timeLog2: number|null, successProbability: number|null }|null }} p
+ * `lastSubmitted`, when given, is this same slot's own real previous
+ * submission (whatever `runYukonSandboxSubmit` actually sent, last time it
+ * actually sent something — never invented, never "what it probably would
+ * have been"). With it set, a second submission only ever fires when the new
+ * `bestResult` is a GENUINE improvement: strictly lower time_log2 (HashSmash's
+ * own score — lower cost to break it is the better, harder result), same
+ * honesty bar as the first submission (positive success probability). An
+ * equal or worse number is not resubmitted — there is nothing new to tell a
+ * real judge, and resubmitting a non-improvement would just be noise in
+ * their real review queue.
+ *
+ * @param {{
+ *   bestResult?: { timeLog2: number|null, successProbability: number|null }|null,
+ *   lastSubmitted?: { timeLog2: number, successProbability: number }|null,
+ * }} p
  */
-export function decideYukonSubmission({ bestResult = null } = {}) {
+export function decideYukonSubmission({ bestResult = null, lastSubmitted = null } = {}) {
   if (!bestResult || typeof bestResult.timeLog2 !== 'number' || typeof bestResult.successProbability !== 'number') {
     return { shouldSubmit: false, reason: 'no real measured result exists yet for this target this session (no experiment has produced numeric time/success figures) — nothing genuine to submit' };
   }
   if (!(bestResult.successProbability > 0)) {
     return { shouldSubmit: false, reason: `the best real measurement so far has success probability ${bestResult.successProbability} — not a genuine positive result, nothing worth submitting` };
   }
-  return { shouldSubmit: true, reason: `a real measured result exists (time 2^${bestResult.timeLog2}, success probability ${bestResult.successProbability}) — honest to report` };
+  if (lastSubmitted && typeof lastSubmitted.timeLog2 === 'number' && !(bestResult.timeLog2 < lastSubmitted.timeLog2)) {
+    return {
+      shouldSubmit: false,
+      reason: `already submitted time 2^${lastSubmitted.timeLog2} for this target; the current best (2^${bestResult.timeLog2}) is not a genuine improvement over that, so there is nothing new to submit`,
+    };
+  }
+  return {
+    shouldSubmit: true,
+    reason: lastSubmitted
+      ? `a real improvement over the last submission exists (time 2^${bestResult.timeLog2}, beating the submitted 2^${lastSubmitted.timeLog2}; success probability ${bestResult.successProbability}) — honest to report again`
+      : `a real measured result exists (time 2^${bestResult.timeLog2}, success probability ${bestResult.successProbability}) — honest to report`,
+  };
 }
 
 /** One readable line per real step, capped so one step can never flood the feed. */
@@ -164,11 +198,12 @@ export function yukonStepMessage(step) {
  * @param {{
  *   assignment: { track: string, model: string },
  *   bestResult?: { timeLog2: number|null, successProbability: number|null }|null,
+ *   lastSubmitted?: { timeLog2: number, successProbability: number }|null,
  *   attribution?: { slotId?: string, model?: string, approach?: string, candidateKind?: string }|null,
  *   env?: NodeJS.ProcessEnv,
  * }} p
  */
-export async function runYukonSandboxCycle(sbx, { assignment, bestResult = null, attribution = null, env = process.env } = {}) {
+export async function runYukonSandboxCycle(sbx, { assignment, bestResult = null, lastSubmitted = null, attribution = null, env = process.env } = {}) {
   if (!isYukonSandboxTrack(assignment?.track)) {
     return { skipped: true, reason: `yukon integration is scoped to ${YUKON_TRACK} only`, steps: [] };
   }
@@ -207,13 +242,16 @@ export async function runYukonSandboxCycle(sbx, { assignment, bestResult = null,
   const runStep = record('run', await run('yukon', yukonArgs.run(YUKON_TRACK), { env: baseEnv, cwd: workspaceDir, timeoutMs: 300_000 }));
   if (runStep.exitCode !== 0) return { skipped: false, ok: false, failedStep: 'run', reason: 'yukon run exited non-zero', steps, workspaceDir };
 
-  const decision = decideYukonSubmission({ bestResult });
+  const decision = decideYukonSubmission({ bestResult, lastSubmitted });
   if (!decision.shouldSubmit) {
     return { skipped: false, ok: true, steps, workspaceDir, submitted: false, decision };
   }
 
   const submitResult = await runYukonSandboxSubmit(sbx, { assignment, workspaceDir, bestResult, attribution, env });
-  return { skipped: false, ok: true, steps, workspaceDir, submitted: true, decision, submitResult };
+  // bestResult travels back up only on a real, successful `yukon submit` exit, so the caller
+  // (slots.js) can record it as this slot's new lastSubmittedResult -- never recorded on a
+  // failed submit, so a resubmit attempt after a real failure is not mistaken for "no change".
+  return { skipped: false, ok: true, steps, workspaceDir, submitted: true, decision, submitResult, submittedResult: submitResult.ok ? bestResult : null };
 }
 
 /**
