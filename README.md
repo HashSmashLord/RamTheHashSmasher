@@ -110,6 +110,29 @@ argument rather than guessing the other five.
 `writeSubmissionNote()` (writing the honest note file to disk) and `commandFor()` (a safe command
 preview) both work with the gate off — only `login`/`clone`/`setup`/`run`/`submit` are gated.
 
+### Running it inside a sandbox (`server/lib/yukon-sandbox.js`)
+
+The CLI steps above have to run **inside** a RAM's E2B desktop sandbox, not on this host (that's
+where `yukon run` would actually do its work). `yukon-sandbox.js` adapts `yukon-submit.js`'s
+`run(cmd, args, opts)` shape onto the sandbox's own authenticated command channel
+(`sbx.commands.run`) and is scoped to exactly one roster slot: `blake3-r1-exploratory`, the only
+track with a confirmed real benchmark id. `slots.js` calls it exactly once, right after that slot's
+one-time workbench intro finishes on a fresh sandbox — never for any other slot, and gated by the
+same `RAMHERD_YUKON_SUBMIT` + `YUKON_API_KEY` pair as above (checked inside the module itself, so it
+stays a no-op by default even though the wiring is always present when sandboxes are on). Real steps,
+in order, each landing in the feed as `yukon-step`: `curl ... | sh` (install), `yukon login` (the key
+reaches the sandbox only as a process env var on that one call, referenced in the command text as
+`"$YUKON_API_KEY"`, never the literal value — and never typed into a visible terminal, unlike the
+workbench intro), `yukon clone 86d5040e-...` (its real stdout's own `cd <dir>` line is parsed, never
+guessed), `yukon setup --track` and `yukon run --track` in that directory. Only after all of that
+succeeds does `decideYukonSubmission()` decide whether to ever call `yukon submit`: it requires a
+real numeric measurement (`slot.bestResult`, the same tracker the active loop uses) with a
+genuinely positive success probability — never a guess. Today there is no real experiment runner for
+`blake3-r1-exploratory`, so that decision is always "no" and the feed says so honestly
+(`yukon-submit-skipped`), the same pattern as "no real runner for this track yet" elsewhere in this
+codebase. `tests/yukon-sandbox.test.js` covers all of it against a fake sandbox; its one
+non-negotiable test asserts the real CLI is never invoked while the gate is off.
+
 ## E2B desktop sandboxes (what's proven, what isn't)
 
 `server/lib/sandbox.js` wraps `@e2b/desktop` (the API shape was read from the installed SDK source, not guessed):

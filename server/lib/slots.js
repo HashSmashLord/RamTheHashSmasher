@@ -129,6 +129,18 @@
 //     session before calling the model or typing anything.
 // Owned (launchpad) slots are never driven by it.
 //
+// Optional `yukonSandbox` (server/lib/yukon-sandbox.js): right after the
+// one-time workbench task finishes on a freshly started sandbox (ok or not),
+// and ONLY for the one roster slot whose track is blake3-r1-exploratory
+// (yukonSandbox.isYukonSandboxTrack), this runs the real external Yukon CLI
+// workflow (install, login, clone, setup, run, then an honest submit
+// decision) over the sandbox's own command channel — never on the host, and
+// never typed into a visible terminal. It is a no-op for every other slot,
+// and a no-op for this one too until the operator sets
+// RAMHERD_YUKON_SUBMIT=true with a real YUKON_API_KEY (both checked inside
+// yukon-sandbox.js itself, not here). See that module's header for the key-
+// handling and honesty rules; results land in the feed as `yukon-*` entries.
+//
 // Optional `costLedger` (server/lib/cost.js): when given, every real "thinking"
 // LLM call (the one place `advance()` calls `llmProvider.complete()`) reports
 // its tokens and USD cost against this slot, and against the slot's RAM id
@@ -233,13 +245,14 @@ function freezeCopy(value) {
  *   autoRestart?: { enabled?: boolean, baseDelayMs?: number, maxDelayMs?: number, maxFailures?: number }|null,
  *   sandboxActivity?: typeof import('./sandbox-activity.js').desktopActivity|null,
  *   activeLoop?: { enabled?: boolean, live: boolean, stepPauseMs?: number, minStepPauseMs?: number, browseEvery?: number, maxThinkingPerSession?: number, maxFailures?: number }|null,
+ *   yukonSandbox?: typeof import('./yukon-sandbox.js')|null,
  *   setTimer?: (fn: () => void, ms: number) => any,
  *   clearTimer?: (handle: any) => void,
  *   now?: () => string,
  *   idPrefix?: string,
  * }} opts
  */
-export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, autoRestart = null, sandboxActivity = null, activeLoop = null, setTimer = setTimeout, clearTimer = clearTimeout, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
+export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, autoRestart = null, sandboxActivity = null, activeLoop = null, yukonSandbox = null, setTimer = setTimeout, clearTimer = clearTimeout, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createSlotManager requires an llmProvider with complete()');
   }
@@ -650,8 +663,51 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     } catch (err) {
       pushFeed(slot, 'sandbox-task-error', `Desktop terminal task did not finish: ${err.message}`);
     } finally {
+      // The real Yukon CLI integration (yukon-sandbox.js): scoped to exactly
+      // one roster slot (blake3-r1-exploratory), gated by RAMHERD_YUKON_SUBMIT
+      // + a real YUKON_API_KEY inside that module itself, so this call is a
+      // no-op (and touches nothing on the sandbox) for every other slot and
+      // for this one too until the operator turns the gate on.
+      if (current() && yukonSandbox && yukonSandbox.isYukonSandboxTrack(track)) {
+        await runYukonSandboxOnce(slot, sessionId, current).catch(() => {});
+      }
       // The always-on loop takes over from the one-time intro, ok or not, if the desktop is still up.
       if (current()) startLoop(slot, sessionId);
+    }
+  }
+
+  /**
+   * Runs yukon-sandbox.js's one-time cycle on a freshly started sandbox and
+   * turns its result into feed lines — real ones only, whatever the real CLI
+   * actually said. Never rejects (the caller's `.catch(() => {})` is a last
+   * resort; every expected outcome, including an exception from the sandbox
+   * call itself, is turned into a feed line here).
+   */
+  async function runYukonSandboxOnce(slot, sessionId, current) {
+    try {
+      const result = await sandboxManager.runTask(slot.id, (sbx) => yukonSandbox.runYukonSandboxCycle(sbx, {
+        assignment: slot.assignment,
+        bestResult: slot.bestResult ?? null,
+      }));
+      if (!current()) return;
+      if (result.skipped) {
+        pushFeed(slot, 'yukon-setup-skipped', `Yukon CLI integration not started: ${result.reason}.`);
+        return;
+      }
+      for (const step of result.steps) pushFeed(slot, 'yukon-step', yukonSandbox.yukonStepMessage(step));
+      if (!result.ok) {
+        pushFeed(slot, 'yukon-setup-error', `Yukon CLI workbench stopped at "${result.failedStep}": ${result.reason}.`);
+        return;
+      }
+      pushFeed(slot, 'yukon-setup-done', `Yukon CLI workbench ready inside the sandbox (workspace ${result.workspaceDir}): install, login, clone, setup and run all completed for real.`);
+      if (!result.submitted) {
+        pushFeed(slot, 'yukon-submit-skipped', `Not submitting to Yukon: ${result.decision.reason}.`);
+        return;
+      }
+      const sub = result.submitResult;
+      pushFeed(slot, sub.ok ? 'yukon-submit-done' : 'yukon-submit-error', `yukon submit (model ${sub.model}, harness "${sub.harness}"): exit ${sub.exitCode ?? 'n/a'}${sub.stdout ? ` — ${sub.stdout.trim().slice(0, 300)}` : ''}`);
+    } catch (err) {
+      if (current()) pushFeed(slot, 'yukon-setup-error', `Yukon CLI integration did not finish: ${err.message}`);
     }
   }
 

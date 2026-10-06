@@ -14,6 +14,7 @@ import { createSandboxManager, sandboxPolicy } from './lib/sandbox.js';
 import { runWorkbenchTask } from './lib/sandbox-task.js';
 import { contextBanner } from './lib/sandbox-context.js';
 import { desktopActivity } from './lib/sandbox-activity.js';
+import * as yukonSandbox from './lib/yukon-sandbox.js';
 import { createCostLedger } from './lib/cost.js';
 import { createRamFunds } from './lib/ramfunds.js';
 import { createPayoutBook } from './lib/payouts.js';
@@ -97,7 +98,11 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   const activeLoop = sandboxManager && sandbox.activeLoop
     ? { enabled: true, live: isLiveMode(env), stepPauseMs: sandbox.activeLoopStepPauseMs, browseEvery: sandbox.activeLoopBrowseEvery, maxThinkingPerSession: sandbox.activeLoopMaxThinking }
     : null;
-  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, sandboxActivity: activeLoop ? desktopActivity : null, activeLoop, costLedger, modelOverride: modelOverride(env), autoRestart });
+  // yukon-sandbox.js: scoped to the one blake3-r1-exploratory roster slot,
+  // gated internally by RAMHERD_YUKON_SUBMIT + a real YUKON_API_KEY (see its
+  // header). Passed whenever sandboxes are on at all, same as sandboxTask —
+  // it is the module itself, not this wiring, that stays inert by default.
+  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, sandboxActivity: activeLoop ? desktopActivity : null, activeLoop, yukonSandbox: sandboxManager ? yukonSandbox : null, costLedger, modelOverride: modelOverride(env), autoRestart });
   const ideaQueue = createIdeaQueue();
   // Pinata, opt-in with PINATA_JWT: a launchpad RAM's token metadata gets
   // pinned to IPFS instead of only living at this server's own endpoint.
