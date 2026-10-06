@@ -31,8 +31,12 @@ const DEFAULT_STATIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..'
 // The real one in use is whatever SOLANA_RPC_URL is set to (server/config.js) —
 // Helius today (CORS-open, confirmed) — read by the client from GET
 // /api/launchpad/config. *.publicnode.com kept as the CORS-open free fallback.
+// img-src also allows Pinata's gateway (server/lib/pinata.js's GATEWAY) --
+// every launched RAM's token image is served from there, not same-origin;
+// without this every such image is silently blocked by the browser, not a
+// 404 (confirmed real 2026-10-06 on the live Discover page).
 const PAGE_CSP =
-  "default-src 'self'; img-src 'self' data:; frame-src https://*.e2b.app; connect-src 'self' https://*.helius-rpc.com https://*.publicnode.com https://api.mainnet-beta.solana.com https://api.devnet.solana.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
+  "default-src 'self'; img-src 'self' data: https://gateway.pinata.cloud; frame-src https://*.e2b.app; connect-src 'self' https://*.helius-rpc.com https://*.publicnode.com https://api.mainnet-beta.solana.com https://api.devnet.solana.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
 const STATIC_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
