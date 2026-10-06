@@ -5,10 +5,14 @@ import { RAMherdAPI, updateDemoNote } from "./mock-data.js";
 import { initNav } from "./nav.js";
 import { DESK_POLL_MS, createDeskFeed, mountBoard } from "./board.js";
 import { mountRamPage } from "./ram-page.js";
-import { preserveScroll } from "./ui.js";
+import { watchScrollAnchor } from "./ui.js";
 
 initNav();
 updateDemoNote("This board is the real fleet, polled live from the server — not a demonstration feed.");
+// Keeps a scrolled reader's position steady through the live board's own background
+// reflows (a status line's length changing, a desk swapping in a live iframe); see
+// watchScrollAnchor's own header in ui.js for the two approaches real-tested wrong first.
+watchScrollAnchor(document.documentElement);
 
 const feed = await createDeskFeed();
 const board = mountBoard({ feed });
@@ -34,16 +38,8 @@ RAMherdAPI.subscribeLive(tick, 4000);
 
 // Every screen re-checks its stream every 10s; the iframe is only touched when the
 // stream itself changes, so a poll never reloads a live desk.
-//
-// preserveScroll (ui.js): refreshDesks()/refreshDesk() can change a tile's content
-// (e.g. switching between "no desk running" text and a live iframe), which reflows the
-// grid and silently moves a scrolled reader's position -- a second, separate interval
-// from the 4s fleet tick (board.render() has its own preserveScroll), so this needed
-// its own, real-tested 2026-10-06 (fixing render() alone left this one still jumping).
 setInterval(async () => {
-  await preserveScroll(async () => {
-    await feed.refresh();
-    board.refreshDesks();
-    page.refreshDesk();
-  });
+  await feed.refresh();
+  board.refreshDesks();
+  page.refreshDesk();
 }, DESK_POLL_MS);

@@ -91,26 +91,35 @@ export function slotIdFor(agent) {
 export const ramHref = (id, { samePage = false } = {}) => `${samePage ? "" : "/herd"}#ram/${encodeURIComponent(id)}`;
 
 /**
- * Runs `mutate` (a live board's periodic tile/desk update), then restores whatever
- * window.scrollY was right before it if it moved -- a routine content update (a status
- * line changing length, a desk switching from "no desk running" text to a live iframe)
- * reflows the page and silently drags an already-scrolled reader along with it,
- * otherwise. Checked three times, not once (real-tested 2026-10-06 against herd.js/
- * board.js: a single synchronous check right after `mutate` still missed real jumps --
- * a desk iframe is `loading="lazy"`, so its real layout impact can land a frame or two
- * after `refresh()` itself already returned): once synchronously, once after the next
- * paint (requestAnimationFrame), and once after a short delay for anything slower than
- * that. A reader's own scrolling, any time after `mutate` starts, is never fought --
- * only a change already in flight when `mutate` was called is ever reverted.
- * @param {() => void | Promise<void>} mutate
+ * Keeps a reader's visual anchor steady on a live page whose total height can change on
+ * its own at any time (a live board: a status line changing length, a desk switching
+ * from "no desk running" text to a live iframe) -- otherwise a routine background
+ * update reflows the page and silently drags an already-scrolled reader along with it.
+ *
+ * One ResizeObserver on `root` (document.documentElement, in practice), set up ONCE and
+ * left running for the page's whole life, not re-armed per update: real-tested
+ * 2026-10-06 against herd.js/board.js, two approaches tried first and both real bugs --
+ * (1) a fixed-delay "snapshot scrollY, restore after mutate()" wasn't enough, because a
+ * desk iframe is `loading="lazy"` AND noVNC content connecting over a real network round
+ * trip, so its real layout impact can land over a second after the triggering call
+ * already returned; (2) a *second*, differently-scoped observer created per call (one
+ * for the 4s fleet tick, one for the 10s desk interval) double-corrected whenever their
+ * watch windows overlapped, since both independently "saw" and corrected for the same
+ * real height change. One observer, covering every cause, for the page's entire
+ * lifetime, has neither problem: it reacts to a real height change whenever it actually
+ * lands, from whichever update caused it, exactly once. A reader's own scrolling is
+ * never fought: nothing here ever reads or reacts to a scroll event, only `root`'s own
+ * real height.
+ * @param {Element} root
  */
-export async function preserveScroll(mutate) {
-  const scrollY = window.scrollY;
-  const restore = () => { if (window.scrollY !== scrollY) window.scrollTo(0, scrollY); };
-  await mutate();
-  restore();
-  requestAnimationFrame(restore);
-  setTimeout(restore, 150);
+export function watchScrollAnchor(root) {
+  if (!("ResizeObserver" in window)) return;
+  let lastHeight = root.getBoundingClientRect().height;
+  new ResizeObserver(([entry]) => {
+    const height = entry.contentRect.height;
+    window.scrollTo(0, window.scrollY + (height - lastHeight));
+    lastHeight = height;
+  }).observe(root);
 }
 
 // ---------------------------------------------------------------------------
