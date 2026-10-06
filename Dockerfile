@@ -4,6 +4,12 @@ COPY package.json package-lock.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY server ./server
 COPY src ./src
+# research/sha256-r32/package/ is the one real committed research candidate
+# (time_log2=86) the real pipeline runs for that track -- .dockerignore used to
+# exclude the whole research/ tree, so this file was silently missing in every
+# production container ("research package file missing: ...claim.json" on
+# every sha256-r32 cycle) despite being committed to git the whole time.
+COPY research ./research
 # The real HashSmash pipeline runner (server/lib/hashsmash.js, RAMHERD_PIPELINE=local)
 # shells out to real `git` and `python3` at runtime (workspace handling, the
 # organizer's own check/intake scripts) against this vendored copy of their repo.

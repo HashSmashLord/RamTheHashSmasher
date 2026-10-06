@@ -4,7 +4,6 @@ node_modules
 .env.*
 keys
 reference
-research
 docs
 tests
 .worktrees
