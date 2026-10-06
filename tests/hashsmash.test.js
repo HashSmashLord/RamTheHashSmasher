@@ -20,6 +20,7 @@ import {
   precheckCandidate,
   validateAgainstSchema,
   validateLoopAttempt,
+  findCitedReference,
   classifyStage,
   DEFAULT_REFERENCE_ROOT,
   HARNESS_MARKER,
@@ -493,6 +494,12 @@ const REAL_SEARCH_RESULTS = [
   { id: '2026/1080', title: 'A 35-Step Collision Characteristic for Reduced SHA-256' },
 ];
 
+/** A real-shaped GitHub PR lookup result (sandbox-activity.js's browsePeerSubmissions output), the same confirmed-real shape as PR #302. */
+const REAL_PEER_RESULTS = [
+  { number: 302, login: 'rickmanelius', title: 'Validate submission 7e5d9c2a-...', claimedScore: '1.5', note: 'claimed score: 1.5', url: 'https://github.com/Layr-Labs/hash-smash/pull/302' },
+  { number: 288, login: 'someone-else', title: 'Validate submission 1a2b3c4d-...', claimedScore: null, note: 'no score stated', url: 'https://github.com/Layr-Labs/hash-smash/pull/288' },
+];
+
 /** A well-formed attempt that validateLoopAttempt should accept outright. */
 function validAttempt(overrides = {}) {
   return {
@@ -531,6 +538,49 @@ test('validateLoopAttempt rejects a missing citation the same way as a fake one'
   const res = validateLoopAttempt(validAttempt({ citedPaperId: null }), { lastSearchResults: REAL_SEARCH_RESULTS });
   assert.equal(res.ok, false);
   assert.match(res.errors.join(' '), /CITED_PAPER_ID is required/);
+});
+
+// ---------------------------------------------------------------------------
+// findCitedReference / the PR-citation extension: a drafted claim may cite
+// EITHER a real ePrint search result OR a real competitor's open PR this
+// session actually looked at (sandbox-activity.js's browsePeerSubmissions),
+// never anything neither of those two real sources actually produced.
+// ---------------------------------------------------------------------------
+
+test('findCitedReference resolves a real ePrint id to a tagged eprint record, and a real "PR#<n>" id to a tagged peer-pr record', () => {
+  assert.deepEqual(
+    findCitedReference('2026/1120', { lastSearchResults: REAL_SEARCH_RESULTS, lastPeerResults: REAL_PEER_RESULTS }),
+    { kind: 'eprint', id: '2026/1120', title: 'Pushing Collision Attacks on SHA-2 to 39 Steps' },
+  );
+  assert.deepEqual(
+    findCitedReference('PR#302', { lastSearchResults: REAL_SEARCH_RESULTS, lastPeerResults: REAL_PEER_RESULTS }),
+    { kind: 'peer-pr', number: 302, login: 'rickmanelius', title: 'Validate submission 7e5d9c2a-...', url: 'https://github.com/Layr-Labs/hash-smash/pull/302', claimedScore: '1.5' },
+  );
+  // Case-insensitive on the "PR" marker, and a PR with no claimed score becomes null, not a guess.
+  assert.deepEqual(
+    findCitedReference('pr#288', { lastPeerResults: REAL_PEER_RESULTS }),
+    { kind: 'peer-pr', number: 288, login: 'someone-else', title: 'Validate submission 1a2b3c4d-...', url: 'https://github.com/Layr-Labs/hash-smash/pull/288', claimedScore: null },
+  );
+});
+
+test('findCitedReference returns null for anything neither real source actually produced', () => {
+  assert.equal(findCitedReference(null), null);
+  assert.equal(findCitedReference(''), null);
+  assert.equal(findCitedReference('NONE'), null);
+  assert.equal(findCitedReference('2099/9999', { lastSearchResults: REAL_SEARCH_RESULTS }), null, 'a fake ePrint id');
+  assert.equal(findCitedReference('PR#999', { lastPeerResults: REAL_PEER_RESULTS }), null, 'a PR number that was never actually looked at this session');
+  assert.equal(findCitedReference('PR#302', { lastPeerResults: [] }), null, 'the real PR list must come from this session, not be assumed');
+});
+
+test('validateLoopAttempt accepts a well-formed attempt that honestly cites a real competitor PR instead of an ePrint paper', () => {
+  const res = validateLoopAttempt(validAttempt({ citedPaperId: 'PR#302' }), { lastPeerResults: REAL_PEER_RESULTS });
+  assert.deepEqual(res, { ok: true, errors: [] });
+});
+
+test('validateLoopAttempt rejects a PR citation the real GitHub lookup this session never actually returned', () => {
+  const res = validateLoopAttempt(validAttempt({ citedPaperId: 'PR#999' }), { lastPeerResults: REAL_PEER_RESULTS });
+  assert.equal(res.ok, false);
+  assert.match(res.errors.join(' '), /does not match any real result/);
 });
 
 test('validateLoopAttempt rejects numbers out of the schema\'s own range', () => {
@@ -600,6 +650,39 @@ test('loop-authored draft: a genuinely valid attempt is written, passes real che
   assert.equal(intake.exitCode, 2);
   assert.match(intake.parsed.package_sha256, /^[0-9a-f]{64}$/);
   assert.deepEqual(rest, [], 'a loop-authored draft never proceeds to judge or score either');
+});
+
+test('loop-authored draft: citing a real competitor PR instead of an ePrint paper is written honestly, and still only ever reaches a draft', { skip: SKIP }, async () => {
+  const r = runner();
+  const attempt = validAttempt({ citedPaperId: 'PR#302' });
+  const citedPaper = findCitedReference('PR#302', { lastPeerResults: REAL_PEER_RESULTS });
+  assert.equal(citedPaper.kind, 'peer-pr');
+  assert.equal(validateLoopAttempt(attempt, { lastPeerResults: REAL_PEER_RESULTS }).ok, true);
+
+  const res = await r.runCycle({ slotId: 'loop-draft-peer-pr', track: TRACK, loopDraft: { attempt, citedPaper } });
+  assert.equal(res.precheck.ok, true, res.precheck.errors.join('; '));
+  assert.equal(res.candidate.kind, 'loop-draft');
+
+  const claim = JSON.parse(readFileSync(join(res.candidateDir, 'claim.json'), 'utf8'));
+  // Same forced honesty limits as an ePrint-cited draft: never ready, never score-critical.
+  assert.equal(claim.submission_state, 'draft');
+  assert.equal(claim.heuristics[0].role, 'supporting');
+  assert.ok(claim.restrictions[0].includes(LOOP_DRAFT_MARKER));
+  // The restriction plainly says this is another competitor's own unverified, self-reported claim.
+  assert.match(claim.restrictions[1], /real competitor on the real HashSmash repository: PR #302/);
+  assert.match(claim.restrictions[1], /not verified by Yukon or anyone else/);
+  assert.match(claim.restrictions[1], /claimed score of 1\.5/);
+
+  const proof = readFileSync(join(res.candidateDir, 'proof.md'), 'utf8');
+  assert.match(proof, /Cited competitor submission/);
+  assert.match(proof, /PR #302 by @rickmanelius/);
+  assert.match(proof, /Self-reported claimed score: 1\.5/);
+  assert.match(proof, /No new collision, witness, or independently-reviewed proof/);
+
+  const [check, intake, ...rest] = res.stages;
+  assert.equal(check.status, 'mechanically_valid');
+  assert.equal(intake.outcome, 'draft-not-submitted');
+  assert.deepEqual(rest, [], 'a loop-authored draft citing a competitor PR never proceeds to judge or score either');
 });
 
 test('loop-authored draft: the committed sha256-r32 research package is never touched by a draft attempt', { skip: SKIP }, async () => {

@@ -22,14 +22,27 @@
 //     proof.md`, `cat TASK.md`. The exact output is read back too, so what a
 //     viewer sees typed and what gets reported honestly are the same real
 //     thing — never a fabricated result or an invented busywork command.
+//   - occasionally, when the RAM's own model asked to see how other real
+//     competitors on its own track are doing (a final "PEERS: <reason>"
+//     line on a thinking step), the same real terminal types a real,
+//     unauthenticated, read-only GitHub API call against the real, public,
+//     official competition repo (Layr-Labs/hash-smash): the open pull
+//     requests, filtered to ones whose own title/body actually mentions
+//     this RAM's track. Those are OTHER COMPETITORS' OWN CLAIMS — an open PR
+//     is a self-reported "claimed score", not yet validated by anyone, and
+//     may still be rejected or wrong — never trusted, never copied, treated
+//     exactly like an ePrint paper's title: real, citable material to read
+//     and reason about, not proof of anything.
 //
 // Checked against the real E2B `desktop` template on 2026-10-05 (a probe
 // sandbox, `command -v` + /usr/share/applications): Mousepad 0.5.8, gedit and
 // gnome-text-editor are installed (leafpad, nano, vim are not); Google Chrome
 // 150 is installed (`google-chrome`; the `firefox` binary is not on PATH, only
 // a firefox-esr .desktop entry); xfce4-terminal, xdotool, xprop and curl are
-// present, and the sandbox reaches eprint.iacr.org (HTTP 200). Mousepad is
-// used because it is Xfce's own editor (the desktop is Xfce) and starts fast.
+// present, and the sandbox reaches eprint.iacr.org (HTTP 200) and
+// api.github.com (unauthenticated, read-only, no token needed for a public
+// repo's open PRs). Mousepad is used because it is Xfce's own editor (the
+// desktop is Xfce) and starts fast.
 //
 // Everything goes through the sandbox's authenticated command channel. Text
 // reaches the sandbox only as single-quoted (shQuote) xdotool arguments or
@@ -41,6 +54,10 @@ import { shQuote, checkAssignment, REPO_DIR as WORKBENCH_REPO_DIR } from './sand
 export const NOTES_DIR = '/tmp/ramnotes';
 export const CHROME_PROFILE_DIR = '/tmp/ramchrome';
 export const EPRINT_SEARCH_URL = 'https://eprint.iacr.org/search?q=';
+/** The real, public, official HashSmash competition repo (Layr-Labs/hash-smash). */
+export const HASHSMASH_GITHUB_REPO = 'Layr-Labs/hash-smash';
+/** How many of a track's matching open PRs are surfaced per PEERS lookup: "a handful", not all of them. */
+export const MAX_PEER_RESULTS = 5;
 
 /** Pause between two advance() steps, seconds. The loop never waits longer than MAX. */
 export const DEFAULT_STEP_PAUSE_SEC = 5;
@@ -48,6 +65,14 @@ export const MIN_STEP_PAUSE_SEC = 2;
 export const MAX_STEP_PAUSE_SEC = 30;
 /** A browse happens on at most one in every `browseEvery` thinking steps (and only when the model asked). */
 export const DEFAULT_BROWSE_EVERY = 2;
+/**
+ * A real competitor-PR lookup (PEERS:) happens on at most one in every
+ * `peersEvery` thinking steps, same shape as `browseEvery` for ePrint
+ * searches, and only when the model asked. Slightly rarer than literature
+ * search by default: it is a secondary grounding activity, not meant to
+ * become the loop's dominant one.
+ */
+export const DEFAULT_PEERS_EVERY = 3;
 /** Hard cap on real thinking (LLM) calls one sandbox session may make before the loop stops. */
 export const DEFAULT_MAX_THINKING_PER_SESSION = 60;
 /**
@@ -87,30 +112,37 @@ export function asciiText(text) {
 }
 
 /**
- * Splits a model's thinking text into the note and two optional trailing
- * signal lines: a "SEARCH: ..." query, and a "DRAFT: ..." line the model
- * uses only when it believes its real research this session gives it
- * something specific and disclosed to propose as an improved candidate
- * claim (slots.js's active loop then decides, with its own real gates,
- * whether to act on that — this function only extracts what was said).
+ * Splits a model's thinking text into the note and three optional trailing
+ * signal lines: a "SEARCH: ..." query, a "PEERS: ..." request to look at
+ * real competitors' own open submissions on this track, and a "DRAFT: ..."
+ * line the model uses only when it believes its real research this session
+ * gives it something specific and disclosed to propose as an improved
+ * candidate claim (slots.js's active loop then decides, with its own real
+ * gates, whether to act on any of these — this function only extracts what
+ * was said).
  */
 export function parseThinking(text) {
   const lines = String(text ?? '').split('\n');
   let search = null;
+  let peers = null;
   let draft = null;
   const kept = [];
   for (const line of lines) {
     const mSearch = /^\s*\**\s*SEARCH\s*:\s*(.+)$/i.exec(line);
+    const mPeers = /^\s*\**\s*PEERS\s*:\s*(.+)$/i.exec(line);
     const mDraft = /^\s*\**\s*DRAFT\s*:\s*(.+)$/i.exec(line);
     if (mSearch) search = mSearch[1];
+    else if (mPeers) peers = mPeers[1];
     else if (mDraft) draft = mDraft[1];
     else kept.push(line);
   }
   const query = search ? search.replace(/[^A-Za-z0-9 .+-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+  const peersReason = peers ? peers.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
   const reason = draft ? draft.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
   return {
     note: kept.join('\n').trim(),
     search: query.length >= 3 ? query : null,
+    peersReason: peersReason.length >= 5 ? peersReason : null,
     draftReason: reason.length >= 5 ? reason : null,
   };
 }
@@ -344,5 +376,110 @@ export async function inspectRepoFile(sbx, { assignment, windowId = null, index 
   return { windowId: id, label: step.label, command: step.command, output };
 }
 
+/**
+ * A third honest desktop activity, parallel to `browseLiterature` (ePrint)
+ * but for real OTHER COMPETITORS' submissions: open, unmerged pull requests
+ * on the real, public, official HashSmash repository
+ * (github.com/Layr-Labs/hash-smash). An open PR is a real competitor's own
+ * self-reported "Validate submission <uuid>" entry — their claimed score and
+ * notes are THEIR claim, not a verified result, and an open/unmerged PR may
+ * still be rejected or wrong. This function never says otherwise: it only
+ * surfaces exactly what the real GitHub API returned.
+ *
+ * Unauthenticated, read-only, public: `pulls?state=open` needs no token.
+ * Matching is on the PR's own title+body text actually containing this
+ * RAM's track id (e.g. "blake3-r1-exploratory") — the same real string a
+ * submitter would write when claiming a track — never a guess at which PR
+ * belongs to which track.
+ */
+export function peerSubmissionsUrl() {
+  return `https://api.github.com/repos/${HASHSMASH_GITHUB_REPO}/pulls?state=open&per_page=100&sort=created&direction=desc`;
+}
+
+/**
+ * Python run inside the sandbox: reads the real GitHub PR list JSON from
+ * stdin, keeps only PRs whose own title or body text contains `track`
+ * (argv[1], case-insensitive), and prints at most MAX_PEER_RESULTS of them
+ * as one JSON array on stdout. Every field comes straight from the real API
+ * response; nothing here invents or estimates a value. "claimed score" is
+ * read out of the PR body with a plain regex because that is literally how a
+ * submitter states it (self-reported, never recomputed or checked here).
+ */
+export const PARSE_PEERS_PY = String.raw`import json,re,sys
+track=(sys.argv[1] if len(sys.argv)>1 else '').lower()
+try:
+  prs=json.load(sys.stdin)
+except Exception:
+  prs=[]
+if not isinstance(prs,list):
+  prs=[]
+out=[]
+for pr in prs:
+  if not isinstance(pr,dict) or not track:
+    continue
+  title=str(pr.get('title') or '')
+  body=str(pr.get('body') or '')
+  if track not in (title+' '+body).lower():
+    continue
+  m=re.search(r'claimed\s+score[:\s]+([0-9][0-9.]*)',body,re.I)
+  out.append({
+    'number': pr.get('number'),
+    'login': ((pr.get('user') or {}).get('login')),
+    'title': title.strip()[:200],
+    'claimedScore': m.group(1) if m else None,
+    'note': re.sub(r'\s+',' ',body).strip()[:400],
+    'url': pr.get('html_url'),
+  })
+  if len(out)>=${MAX_PEER_RESULTS}:
+    break
+print(json.dumps(out))`;
+
+/**
+ * Turns PARSE_PEERS_PY's stdout into a clean array, never throwing: a
+ * missing/garbled/empty result (rate-limited, offline, API shape changed)
+ * becomes `[]` — "no matching PRs found" honestly, not a fabricated list.
+ */
+export function parsePeerSubmissions(stdout) {
+  let parsed;
+  try { parsed = JSON.parse(String(stdout ?? '').trim() || '[]'); } catch { return []; }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((r) => r && typeof r === 'object' && Number.isInteger(r.number) && typeof r.title === 'string')
+    .map((r) => ({
+      number: r.number,
+      login: typeof r.login === 'string' ? r.login : null,
+      title: r.title,
+      claimedScore: typeof r.claimedScore === 'string' ? r.claimedScore : null,
+      note: typeof r.note === 'string' ? r.note : '',
+      url: typeof r.url === 'string' ? r.url : null,
+    }));
+}
+
+/** The one real shell command both typed live and independently re-run for its real output (same discipline as inspectRepoFile). */
+export function peerSubmissionsCommand(track) {
+  return `curl -sS -m 20 ${shQuote(peerSubmissionsUrl())} -H 'Accept: application/vnd.github+json' -H 'User-Agent: ramherd-research-loop' `
+    + `| python3 -c ${shQuote(PARSE_PEERS_PY)} ${shQuote(track)}`;
+}
+
+/**
+ * Types the real GitHub API lookup into the (shared) research terminal,
+ * waits, then independently runs the exact same command to read back its
+ * real output — same "typed, then verified" discipline as inspectRepoFile
+ * and browseLiterature. Returns { windowId, url, track, results }.
+ */
+export async function browsePeerSubmissions(sbx, { assignment, windowId = null, typeDelayMs = 20 }) {
+  const run = (cmd, opts) => sbx.commands.run(cmd, opts);
+  const { track } = checkAssignment(assignment);
+  const id = await ensureResearchTerminal(sbx, { assignment, windowId });
+  const command = peerSubmissionsCommand(track);
+  await run(`xdotool windowactivate --sync ${id} >/dev/null 2>&1 || true`);
+  await run(`xdotool type --delay ${typeDelayMs} -- ${shQuote(command)} && xdotool key Return`, { timeoutMs: 60_000 });
+  await run('sleep 1');
+  const out = await run(command, { timeoutMs: 40_000 });
+  return { windowId: id, url: peerSubmissionsUrl(), track, results: parsePeerSubmissions(out?.stdout) };
+}
+
 /** What store.js hands to createSlotManager as `sandboxActivity`. */
-export const desktopActivity = Object.freeze({ ensureNotepad, typeIntoNotepad, browseLiterature, ensureResearchTerminal, inspectRepoFile });
+export const desktopActivity = Object.freeze({
+  ensureNotepad, typeIntoNotepad, browseLiterature, ensureResearchTerminal, inspectRepoFile, browsePeerSubmissions,
+});

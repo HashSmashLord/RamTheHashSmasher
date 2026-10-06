@@ -5,6 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createSandboxManager, sandboxPolicy } from '../server/lib/sandbox.js';
 import { createSlotManager, LOOP_THINKING_SYSTEM, LOOP_DRAFT_SYSTEM } from '../server/lib/slots.js';
 import { createMockLlmProvider } from '../server/lib/llm.js';
@@ -13,7 +14,8 @@ import { loadConfig } from '../server/config.js';
 import {
   parseThinking, parseDraftAttempt, asciiText, noteBlock, eprintSearchUrl, notesFile, ensureNotepad, typeIntoNotepad,
   repoInspectSteps, researchTerminalTitle, ensureResearchTerminal, inspectRepoFile,
-  MAX_IDLE_MS, MAX_TYPED_CHARS,
+  peerSubmissionsUrl, peerSubmissionsCommand, parsePeerSubmissions, browsePeerSubmissions, PARSE_PEERS_PY,
+  MAX_IDLE_MS, MAX_TYPED_CHARS, MAX_PEER_RESULTS, HASHSMASH_GITHUB_REPO,
 } from '../server/lib/sandbox-activity.js';
 import { ACTIVE_TRACKS } from '../server/lib/targets.js';
 
@@ -80,16 +82,21 @@ function fakeLiveLlm(answers = []) {
   };
 }
 
-/** Fake desktop activity: records what would be typed / browsed / inspected. */
-function fakeActivity({ failType = 0, results = [{ id: '2026/1120', title: 'Pushing Collision Attacks on SHA-2 to 39 Steps' }] } = {}) {
+/** Fake desktop activity: records what would be typed / browsed / inspected / peer-reviewed. */
+function fakeActivity({
+  failType = 0, results = [{ id: '2026/1120', title: 'Pushing Collision Attacks on SHA-2 to 39 Steps' }],
+  peerResults = [{ number: 302, login: 'rickmanelius', title: 'Validate submission 7e5d9c2a-...', claimedScore: '1.5', note: 'claimed score: 1.5', url: 'https://github.com/Layr-Labs/hash-smash/pull/302' }],
+} = {}) {
   const typed = [];
   const browsed = [];
   const inspected = [];
+  const peered = [];
   const state = { failType };
   return {
     typed,
     browsed,
     inspected,
+    peered,
     state,
     activity: {
       ensureNotepad: async (sbx, { windowId }) => windowId ?? `win-${sbx.sandboxId}`,
@@ -104,6 +111,10 @@ function fakeActivity({ failType = 0, results = [{ id: '2026/1120', title: 'Push
         const entry = { sbx: sbx.sandboxId, index, label: labels[index % labels.length] };
         inspected.push(entry);
         return { windowId: windowId ?? `term-${sbx.sandboxId}`, label: entry.label, command: `cat ${entry.label}`, output: `real output for ${entry.label}` };
+      },
+      browsePeerSubmissions: async (sbx, { assignment, windowId }) => {
+        peered.push({ sbx: sbx.sandboxId, track: assignment.track });
+        return { windowId: windowId ?? `term-${sbx.sandboxId}`, url: peerSubmissionsUrl(), track: assignment.track, results: peerResults };
       },
     },
   };
@@ -144,24 +155,37 @@ const types = (snap) => snap.feed.map((f) => f.type);
 
 test('parseThinking takes the model\'s last SEARCH line out of the note and sanitizes it', () => {
   assert.deepEqual(parseThinking('I will re-derive the 31-step characteristic.\nSEARCH: SHA-256 "31-step" collision; rm -rf /'), {
-    note: 'I will re-derive the 31-step characteristic.', search: 'SHA-256 31-step collision rm -rf', draftReason: null,
+    note: 'I will re-derive the 31-step characteristic.', search: 'SHA-256 31-step collision rm -rf', peersReason: null, draftReason: null,
   });
-  assert.deepEqual(parseThinking('Just a plan.'), { note: 'Just a plan.', search: null, draftReason: null });
+  assert.deepEqual(parseThinking('Just a plan.'), { note: 'Just a plan.', search: null, peersReason: null, draftReason: null });
   assert.equal(parseThinking('x\n**SEARCH:** ab').search, null, 'too short after sanitizing');
   assert.equal(parseThinking(`x\nsearch: ${'a'.repeat(200)}`).search.length, 80);
 });
 
 test('parseThinking takes the model\'s DRAFT line out of the note too, independently of SEARCH', () => {
   assert.deepEqual(parseThinking('I will try X next.\nDRAFT: I found a specific disclosed heuristic.'), {
-    note: 'I will try X next.', search: null, draftReason: 'I found a specific disclosed heuristic.',
+    note: 'I will try X next.', search: null, peersReason: null, draftReason: 'I found a specific disclosed heuristic.',
   });
   // Both lines can appear in the same step and are extracted independently.
   assert.deepEqual(
     parseThinking('Plan.\nSEARCH: some query\nDRAFT: a real reason here'),
-    { note: 'Plan.', search: 'some query', draftReason: 'a real reason here' },
+    { note: 'Plan.', search: 'some query', peersReason: null, draftReason: 'a real reason here' },
   );
   assert.equal(parseThinking('x\nDRAFT: hi').draftReason, null, 'too short after trimming');
   assert.equal(parseThinking('No draft line here.').draftReason, null);
+});
+
+test('parseThinking takes the model\'s PEERS line out of the note too, independently of SEARCH and DRAFT', () => {
+  assert.deepEqual(parseThinking('I will check the field.\nPEERS: see what others on this track found.'), {
+    note: 'I will check the field.', search: null, peersReason: 'see what others on this track found.', draftReason: null,
+  });
+  // All three lines can appear in the same step and are extracted independently.
+  assert.deepEqual(
+    parseThinking('Plan.\nSEARCH: some query\nPEERS: a real reason\nDRAFT: a real reason here'),
+    { note: 'Plan.', search: 'some query', peersReason: 'a real reason', draftReason: 'a real reason here' },
+  );
+  assert.equal(parseThinking('x\nPEERS: hi').peersReason, null, 'too short after trimming');
+  assert.equal(parseThinking('No peers line here.').peersReason, null);
 });
 
 test('parseDraftAttempt: "ATTEMPT: no" (in any casing/order) is a clean decline, never a guess', () => {
@@ -284,6 +308,128 @@ test('inspectRepoFile types the cycled command live and reads back its real outp
   // A different index cycles to a different, still real command, never the same thing twice in a row.
   const r2 = await inspectRepoFile(sbx, { assignment: ACTIVE_TRACKS[0], windowId: '42', index: 1 });
   assert.notEqual(r2.label, r.label);
+});
+
+// ---------------------------------------------------------------------------
+// PEERS: a real, read-only, unauthenticated GitHub API lookup of OTHER
+// COMPETITORS' own open pull requests on the real HashSmash repository,
+// filtered to this RAM's own track. Same shape and the same "typed, then
+// independently verified" discipline as browseLiterature/inspectRepoFile.
+// No real network call anywhere in these tests: PARSE_PEERS_PY is still a
+// real python3 subprocess (same as hashsmash.test.js's real-python
+// philosophy), but its input is a fake, locally-built GitHub API response —
+// never fetched over the wire.
+// ---------------------------------------------------------------------------
+
+function pythonOk() {
+  try { execFileSync('python3', ['--version'], { stdio: 'ignore' }); return true; } catch { return false; }
+}
+const PY_SKIP = pythonOk() ? false : 'python3 not available';
+
+/** A realistic GitHub `pulls?state=open` response shape, built locally (never fetched). */
+const FAKE_PR_LIST = [
+  {
+    number: 302, title: 'Validate submission 7e5d9c2a-...', user: { login: 'rickmanelius' },
+    body: 'Track: blake3-r1-exploratory\nclaimed score: 1.5\nCurrent best score: 149\nModel: Claude Opus 5.5, Harness: Claude Code.',
+    html_url: 'https://github.com/Layr-Labs/hash-smash/pull/302',
+  },
+  {
+    number: 288, title: 'Validate submission 1a2b3c4d-...', user: { login: 'someone-else' },
+    body: 'Track: blake3-r1-exploratory\nA second attempt, no score line stated this time.',
+    html_url: 'https://github.com/Layr-Labs/hash-smash/pull/288',
+  },
+  // Not this track: must be filtered out.
+  { number: 275, title: 'Validate submission aaaa-...', user: { login: 'nope' }, body: 'Track: sha3-256-r5-exploratory\nclaimed score: 9', html_url: 'https://x/275' },
+  // Malformed/missing user: must not throw, and still usable with login null.
+  { number: 260, title: 'blake3-r1-exploratory attempt, no user object', body: 'claimed score: 0.7', html_url: 'https://x/260' },
+];
+
+function runPeersPython(prList, track) {
+  const out = execFileSync('python3', ['-c', PARSE_PEERS_PY, track], { input: JSON.stringify(prList), encoding: 'utf8' });
+  return parsePeerSubmissions(out);
+}
+
+test('peerSubmissionsUrl points at the real, public, official HashSmash repo\'s open PRs, unauthenticated', () => {
+  const url = peerSubmissionsUrl();
+  assert.match(url, new RegExp(`^https://api\\.github\\.com/repos/${HASHSMASH_GITHUB_REPO.replace('/', '\\/')}/pulls\\?`));
+  assert.match(url, /state=open/);
+});
+
+test('PARSE_PEERS_PY (real python3): filters to the real track, surfaces real fields, caps at MAX_PEER_RESULTS, never throws on odd shapes', { skip: PY_SKIP }, () => {
+  const results = runPeersPython(FAKE_PR_LIST, 'blake3-r1-exploratory');
+  assert.equal(results.length, 3, 'only the 3 PRs that actually mention this track');
+  assert.deepEqual(results[0], {
+    number: 302, login: 'rickmanelius', title: 'Validate submission 7e5d9c2a-...', claimedScore: '1.5',
+    note: results[0].note, url: 'https://github.com/Layr-Labs/hash-smash/pull/302',
+  });
+  assert.match(results[0].note, /claimed score: 1\.5/);
+  assert.equal(results[1].claimedScore, null, 'no score line stated: null, never guessed');
+  assert.equal(results[2].login, null, 'a PR with no user object: login is null, never thrown on');
+  assert.equal(results[2].claimedScore, '0.7');
+  // Off-track PR (sha3-256-r5-exploratory) is never included.
+  assert.ok(!results.some((r) => r.number === 275));
+});
+
+test('PARSE_PEERS_PY (real python3): an honest empty list when nothing currently open matches this track', { skip: PY_SKIP }, () => {
+  assert.deepEqual(runPeersPython(FAKE_PR_LIST, 'sha256-r32-exploratory'), []);
+  assert.deepEqual(runPeersPython([], 'blake3-r1-exploratory'), []);
+});
+
+test('PARSE_PEERS_PY (real python3): garbage/non-JSON input is an honest empty list, never a crash or a fabricated row', { skip: PY_SKIP }, () => {
+  const out = execFileSync('python3', ['-c', PARSE_PEERS_PY, 'blake3-r1-exploratory'], { input: 'not json at all', encoding: 'utf8' });
+  assert.deepEqual(parsePeerSubmissions(out), []);
+});
+
+test('parsePeerSubmissions: malformed/garbled stdout is an honest [], never a throw', () => {
+  assert.deepEqual(parsePeerSubmissions(''), []);
+  assert.deepEqual(parsePeerSubmissions('not json'), []);
+  assert.deepEqual(parsePeerSubmissions('{"not":"an array"}'), []);
+  assert.deepEqual(parsePeerSubmissions('[{"number":"not-an-int","title":"x"}]'), [], 'a non-integer number is dropped, not coerced');
+  assert.deepEqual(parsePeerSubmissions('[{"number":1}]'), [], 'missing title is dropped');
+});
+
+test('peerSubmissionsCommand types the real curl+python one-liner, with the track safely quoted', () => {
+  const cmd = peerSubmissionsCommand('blake3-r1-exploratory');
+  assert.match(cmd, /^curl -sS -m 20 /);
+  assert.match(cmd, /api\.github\.com\/repos\/Layr-Labs\/hash-smash\/pulls/);
+  assert.match(cmd, /\| python3 -c /);
+  assert.ok(cmd.includes("'blake3-r1-exploratory'"), 'the track is passed as a single quoted argv, never interpolated unsafely');
+});
+
+test('browsePeerSubmissions types the real command into the (shared) research terminal, then independently re-runs it for the real output', async () => {
+  const cmds = [];
+  const canned = JSON.stringify(FAKE_PR_LIST);
+  const sbx = { commands: { run: async (cmd) => {
+    cmds.push(cmd);
+    if (cmd.includes('xdotool search')) return { stdout: '99\n' };
+    if (cmd.startsWith('xprop')) return { stdout: '0,0,1280,720' };
+    if (cmd === peerSubmissionsCommand('blake3-r1-exploratory')) {
+      return { stdout: execFileSync('python3', ['-c', PARSE_PEERS_PY, 'blake3-r1-exploratory'], { input: canned, encoding: 'utf8' }) };
+    }
+    return { stdout: '' };
+  } } };
+  const assignment = ACTIVE_TRACKS.find((t) => t.track === 'blake3-r1-exploratory');
+  const r = await browsePeerSubmissions(sbx, { assignment });
+  assert.equal(r.windowId, '99');
+  assert.equal(r.track, 'blake3-r1-exploratory');
+  assert.equal(r.url, peerSubmissionsUrl());
+  assert.equal(r.results.length, 3);
+  assert.equal(r.results[0].number, 302);
+  assert.ok(cmds.some((c) => c.startsWith('xdotool windowactivate --sync 99')));
+  assert.ok(cmds.some((c) => c.includes('xdotool type --delay 20')));
+  // What was typed and what was independently re-run are the exact same real command.
+  assert.ok(cmds.filter((c) => c === peerSubmissionsCommand('blake3-r1-exploratory')).length >= 1);
+});
+
+test('browsePeerSubmissions is honest when nothing currently open matches the track: an empty results list, not a guess', async () => {
+  const sbx = { commands: { run: async (cmd) => {
+    if (cmd.includes('xdotool search')) return { stdout: '7\n' };
+    if (cmd.startsWith('xprop')) return { stdout: '0,0,1280,720' };
+    if (cmd === peerSubmissionsCommand('sha256-r31-exploratory')) return { stdout: '[]' };
+    return { stdout: '' };
+  } } };
+  const r = await browsePeerSubmissions(sbx, { assignment: ACTIVE_TRACKS[0] });
+  assert.deepEqual(r.results, []);
 });
 
 // ---- policy / wiring ----
@@ -425,6 +571,39 @@ test('a SEARCH line opens a real-looking ePrint lookup (rate limited), logged ho
   assert.match(r.llm.calls[1].prompt, /last literature search, "SHA-256 31 step collision".*2026\/1120/);
   for (let i = 0; i < 4; i++) await r.step(); // -> thinking #3: allowed again
   assert.equal(r.activity.browsed.length, 2);
+});
+
+// ---- real competitors' submissions (PEERS) ----
+
+test('a PEERS line opens a real-looking lookup of other competitors\' open PRs (rate limited), logged honestly and fed into the next thinking step', async () => {
+  const r = rig({
+    answers: ['Re-read the trail.\nPEERS: see what other competitors have submitted', 'Next idea.\nPEERS: check again', 'Third.\nPEERS: check once more'],
+    activeLoop: { peersEvery: 2 },
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // thinking #1 -> peer lookup
+  let snap = r.m.getSlot('slot-0');
+  const thinking = snap.feed.filter((f) => f.type === 'thinking').at(-1);
+  assert.equal(thinking.message, 'Re-read the trail.', 'the PEERS line is not in the feed text');
+  assert.deepEqual(r.activity.peered.map((p) => p.track), ['sha256-r31-exploratory']);
+  assert.equal(snap.feed.at(-1).type, 'sandbox-peer-review');
+  assert.match(snap.feed.at(-1).message, /PR #302 by @rickmanelius \(claimed score 1\.5\).*never treated as proven or copied/);
+  for (let i = 0; i < 4; i++) await r.step(); // -> thinking #2: asks again, but within peersEvery
+  assert.equal(r.activity.peered.length, 1);
+  assert.match(r.llm.calls[1].prompt, /Other real competitors' open pull requests on sha256-r31-exploratory.*PR #302 by @rickmanelius.*never treat one as proven/);
+  for (let i = 0; i < 4; i++) await r.step(); // -> thinking #3: allowed again
+  assert.equal(r.activity.peered.length, 2);
+});
+
+test('PEERS is honest when the real GitHub lookup finds nothing currently open for this track', async () => {
+  const r = rig({ answers: ['Checking.\nPEERS: any competitors ahead on this track?'], activity: fakeActivity({ peerResults: [] }) });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step();
+  const snap = r.m.getSlot('slot-0');
+  assert.equal(snap.feed.at(-1).type, 'sandbox-peer-review');
+  assert.match(snap.feed.at(-1).message, /No open pull requests currently mention sha256-r31-exploratory/);
 });
 
 // ---- guardrails ----
@@ -599,6 +778,54 @@ test('a dedicated drafting call only ever happens after a real search, and asks 
   assert.equal(r.llm.calls.length, 2);
   assert.equal(r.llm.calls[1].system, LOOP_DRAFT_SYSTEM);
   assert.match(r.llm.calls[1].prompt, /you said/i);
+});
+
+test('peer-review-only grounding (no literature search) is enough to make a drafting attempt eligible, and a real competitor PR can be honestly cited', async () => {
+  const runner = stubPipelineRunner();
+  const r = rig({
+    pipelineRunner: runner,
+    answers: [
+      'Checking the field.\nPEERS: see how competitors on this track are doing\nDRAFT: I might have something.',
+      VALID_DRAFT_ANSWER.replace('CITED_PAPER_ID: 2026/1120', 'CITED_PAPER_ID: PR#302'),
+    ],
+    activeLoop: { peersEvery: 1 },
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // idle -> thinking: asks for a peer lookup, and a draft
+  await r.step(); // thinking -> running-experiment (the real peer lookup already happened inside step 1)
+  const slotMid = r.m.getSlot('slot-0');
+  assert.ok(slotMid.feed.some((f) => f.type === 'sandbox-peer-review'), 'the real peer lookup must have actually happened');
+  assert.equal(slotMid.feed.some((f) => f.type === 'sandbox-browse'), false, 'no literature search happened this cycle');
+  await r.step(); // running-experiment -> the dedicated drafting call fires (peer review alone is enough grounding)
+  assert.equal(r.llm.calls.length, 2);
+  assert.equal(r.llm.calls[1].system, LOOP_DRAFT_SYSTEM);
+  assert.equal(runner.calls.length, 1);
+  assert.equal(runner.calls[0].loopDraft.citedPaper.kind, 'peer-pr');
+  assert.equal(runner.calls[0].loopDraft.citedPaper.number, 302);
+  const slot = r.m.getSlot('slot-0');
+  assert.equal(slot.status, 'validated');
+  assert.ok(slot.feed.some((f) => f.type === 'pipeline-loop-draft-attempt' && /competitor PR #302/.test(f.message)));
+});
+
+test('a drafted claim citing a competitor PR this session never actually looked at is honestly rejected the same way as a fake ePrint id', async () => {
+  const runner = stubPipelineRunner();
+  const badAnswer = VALID_DRAFT_ANSWER.replace('CITED_PAPER_ID: 2026/1120', 'CITED_PAPER_ID: PR#999');
+  const r = rig({
+    pipelineRunner: runner,
+    answers: ['Checking the field.\nPEERS: see how things are going\nDRAFT: I might have something.', badAnswer],
+    activeLoop: { peersEvery: 1 },
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // idle -> thinking + real peer lookup
+  await r.step(); // thinking -> running-experiment
+  await r.step(); // running-experiment -> drafting call -> rejected
+  const slot = r.m.getSlot('slot-0');
+  assert.equal(slot.status, 'failed');
+  assert.equal(slot.feed.at(-1).type, 'pipeline-loop-draft-rejected');
+  assert.match(slot.feed.at(-1).message, /does not match any real result/);
+  assert.equal(runner.calls.length, 0, 'the real pipeline must never run on a rejected attempt');
 });
 
 test('a drafted claim citing a paper this session never actually looked up is honestly rejected before the real pipeline ever runs', async () => {

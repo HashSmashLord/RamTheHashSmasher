@@ -271,26 +271,62 @@ export function precheckCandidate(candidateDir, repoRoot) {
   return { ok: errors.length === 0, errors, claim };
 }
 
+/** Matches the "PR#<number>" form a drafting call uses to cite a real competitor's open PR instead of an ePrint id. */
+const PEER_CITATION_RE = /^PR#(\d+)$/i;
+
+/**
+ * Resolves a drafting call's CITED_PAPER_ID against the slot's own real
+ * session state — either a real IACR ePrint search result
+ * (`lastSearchResults`, sandbox-activity.js's browseLiterature) or a real
+ * competitor pull request on the real HashSmash repo
+ * (`lastPeerResults`, sandbox-activity.js's browsePeerSubmissions) — and
+ * returns a small tagged record describing which, or `null` if it matches
+ * neither. This is the one place that decides what a citation referred to;
+ * both validateLoopAttempt (does it exist at all) and slots.js's
+ * runLoopDraftAttempt (what to actually write into the candidate) call this
+ * so the two can never disagree about what was cited.
+ *
+ * @param {string|null} citedPaperId
+ * @param {{ lastSearchResults?: Array<{id: string, title: string}>, lastPeerResults?: Array<{number: number, login: string|null, title: string, claimedScore: string|null, url: string|null}> }} [ctx]
+ */
+export function findCitedReference(citedPaperId, { lastSearchResults = [], lastPeerResults = [] } = {}) {
+  if (typeof citedPaperId !== 'string' || !citedPaperId.trim()) return null;
+  const id = citedPaperId.trim();
+  const prMatch = PEER_CITATION_RE.exec(id);
+  if (prMatch) {
+    const number = Number(prMatch[1]);
+    const pr = lastPeerResults.find((r) => r?.number === number);
+    return pr ? { kind: 'peer-pr', number: pr.number, login: pr.login ?? null, title: pr.title, url: pr.url ?? null, claimedScore: pr.claimedScore ?? null } : null;
+  }
+  const paper = lastSearchResults.find((r) => r?.id === id);
+  return paper ? { kind: 'eprint', id: paper.id, title: paper.title } : null;
+}
+
 /**
  * Structural honesty gate for a loop-drafted candidate attempt (see
  * sandbox-activity.js's parseDraftAttempt, slots.js's active loop), applied
  * BEFORE any file is written and IN ADDITION TO the real schema/precheck
  * every candidate goes through regardless. This is not a prompt instruction
  * the model can forget to follow: a call that produces something shaped
- * wrong, with an out-of-range number, or an unreal literature citation is
- * rejected here, deterministically, every time.
+ * wrong, with an out-of-range number, or an unreal citation is rejected
+ * here, deterministically, every time.
  *
  * `lastSearchResults` must be the slot's own real IACR ePrint search results
- * from THIS session (sandbox-activity.js's browseLiterature output) — never
- * an arbitrary string the model typed. `attempt.citedPaperId` is required to
- * be one of those real ids: the one place this harness checks that a loop's
- * claim of "I looked this up" actually happened, rather than trusting the
- * model's say-so.
+ * from THIS session (sandbox-activity.js's browseLiterature output), and
+ * `lastPeerResults` its own real GitHub lookup of other competitors' open
+ * PRs on this track this session (browsePeerSubmissions output) — never an
+ * arbitrary string the model typed. `attempt.citedPaperId` is required to
+ * resolve (via findCitedReference) to one of those two real sources: the
+ * one place this harness checks that a loop's claim of "I looked this up"
+ * actually happened, rather than trusting the model's say-so. Citing a real
+ * competitor's PR is explicitly allowed here, but it is still just citing
+ * another competitor's own self-reported, unverified claim — never treated
+ * as more certain than that.
  *
  * @param {ReturnType<typeof import('./sandbox-activity.js').parseDraftAttempt>} attempt
- * @param {{ lastSearchResults?: Array<{id: string, title: string}> }} [ctx]
+ * @param {{ lastSearchResults?: Array<{id: string, title: string}>, lastPeerResults?: Array<{number: number}> }} [ctx]
  */
-export function validateLoopAttempt(attempt, { lastSearchResults = [] } = {}) {
+export function validateLoopAttempt(attempt, { lastSearchResults = [], lastPeerResults = [] } = {}) {
   const errors = [];
   if (!attempt || typeof attempt !== 'object' || attempt.attempt !== true) {
     return { ok: false, errors: ['no drafting attempt was actually made'] };
@@ -314,12 +350,14 @@ export function validateLoopAttempt(attempt, { lastSearchResults = [] } = {}) {
   if (/\b(proven|verified|confirmed collision|guaranteed|no doubt)\b/i.test(attempt.limitations || '')) {
     errors.push('LIMITATIONS must not claim the bound is proven, verified or guaranteed; this is at most an estimate under disclosed premises');
   }
-  // Real-grounding rail: the cited paper must be one this session actually
-  // fetched from the real ePrint search, not an invented or remembered id.
+  // Real-grounding rail: the citation must resolve to something this session
+  // actually fetched for real — a real ePrint search result or a real
+  // competitor PR this session actually looked at — never an invented or
+  // remembered id.
   if (!attempt.citedPaperId || attempt.citedPaperId === 'NONE') {
-    errors.push('CITED_PAPER_ID is required: a loop-drafted claim must cite a real paper this session actually looked up');
-  } else if (!lastSearchResults.some((r) => r.id === attempt.citedPaperId)) {
-    errors.push(`CITED_PAPER_ID "${attempt.citedPaperId}" does not match any real result from this session's own ePrint search`);
+    errors.push('CITED_PAPER_ID is required: a loop-drafted claim must cite either a real ePrint paper or a real competitor PR this session actually looked up');
+  } else if (!findCitedReference(attempt.citedPaperId, { lastSearchResults, lastPeerResults })) {
+    errors.push(`CITED_PAPER_ID "${attempt.citedPaperId}" does not match any real result from this session's own ePrint search or GitHub PR lookup`);
   }
   return { ok: errors.length === 0, errors };
 }
@@ -603,7 +641,11 @@ export function createHashSmashRunner({
    *     the organizer's own template value.
    *   - `restrictions` always starts with a fixed, model-proof disclosure
    *     (LOOP_DRAFT_MARKER) saying plainly that these numbers are this RAM's
-   *     own unverified estimate, and names the real paper it cited.
+   *     own unverified estimate, and names the real reference it cited —
+   *     either a real ePrint paper or a real competitor's open PR
+   *     (`citedPaper.kind`, from findCitedReference; a plain `{id, title}`
+   *     with no `kind` is treated as an ePrint result, for callers that
+   *     predate this distinction).
    *   - evidence_ids are computed from the real proof.md this call writes,
    *     not trusted from the model's own line-number guess.
    */
@@ -627,10 +669,34 @@ export function createHashSmashRunner({
       success_probability: attempt.successProbability,
     };
     claim.submission_state = 'draft';
+    const isPeerPr = citedPaper?.kind === 'peer-pr';
+    const citationRestriction = isPeerPr
+      ? `This RAM cited an open, unverified pull request from a real competitor on the real HashSmash repository: PR #${citedPaper.number}${citedPaper.login ? ` by @${citedPaper.login}` : ''} ("${citedPaper.title}")${citedPaper.claimedScore ? `, which self-reports a claimed score of ${citedPaper.claimedScore}` : ''}. That is another competitor's own self-reported claim, not verified by Yukon or anyone else, and an open PR may still be rejected or wrong; citing it is not the same as having confirmed it.`
+      : `This RAM cited IACR ePrint ${citedPaper.id} ("${citedPaper.title}") from its own real literature search this session as grounding. Citing a paper's title is not the same as having verified its applicability to this exact target, and that distinction is deliberate, not an oversight.`;
     claim.restrictions = [
       `${LOOP_DRAFT_MARKER} (RAM slot ${slotId}). The claim.claim numbers above and the one heuristic below were written by this RAM's own model this session from its own real research, not the organizer's empty template. submission_state is forced to draft: nobody has independently verified this heuristic, so HashSmash intake correctly refuses to forward it to the judge.`,
-      `This RAM cited IACR ePrint ${citedPaper.id} ("${citedPaper.title}") from its own real literature search this session as grounding. Citing a paper's title is not the same as having verified its applicability to this exact target, and that distinction is deliberate, not an oversight.`,
+      citationRestriction,
     ];
+
+    const citedSection = isPeerPr
+      ? [
+        '## Cited competitor submission',
+        '',
+        `- PR #${citedPaper.number}${citedPaper.login ? ` by @${citedPaper.login}` : ''}: "${citedPaper.title}" — an open, unverified pull`,
+        '  request on the real HashSmash repository, found via this session\'s real GitHub lookup.',
+        citedPaper.claimedScore
+          ? `  Self-reported claimed score: ${citedPaper.claimedScore} (their own claim, not independently verified;`
+          : '  No claimed score was stated in it.',
+        ...(citedPaper.claimedScore ? ['  an open PR can still be rejected or wrong).'] : []),
+        ...(citedPaper.url ? [`  ${citedPaper.url}`] : []),
+      ]
+      : [
+        '## Cited literature',
+        '',
+        `- IACR ePrint ${citedPaper.id}: "${citedPaper.title}" — found via this session's real ePrint`,
+        '  search. Only the search result title was read; the paper itself was not fetched or read in',
+        '  this session.',
+      ];
 
     const proofLines = [
       `# ${LOOP_DRAFT_MARKER}: ${track}`,
@@ -639,11 +705,7 @@ export function createHashSmashRunner({
       'model, its own real literature search, and its own research so far this session. Nobody has',
       'reviewed, judged, or independently verified any of it.',
       '',
-      '## Cited literature',
-      '',
-      `- IACR ePrint ${citedPaper.id}: "${citedPaper.title}" — found via this session's real ePrint`,
-      '  search. Only the search result title was read; the paper itself was not fetched or read in',
-      '  this session.',
+      ...citedSection,
       '',
       `## Disclosed heuristic: ${attempt.heuristicId}`,
       '',

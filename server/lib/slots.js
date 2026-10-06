@@ -116,10 +116,18 @@
 // step the model may end with a "SEARCH: <query>" line; on at most one in
 // `browseEvery` thinking steps that opens a real IACR ePrint search in the
 // desktop's Chrome, reads the real result titles, logs them in the feed and
-// hands them to the next thinking step. Loop-driven steps never fabricate: on
-// a track with no real experiment runner the experiment step says nothing
-// ran instead of "drafted", and a thinking step is grounded in the slot's
-// best REAL measured result so far this session (`slot.bestResult`,
+// hands them to the next thinking step. A thinking step may separately end
+// with a "PEERS: <reason>" line; on at most one in `peersEvery` thinking
+// steps that runs a real, unauthenticated GitHub API lookup of OTHER
+// COMPETITORS' own open pull requests on the real HashSmash repository,
+// filtered to this RAM's own track, and logs their real (self-reported,
+// unverified) title/submitter/claimed-score back into the feed and the next
+// thinking step the exact same honest way an ePrint result is — real,
+// citable material to reason about, never trusted, copied or treated as
+// proof. Loop-driven steps never fabricate: on a track with no real
+// experiment runner the experiment step says nothing ran instead of
+// "drafted", and a thinking step is grounded in the slot's best REAL
+// measured result so far this session (`slot.bestResult`,
 // `updateBestResult`) with an explicit standing goal of beating it, honestly,
 // rather than just cycling through statuses (LOOP_THINKING_SYSTEM).
 //
@@ -130,13 +138,15 @@
 // real research this session genuinely gives it something specific and
 // disclosed to propose. That alone never writes anything: the NEXT
 // running-experiment step, only if the slot has also done at least one real
-// literature search this session and is under `maxDraftAttemptsPerSession`
-// (runLoopDraftAttempt), makes one more dedicated call (LOOP_DRAFT_SYSTEM)
-// asking for a strict, narrow set of fields. Honesty is enforced in code,
-// not just the prompt: validateLoopAttempt (hashsmash.js) rejects anything
-// out of range, malformed, or citing a paper this session did not actually
-// look up, before any file is written; a candidate that passes that gate
-// still goes through the exact same real precheck/schema/check/intake as
+// literature search or real competitor-PR lookup this session and is under
+// `maxDraftAttemptsPerSession` (runLoopDraftAttempt), makes one more
+// dedicated call (LOOP_DRAFT_SYSTEM) asking for a strict, narrow set of
+// fields, citing EITHER a real ePrint id OR a real competitor PR (as
+// "PR#<number>"). Honesty is enforced in code, not just the prompt:
+// validateLoopAttempt (hashsmash.js), via findCitedReference, rejects
+// anything out of range, malformed, or citing a paper or PR this session did
+// not actually look up, before any file is written; a candidate that passes
+// that gate still goes through the exact same real precheck/schema/check/intake as
 // every other candidate (hashsmash.js's writeLoopDraftCandidate), with
 // submission_state forced to 'draft' and the heuristic's role forced to
 // 'supporting' — this harness never lets an autonomous loop mark its own
@@ -188,10 +198,10 @@ import { assignmentForIndex, ACTIVE_TRACKS } from './targets.js';
 import { contextPayload } from './sandbox-context.js';
 import {
   parseThinking, parseDraftAttempt, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
-  DEFAULT_BROWSE_EVERY, DEFAULT_MAX_THINKING_PER_SESSION, LOOP_THINKING_MAX_TOKENS,
+  DEFAULT_BROWSE_EVERY, DEFAULT_PEERS_EVERY, DEFAULT_MAX_THINKING_PER_SESSION, LOOP_THINKING_MAX_TOKENS,
   DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION, LOOP_DRAFT_MAX_TOKENS,
 } from './sandbox-activity.js';
-import { validateLoopAttempt } from './hashsmash.js';
+import { validateLoopAttempt, findCitedReference } from './hashsmash.js';
 
 // 'validated' = the candidate passed HashSmash's real local intake (mechanical
 // checks only). It is not judged, not scored, and not submitted anywhere.
@@ -214,7 +224,8 @@ export const LOOP_THINKING_SYSTEM = 'You are a HashSmash solver agent whose work
   + 'In two or three short sentences, say the next concrete thing you will try on this target, why, and how it could beat your best result so far. '
   + 'Never claim a result, a found collision or progress you do not have; if you have no real result yet, or cannot beat your best one, say that plainly instead of pretending otherwise. '
   + 'If looking up published literature would genuinely help this step, end with one line "SEARCH: <a short query for the IACR ePrint archive>"; otherwise do not add that line. '
-  + 'Separately: if, and only if, what you have actually read and thought about this session gives you something specific and disclosed you could honestly put in an improved candidate claim '
+  + 'Separately: if seeing what other real competitors on this exact same track have actually submitted (their own claimed, unverified scores and notes, as open pull requests on the real HashSmash repository) would genuinely help, end with one line "PEERS: <one short reason>"; otherwise do not add that line either. '
+  + 'Separately again: if, and only if, what you have actually read and thought about this session gives you something specific and disclosed you could honestly put in an improved candidate claim '
   + '(a real heuristic with a stated scope and limitations, citing a real paper you actually looked up this session), end with one more line "DRAFT: <one short reason>" so you can be asked for it properly next step. '
   + 'The honest default is that you do not have this yet; most steps should not add that line, and adding it when you are not sure is worse than leaving it off.';
 
@@ -225,15 +236,15 @@ export const LOOP_DRAFT_SYSTEM = 'You are the same HashSmash solver agent, now a
   + 'Answer in EXACTLY this plain-text format and nothing else, no markdown, nothing before or after it. First line: "ATTEMPT: yes" or "ATTEMPT: no". '
   + 'If, and only if, yes, add every one of these lines, each with a real, specific, honestly-limited value, in this order: '
   + 'TIME_LOG2: <plain number>, MEMORY_LOG2_BYTES: <plain number>, SUCCESS_PROBABILITY: <plain number between 0.39 and 1>, '
-  + 'HEURISTIC_ID: <short slug, letters/digits/._- only>, CITED_PAPER_ID: <the exact IACR ePrint id, e.g. 2026/1234, from your own last real search results below — never invent or remember one from elsewhere>, '
+  + 'HEURISTIC_ID: <short slug, letters/digits/._- only>, CITED_PAPER_ID: <EITHER the exact IACR ePrint id, e.g. 2026/1234, from your own last real search results below, OR, if you are instead citing a real competitor pull request you actually looked at this session, exactly "PR#<its number>" e.g. PR#302 — never invent or remember either one from elsewhere>, '
   + 'STATEMENT: <the specific heuristic you are proposing, one or two sentences>, SCOPE: <exactly what construction, parameters or premise this is argued or measured for>, '
   + 'EXTRAPOLATION: <what you actually did this session that supports it, and precisely how far beyond that you are extending it>, '
   + 'LIMITATIONS: <what is NOT proven here, stated as plainly as the sha256-r32 research package does it — no collision found, an estimate under one disclosed premise, etc.>. '
-  + 'Never write that something is proven, verified, confirmed or guaranteed when it is only estimated or argued from a short literature read. '
+  + 'Never write that something is proven, verified, confirmed or guaranteed when it is only estimated or argued from a short literature read or another competitor\'s own unverified, self-reported claim. '
   + 'If you cannot honestly give a real CITED_PAPER_ID taken from the results you were actually given this session, answer "ATTEMPT: no".';
 
 /** Feed entry types that are the RAM's research history (what a thinking step is grounded in). */
-const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|pipeline-.*|sandbox-browse|sandbox-task-done|suggestion-attached)$/;
+const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|pipeline-.*|sandbox-browse|sandbox-peer-review|sandbox-task-done|suggestion-attached)$/;
 
 /**
  * Updates, on the slot itself, the best REAL numeric result a pipeline run
@@ -272,6 +283,14 @@ export function loopGrounding(slot) {
     out += ` Your last literature search, "${ls.query}" on the IACR ePrint archive, listed: ${
       ls.results.length ? ls.results.slice(0, 5).map((r) => `${r.id} "${clip(r.title, 120)}"`).join('; ') : 'no results'
     } (titles only; you have not read these papers).`;
+  }
+  const pr = slot.lastPeerReview;
+  if (pr) {
+    out += ` Other real competitors' open pull requests on ${pr.track} (from your last real GitHub lookup): ${
+      pr.results.length
+        ? pr.results.slice(0, 5).map((r) => `PR #${r.number}${r.login ? ` by @${r.login}` : ''}${r.claimedScore ? ` (claimed score ${r.claimedScore})` : ''}`).join('; ')
+        : 'none currently open mention this track'
+    } (their own self-reported, unverified claims; an open PR may still be rejected or wrong, never treat one as proven).`;
   }
   return out;
 }
@@ -332,6 +351,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       live: activeLoop.live === true,
       stepPauseMs: Math.min(MAX_STEP_PAUSE_SEC * 1000, Math.max(floor, activeLoop.stepPauseMs ?? DEFAULT_STEP_PAUSE_SEC * 1000)),
       browseEvery: Math.max(1, activeLoop.browseEvery ?? DEFAULT_BROWSE_EVERY),
+      peersEvery: Math.max(1, activeLoop.peersEvery ?? DEFAULT_PEERS_EVERY),
       maxThinkingPerSession: Math.max(1, activeLoop.maxThinkingPerSession ?? DEFAULT_MAX_THINKING_PER_SESSION),
       maxDraftAttemptsPerSession: Math.max(1, activeLoop.maxDraftAttemptsPerSession ?? DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION),
       maxFailures: Math.max(1, activeLoop.maxFailures ?? 5),
@@ -532,11 +552,12 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         ? { model, system: LOOP_THINKING_SYSTEM, prompt: `${base}${loopGrounding(slot)}`, maxTokens: LOOP_THINKING_MAX_TOKENS }
         : { model, system: 'You are a HashSmash solver agent. Describe, in one sentence, the next concrete thing you will try.', prompt: base });
       let text = result.text;
-      slot.lastThink = { mocked: Boolean(result.mocked), search: null, draftReason: null };
+      slot.lastThink = { mocked: Boolean(result.mocked), search: null, peersReason: null, draftReason: null };
       if (fromLoop) {
-        const { note, search, draftReason } = parseThinking(result.text);
+        const { note, search, peersReason, draftReason } = parseThinking(result.text);
         text = note || '(the model returned no text for this step)';
         slot.lastThink.search = result.mocked ? null : search;
+        slot.lastThink.peersReason = result.mocked ? null : peersReason;
         slot.lastThink.draftReason = result.mocked ? null : draftReason;
       }
       slot.status = 'thinking';
@@ -662,8 +683,10 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
    *     real package is never overwritten by anything this function reaches;
    *   - the slot's own last thinking step must have actually asked for it
    *     (a real "DRAFT: ..." line, parsed into `slot.lastThink.draftReason`);
-   *   - the slot must have done at least one real IACR ePrint search this
-   *     session (`slot.lastSearch`) — no real search yet, no attempt;
+   *   - the slot must have done at least one real session of grounding —
+   *     a real IACR ePrint search (`slot.lastSearch`) or a real GitHub
+   *     lookup of other competitors' open PRs on this track
+   *     (`slot.lastPeerReview`) — no real lookup yet, no attempt;
    *   - bounded: at most `maxDraftAttemptsPerSession` per slot (falls back
    *     to sandbox-activity.js's default when no active loop is configured,
    *     so this stays bounded even when a caller drives `advance()` by hand).
@@ -677,7 +700,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       fromLoop
       && slot.lastThink?.draftReason
       && pipelineRunner?.candidateKindFor?.(track) !== 'research'
-      && slot.lastSearch
+      && (slot.lastSearch || slot.lastPeerReview)
       && (slot.draftAttempts ?? 0) < (loopCfg?.maxDraftAttemptsPerSession ?? DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION),
     );
   }
@@ -696,6 +719,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     const { track, model, approach, modelSource } = slot.assignment;
     slot.draftAttempts = (slot.draftAttempts ?? 0) + 1;
     const lastSearchResults = slot.lastSearch?.results ?? [];
+    const lastPeerResults = slot.lastPeerReview?.results ?? [];
     const prompt = `${loopGrounding(slot)} Earlier this cycle you said: "${slot.lastThink.draftReason}". Decide now, honestly and specifically.`;
     const result = await llmProvider.complete({ model, system: LOOP_DRAFT_SYSTEM, prompt, maxTokens: LOOP_DRAFT_MAX_TOKENS });
     if (costLedger && result.usage) {
@@ -712,14 +736,15 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       await runRealPipeline(slot);
       return;
     }
-    const check = validateLoopAttempt(attempt, { lastSearchResults });
+    const check = validateLoopAttempt(attempt, { lastSearchResults, lastPeerResults });
     if (!check.ok) {
       slot.status = 'failed';
       pushFeed(slot, 'pipeline-loop-draft-rejected', `This RAM's model tried to draft its own candidate claim for ${track} but it failed this harness's own honesty/structure checks before HashSmash's real validation even ran: ${check.errors.join('; ')}. This is a real failed attempt, not a hidden one; nothing was submitted or shown as a result.`);
       return;
     }
-    const citedPaper = lastSearchResults.find((r) => r.id === attempt.citedPaperId);
-    pushFeed(slot, 'pipeline-loop-draft-attempt', `This RAM's model proposed its own candidate claim for ${track} (heuristic "${attempt.heuristicId}", citing ePrint ${citedPaper.id}); it still has to pass the exact same real HashSmash pipeline as any other candidate, and stays a draft either way.`);
+    const citedPaper = findCitedReference(attempt.citedPaperId, { lastSearchResults, lastPeerResults });
+    const citedDesc = citedPaper.kind === 'peer-pr' ? `competitor PR #${citedPaper.number}` : `ePrint ${citedPaper.id}`;
+    pushFeed(slot, 'pipeline-loop-draft-attempt', `This RAM's model proposed its own candidate claim for ${track} (heuristic "${attempt.heuristicId}", citing ${citedDesc}); it still has to pass the exact same real HashSmash pipeline as any other candidate, and stays a draft either way.`);
     await runRealPipeline(slot, { loopDraft: { attempt, citedPaper } });
   }
 
@@ -880,6 +905,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     const entry = {
       sessionId, timer: null, running: null, stopped: false, startedAt: now(),
       steps: 0, thinking: 0, failures: 0, lastBrowseThinking: -Infinity, browses: 0,
+      lastPeersThinking: -Infinity, peers: 0,
       notepadId: null, browserId: null, terminalId: null, inspects: 0, unverifiedTyping: 0,
       lastAdvanceEndMs: null, maxGapMs: 0, history: [],
     };
@@ -962,6 +988,23 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
             : 'The search listed no papers.'
         }`);
       }
+      // A fourth honest activity, same rate-limited shape as the ePrint
+      // search above but for real OTHER COMPETITORS' submissions: open PRs
+      // on the real HashSmash repo, filtered to this RAM's own track.
+      const peersWanted = wasIdle ? slot.lastThink?.peersReason : null;
+      if (peersWanted && entry.thinking - entry.lastPeersThinking >= loopCfg.peersEvery && loopIsCurrent(slot, entry)) {
+        entry.lastPeersThinking = entry.thinking;
+        const p = await sandboxManager.runTask(slot.id, (sbx) => sandboxActivity.browsePeerSubmissions(sbx, { assignment: slot.assignment, windowId: entry.terminalId }));
+        if (!loopIsCurrent(slot, entry)) return;
+        entry.terminalId = p.windowId;
+        entry.peers += 1;
+        slot.lastPeerReview = { track: p.track, url: p.url, results: p.results, at: now() };
+        pushFeed(slot, 'sandbox-peer-review', `Looked up real open pull requests on the HashSmash repository for ${p.track} in a terminal on desktop ${entry.sessionId} (this RAM's model asked to see other competitors' submissions). ${
+          p.results.length
+            ? `Found: ${p.results.slice(0, 3).map((r) => `PR #${r.number}${r.login ? ` by @${r.login}` : ''}${r.claimedScore ? ` (claimed score ${r.claimedScore})` : ''}`).join('; ')}. Other competitors' own self-reported, unverified claims on an open PR — never treated as proven or copied.`
+            : `No open pull requests currently mention ${p.track}.`
+        }`);
+      }
       entry.failures = 0;
       scheduleLoopStep(slot, entry, loopCfg.stepPauseMs);
     } catch (err) {
@@ -1005,10 +1048,11 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       stepPauseMs: loopCfg?.stepPauseMs ?? null,
       maxIdleMs: MAX_IDLE_MS,
       browseEvery: loopCfg?.browseEvery ?? null,
+      peersEvery: loopCfg?.peersEvery ?? null,
       maxThinkingPerSession: loopCfg?.maxThinkingPerSession ?? null,
       maxDraftAttemptsPerSession: loopCfg?.maxDraftAttemptsPerSession ?? null,
       loops: [...loops].map(([slotId, e]) => ({
-        slotId, sessionId: e.sessionId, startedAt: e.startedAt, steps: e.steps, thinking: e.thinking, browses: e.browses, inspects: e.inspects,
+        slotId, sessionId: e.sessionId, startedAt: e.startedAt, steps: e.steps, thinking: e.thinking, browses: e.browses, peers: e.peers, inspects: e.inspects,
         failures: e.failures, maxGapMs: e.maxGapMs, unverifiedTyping: e.unverifiedTyping, history: e.history.map((h) => ({ ...h })),
       })),
     };
