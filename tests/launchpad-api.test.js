@@ -17,8 +17,8 @@ const TEST_PNG = makePng({ note: 'launchpad-api.test' });
 const TEST_IMAGE_ID = imageIdFor(TEST_PNG);
 
 /** A Solana client that never touches the network and counts its calls. */
-function stubSolana({ tableAddresses = null } = {}) {
-  const calls = { blockhash: 0, table: 0 };
+function stubSolana({ tableAddresses = null, transactions = {} } = {}) {
+  const calls = { blockhash: 0, table: 0, transaction: 0 };
   return {
     calls,
     async getLatestBlockhash() {
@@ -29,6 +29,20 @@ function stubSolana({ tableAddresses = null } = {}) {
       calls.table++;
       return tableAddresses ? lookupTableAccount(address, tableAddresses) : null;
     },
+    // jsonParsed-shaped, same as launchverify.js's accountKeysOf() expects; keyed by signature.
+    async getTransaction(signature) {
+      calls.transaction++;
+      if (signature === 'rpc-down') throw new Error('RPC unavailable (stub)');
+      return transactions[signature] ?? null;
+    },
+  };
+}
+
+/** A fake jsonParsed getTransaction() result for a launch signature. */
+function fakeLaunchTx({ mint, treasury, owner, err = null, createV2 = true }) {
+  return {
+    meta: { err, logMessages: createV2 ? ['Program log: Instruction: CreateV2'] : ['Program log: Instruction: Transfer'] },
+    transaction: { message: { accountKeys: [owner, mint, treasury].map((pubkey) => ({ pubkey })) } },
   };
 }
 
@@ -125,7 +139,7 @@ test('without a lookup table, building the launch is refused with its real size,
   const b = await res.json();
   assert.equal(b.error, 'lookup_table_required');
   assert.ok(b.sizeBytes > MAX_TX_BYTES);
-  assert.deepEqual(s.solana.calls, { blockhash: 0, table: 0 });
+  assert.deepEqual(s.solana.calls, { blockhash: 0, table: 0, transaction: 0 });
   assert.equal((await (await s.get(`/api/launchpad/rams/${ram.id}`)).json()).ram.status, 'draft', 'nothing prepared');
 });
 
@@ -257,4 +271,83 @@ test('launchpad routes are rate limited per client', async (t) => {
 test('a bad TREASURY_WALLET stops the server from starting', async () => {
   const base = loadConfig({});
   await assert.rejects(startApp({ launchpad: { ...base.launchpad, treasury: 'not-an-address' } }), /TREASURY_WALLET/);
+});
+
+test('POST /api/launchpad/rams/:id/report-signature: not landed yet is a 202, not an error', async (t) => {
+  const addrs = await launchLookupTableAddresses();
+  const s = await start({ lookupTable: TABLE, solana: stubSolana({ tableAddresses: addrs }) });
+  t.after(() => s.stop());
+  const ram = await createRam(s);
+  await s.postJson(`/api/launchpad/rams/${ram.id}/transaction`, { mint: wallet() });
+
+  const notYet = await s.postJson(`/api/launchpad/rams/${ram.id}/report-signature`, { signature: sig() });
+  assert.equal(notYet.status, 202);
+  assert.equal((await notYet.json()).error, 'not_found');
+  assert.equal((await (await s.get(`/api/launchpad/rams/${ram.id}`)).json()).ram.status, 'awaiting-signature');
+});
+
+test('POST /api/launchpad/rams/:id/report-signature verifies on chain for real and activates the RAM itself, no operator needed', async (t) => {
+  const addrs = await launchLookupTableAddresses();
+  const launchSig = sig();
+  const mint = wallet();
+  const owner = wallet();
+  const solana = stubSolana({ tableAddresses: addrs, transactions: { [launchSig]: fakeLaunchTx({ mint, treasury: DEFAULT_TREASURY, owner }) } });
+  const s = await start({ lookupTable: TABLE, solana });
+  t.after(() => s.stop());
+  const ram = await createRam(s, { owner });
+  await s.postJson(`/api/launchpad/rams/${ram.id}/transaction`, { mint });
+  const reportPath = `/api/launchpad/rams/${ram.id}/report-signature`;
+
+  const ok = await s.postJson(reportPath, { signature: launchSig });
+  assert.equal(ok.status, 200);
+  const active = (await ok.json()).ram;
+  assert.equal(active.status, 'active');
+  assert.equal(active.launchSignature, launchSig);
+  assert.ok(active.slotId, 'the owned slot was created, same as the admin /confirm route');
+
+  // Idempotent: reporting the same signature again is a 200, not an error.
+  const again = await s.postJson(reportPath, { signature: launchSig });
+  assert.equal(again.status, 200);
+  assert.equal((await again.json()).ram.status, 'active');
+
+  // A different signature on an already-active RAM is refused, not silently accepted.
+  const conflicting = await s.postJson(reportPath, { signature: sig() });
+  assert.equal(conflicting.status, 409);
+});
+
+test('POST /api/launchpad/rams/:id/report-signature never activates a RAM on a mismatched, failed or unreachable chain', async (t) => {
+  const addrs = await launchLookupTableAddresses();
+  const other = wallet();
+  const mismatchSig = sig();
+  const failedSig = sig();
+  const solana = stubSolana({
+    tableAddresses: addrs,
+    transactions: {
+      [mismatchSig]: fakeLaunchTx({ mint: other, treasury: DEFAULT_TREASURY, owner: other }), // wrong mint/owner entirely
+      [failedSig]: fakeLaunchTx({ mint: other, treasury: DEFAULT_TREASURY, owner: other, err: { InstructionError: [0, 'Custom'] } }),
+    },
+  });
+  const s = await start({ lookupTable: TABLE, solana });
+  t.after(() => s.stop());
+  const ram = await createRam(s);
+  const mint = wallet();
+  await s.postJson(`/api/launchpad/rams/${ram.id}/transaction`, { mint });
+  const reportPath = `/api/launchpad/rams/${ram.id}/report-signature`;
+
+  const mismatch = await s.postJson(reportPath, { signature: mismatchSig });
+  assert.equal(mismatch.status, 400);
+  assert.equal((await mismatch.json()).error, 'mismatch');
+
+  const rpcDown = await s.postJson(reportPath, { signature: 'rpc-down' });
+  assert.equal(rpcDown.status, 502);
+  assert.equal((await rpcDown.json()).error, 'rpc_error');
+
+  const missingField = await s.postJson(reportPath, {});
+  assert.equal(missingField.status, 400);
+
+  const unknownRam = await s.postJson('/api/launchpad/rams/ram-9999/report-signature', { signature: sig() });
+  assert.equal(unknownRam.status, 404);
+
+  // Still 'awaiting-signature' after every refusal above -- nothing here half-activated it.
+  assert.equal((await (await s.get(`/api/launchpad/rams/${ram.id}`)).json()).ram.status, 'awaiting-signature');
 });

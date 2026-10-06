@@ -850,6 +850,21 @@ const launchpadAPI = {
     // (never invented rows) — matching the real server with nobody ever having launched.
     return { status: 200, body: { ok: true, rams: [...mockLaunchpad.rams.values()] }, mock: true };
   },
+
+  /**
+   * POST /api/launchpad/rams/:id/report-signature { signature } -> called right after
+   * sendRawTransaction + confirmTransaction succeed, so the server can verify the signature
+   * for real on chain and activate the RAM itself — no operator finding the signature and
+   * confirming by hand. 200 { ok, ram } once verified+active | 202 { ok:false, error:
+   * 'not_found' } if the chain hasn't caught up yet (retry) | 400/409/502 on a real refusal.
+   */
+  async reportSignature(id, signature) {
+    if (await backendReady) return apiRequest("POST", `/api/launchpad/rams/${encodeURIComponent(id)}/report-signature`, { signature });
+    await simulatedLatency(200, 400);
+    // No real chain to check in the fallback: report the fact and let the operator know this
+    // never left the browser's own built-in simulation.
+    return { status: 202, body: { ok: false, error: "not_found", message: "No real backend to verify against (built-in fallback)." }, mock: true };
+  },
 };
 
 RAMherdAPI.launchpad = launchpadAPI;

@@ -10,6 +10,13 @@
 //   GET  /api/launchpad/rams/:id               one RAM, with its funding totals
 //   GET  /api/launchpad/rams/:id/metadata.json the token's metadata (its create_v2 uri)
 //   POST /api/launchpad/rams/:id/transaction   build the UNSIGNED launch tx for {mint}
+//   POST /api/launchpad/rams/:id/report-signature  {signature} the wallet's own browser calls
+//        this right after sendRawTransaction(); verifies the signature on chain for real
+//        (launchverify.js) and, only if it checks out, activates the RAM itself -- no operator
+//        has to find the signature and POST the admin /confirm route by hand. Still idempotent
+//        and still a 409/202/502/400 (never a silent pass) when the chain disagrees or hasn't
+//        caught up yet. The admin /confirm route below still exists for a launch this missed
+//        (e.g. the browser tab closed before the report call went out).
 //   GET  /api/launchpad/payouts?wallet=<w>     owed/sent payout records
 // Admin (x-admin-token, checked by app.js before handleAdmin runs):
 //   POST /api/admin/launchpad/rams/:id/confirm       {signature, briefApproved:true}
@@ -35,6 +42,7 @@ import {
 } from './lib/launchtx.js';
 import { createRateLimiter } from './lib/ratelimit.js';
 import { ImageError, MAX_IMAGE_BYTES } from './lib/images.js';
+import { verifyLaunchSignature } from './lib/launchverify.js';
 
 // Any valid 32-byte base58 value works for measuring size; this one is the
 // System Program id. Used only when no table exists, to report the real size.
@@ -56,6 +64,14 @@ export function createSolanaClient(rpcUrl) {
     },
     async getLookupTable(address) {
       return (await (await conn()).getAddressLookupTable(new PublicKey(address))).value;
+    },
+    // jsonParsed, not the plain getTransaction(): launchverify.js's accountKeysOf() reads
+    // message.accountKeys as [{pubkey, ...}], which only getParsedTransaction returns (plain
+    // getTransaction's message is a compiled Message/VersionedMessage with no accountKeys at
+    // all). See launchverify.js's own comment -- this exact mismatch is why that module
+    // reported every real, finalized launch as a "mismatch" until both were fixed together.
+    async getTransaction(signature) {
+      return (await conn()).getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 });
     },
   };
 }
@@ -270,6 +286,52 @@ export function createLaunchpadRoutes({ store, config, sendOk, sendError, readJs
     });
   }
 
+  /**
+   * The client calls this itself right after `connection.sendRawTransaction(...)` lands (or
+   * even just after it's sent -- a `not_found` answer here means "try again shortly", not
+   * "failed"). Verifies the signature for real against the chain (launchverify.js) and, only
+   * if it checks out, activates the RAM the same way the admin /confirm route does -- closing
+   * the gap where every real launch needed an operator to find the signature and enter it by
+   * hand. Never trusts the signature's shape alone, and never marks anything active on a
+   * network error or an unconfirmed transaction.
+   */
+  async function postReportSignature(req, res, id) {
+    if (rateLimited(req, res)) return;
+    const body = await readJsonBody(req, res);
+    if (body === undefined) return;
+    const ram = store.rams.get(id);
+    if (!ram) return sendError(res, 404, 'not_found');
+    if (typeof body.signature !== 'string' || !body.signature) {
+      return sendError(res, 400, 'bad_request', 'Body must include the "signature" your wallet returned after sending the transaction.');
+    }
+    if (ram.status === 'active') {
+      // Idempotent: the client retrying its own already-successful report is not an error.
+      if (ram.launchSignature === body.signature) return sendOk(res, { ram });
+      return sendError(res, 409, 'bad_request', `RAM ${id} is already active under a different signature.`);
+    }
+    if (ram.status !== 'awaiting-signature' || !ram.token.mint) {
+      return sendError(res, 409, 'bad_request', `RAM ${id} is ${ram.status}; there is no pending launch transaction to verify.`);
+    }
+
+    const verdict = await verifyLaunchSignature(solana, body.signature, { mint: ram.token.mint, treasury: lp.treasury, owner: ram.owner });
+    if (!verdict.ok) {
+      // not_found: the transaction may simply not have landed/finalized yet -- 202 says so,
+      // never a 4xx that would read as "that was wrong". Everything else is a real refusal.
+      const httpStatus = verdict.code === 'not_found' ? 202 : verdict.code === 'rpc_error' ? 502 : 400;
+      return sendError(res, httpStatus, verdict.code, verdict.reason);
+    }
+
+    let confirmed;
+    try {
+      // The free-text brief already passed screenIdea() at draft time (launchpad.js); the
+      // operator's admin /confirm route exists for anything this endpoint doesn't catch.
+      confirmed = store.rams.confirmLaunch(id, { signature: body.signature, briefApproved: true });
+    } catch (err) {
+      return sendError(res, 409, 'bad_request', err.message);
+    }
+    sendOk(res, { ram: confirmed });
+  }
+
   /** @returns {Promise<boolean>} true when handled */
   async function handlePublic(req, res, { pathname, parts, method, query }) {
     if (parts[0] !== 'api' || parts[1] !== 'launchpad') return false;
@@ -320,6 +382,10 @@ export function createLaunchpadRoutes({ store, config, sendOk, sendError, readJs
     }
     if (parts[2] === 'rams' && parts.length === 5 && parts[4] === 'transaction' && method === 'POST') {
       await postTransaction(req, res, parts[3]);
+      return true;
+    }
+    if (parts[2] === 'rams' && parts.length === 5 && parts[4] === 'report-signature' && method === 'POST') {
+      await postReportSignature(req, res, parts[3]);
       return true;
     }
     sendError(res, 404, 'not_found');

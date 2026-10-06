@@ -575,17 +575,43 @@ function base64ToBytes(b64) {
 }
 
 /**
- * The live handoff: sign and send one launch transaction for an already-created RAM.
+ * Tells the server about a just-sent launch signature (POST .../report-signature) so it can
+ * verify it for real on chain and activate the RAM itself -- no operator has to find the
+ * signature and confirm by hand. Retries on a 202 ("not found yet", not a refusal): the
+ * server's own RPC call can lag a moment behind the browser's. Never throws: a failed report
+ * must not make the click handler show "the transaction was not sent" when the real send
+ * above already succeeded -- the RAM just stays 'awaiting-signature' until it's retried
+ * (reloading the slip and signing again re-sends buildTransaction, which is harmless; or the
+ * operator's admin /confirm route still works as the fallback it always was).
+ */
+async function reportSignatureWithRetry(ramId, signature, { attempts = 4, delayMs = 2500 } = {}) {
+  for (let i = 0; i < attempts; i++) {
+    if (i > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      const res = await api.reportSignature(ramId, signature);
+      if (res.status === 200 && res.body?.ok) return { activated: true, ram: res.body.ram };
+      if (res.status !== 202) return { activated: false, reason: res.body?.message || res.body?.error || `HTTP ${res.status}` };
+      // 202 'not_found': the signature may still be confirming; try again.
+    } catch {
+      // A network hiccup reporting it is not the same as the launch failing; keep trying.
+    }
+  }
+  return { activated: false, reason: "not confirmed by the server yet; it may still land" };
+}
+
+/**
+ * The live handoff: sign and send one launch transaction for an already-created RAM, then
+ * report the signature so the server can verify it on chain and activate the RAM itself.
  *
- * NOT EXERCISED. It has never run against a real wallet or cluster, and it cannot run while
- * the launchpad is not live: the guard below throws first. Order of operations:
+ * NOT EXERCISED against a real wallet or cluster; it cannot run while the launchpad is not
+ * live, the guard below throws first. Order of operations:
  *   1. generate the mint keypair here, in the browser (its secret never leaves this function);
  *   2. ask the API to build the transaction for that mint's public key;
  *   3. Phantom signs as the owner (provider.signTransaction), then the mint signs;
- *   4. send the raw bytes with Connection.sendRawTransaction.
+ *   4. send the raw bytes with Connection.sendRawTransaction;
+ *   5. wait for it to confirm, then report the signature (see reportSignatureWithRetry above).
  *
- * CSP note: when server/ serves this page its policy is `default-src 'self'`, which blocks
- * fetches to a Solana RPC. Going live needs a `connect-src` entry for the RPC URL used here.
+ * CSP note: the page's connect-src must allow the RPC URL used here (server/app.js's PAGE_CSP).
  */
 export async function signAndSendLaunch({ provider, ramId, rpcUrl } = {}) {
   if (!isLive()) throw new Error("The launchpad is not live: signing is switched off.");
@@ -602,7 +628,15 @@ export async function signAndSendLaunch({ provider, ramId, rpcUrl } = {}) {
   const signedTx = await provider.signTransaction(tx);
   signedTx.sign([mintKeypair]);
   const connection = new web3.Connection(rpcUrl || web3.clusterApiUrl(state.config.cluster), "confirmed");
-  return connection.sendRawTransaction(signedTx.serialize());
+  const signature = await connection.sendRawTransaction(signedTx.serialize());
+  try {
+    await connection.confirmTransaction(signature, "confirmed");
+  } catch {
+    // Either it genuinely failed to confirm, or this RPC call itself timed out while the
+    // transaction still lands; reportSignatureWithRetry checks the real chain state either way.
+  }
+  const report = await reportSignatureWithRetry(ramId, signature);
+  return { signature, ...report };
 }
 
 function renderSignState() {
@@ -630,8 +664,8 @@ $("sign-btn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Waiting for Phantom…";
   try {
-    const signature = await signAndSendLaunch({ provider: state.provider, ramId: state.ramId, rpcUrl: state.config?.rpcUrl });
-    setIndex("sign", `sent ${shortAddress(signature)}`, true);
+    const { signature, activated, reason } = await signAndSendLaunch({ provider: state.provider, ramId: state.ramId, rpcUrl: state.config?.rpcUrl });
+    setIndex("sign", activated ? `live: ${shortAddress(signature)}` : `sent ${shortAddress(signature)} (${reason || "confirming"})`, true);
   } catch (err) {
     setIndex("sign", "not sent", false);
     showError("sign", err?.message || "The transaction was not sent.");
