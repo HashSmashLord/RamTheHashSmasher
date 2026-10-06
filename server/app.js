@@ -127,7 +127,7 @@ export function createApp(config) {
     budgetConfig: config.budget,
     env: config.env ?? process.env,
     loadSandboxSdk: config.loadSandboxSdk,
-    launchpad: { publicBaseUrl: config.launchpad.publicBaseUrl, treasury: config.launchpad.treasury },
+    launchpad: { publicBaseUrl: config.launchpad.publicBaseUrl, treasury: config.launchpad.treasury, rpcUrl: config.launchpad.rpcUrl },
     log: config.log || (() => {}),
   });
   const ideaLimiter = createRateLimiter(config.ideaRateLimit);

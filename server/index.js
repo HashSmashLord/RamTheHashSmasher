@@ -1,6 +1,7 @@
 import { loadConfig, loadDotEnv } from './config.js';
 import { createApp } from './app.js';
 import { autoSeedPolicy, seedRosterFunding, startRosterSandboxes } from './lib/autoseed.js';
+import { pumpFeePolicy } from './lib/pumpfee.js';
 
 loadDotEnv();
 const config = loadConfig();
@@ -23,6 +24,20 @@ console.log(`herd listening on http://${address.address}:${address.port}`);
 // failed for any reason. Roster sandboxes are still skipped if the roster
 // itself never got funded (startRosterSandboxes only targets active slots).
 if (autoSeed.enabled) startRosterSandboxes(app.store, { log: config.log });
+
+// Real pump.fun fee reader (RAMHERD_FEE_SOURCE=onchain; server/lib/pumpfee.js): the fee
+// ledger's own refresh() is otherwise only called on boot and after an admin mutation
+// (see store.js), which would leave "Fees collected, lifetime" frozen at whatever it read
+// on the last restart for a long-running server. A periodic refresh is the real source's
+// only way to ever see a newer fee. Off entirely unless the real source itself is on; a
+// failed refresh (RPC hiccup, CoinGecko down) just logs and tries again next tick, never
+// crashes the process.
+const PUMP_FEE_REFRESH_MS = 10 * 60 * 1000; // 10 minutes: plenty fresh, gentle on the free public RPC/CoinGecko
+if (pumpFeePolicy(process.env).enabled) {
+  setInterval(() => {
+    app.store.ledger.refresh().catch((err) => config.log(`pumpfee: periodic refresh failed, will retry next tick: ${err?.message || err}`));
+  }, PUMP_FEE_REFRESH_MS).unref();
+}
 
 let closing = false;
 async function shutdown() {

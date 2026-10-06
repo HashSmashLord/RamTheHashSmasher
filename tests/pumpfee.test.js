@@ -1,0 +1,162 @@
+// Unit tests for server/lib/pumpfee.js: the real on-chain pump.fun creator-fee reader.
+// Pure, with a fake connection and a fake price source -- no network, same pattern as
+// tests/launchverify.test.js.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { creatorFeeLamportsOf, createPumpFeeSource, createCoinGeckoPriceSource, pumpFeePolicy } from '../server/lib/pumpfee.js';
+
+const TREASURY = 'Treasury111111111111111111111111111111111';
+const OTHER = 'Other1111111111111111111111111111111111111';
+
+function distributeTx({ keys = [OTHER, TREASURY], pre = [0, 1_000_000], post = [0, 1_010_468], err = null } = {}) {
+  return {
+    meta: { err, logMessages: ['Program log: Instruction: DistributeCreatorFees'], preBalances: pre, postBalances: post },
+    transaction: { message: { accountKeys: keys } },
+  };
+}
+
+function createV2Tx({ keys = [OTHER, TREASURY], pre = [0, 1_000_000], post = [0, 1_010_000_000] } = {}) {
+  // A RAM's own 0.01 SOL launch create-fee, same wallet, different real instruction.
+  return {
+    meta: { err: null, logMessages: ['Program log: Instruction: CreateV2'], preBalances: pre, postBalances: post },
+    transaction: { message: { accountKeys: keys } },
+  };
+}
+
+test('creatorFeeLamportsOf: only a real DistributeCreatorFees transaction counts, and only the treasury\'s own real balance delta', () => {
+  assert.equal(creatorFeeLamportsOf(distributeTx(), TREASURY), 10468);
+  assert.equal(creatorFeeLamportsOf(null, TREASURY), 0, 'no transaction -> 0, never a guess');
+  assert.equal(creatorFeeLamportsOf(distributeTx({ err: { InstructionError: [0, 'Custom'] } }), TREASURY), 0, 'a failed transaction never moved real money');
+  assert.equal(creatorFeeLamportsOf(createV2Tx(), TREASURY), 0, 'a RAM launch create-fee is a different real instruction, never counted here');
+  assert.equal(creatorFeeLamportsOf(distributeTx({ keys: [OTHER, 'SomeoneElse1111111111111111111111111111111'] }), TREASURY), 0, 'treasury not even in this transaction');
+  assert.equal(creatorFeeLamportsOf(distributeTx({ pre: [0, 1_000_000], post: [0, 999_000] }), TREASURY), 0, 'a real decrease is never reported as a positive fee');
+});
+
+test('creatorFeeLamportsOf: accountKeys as {pubkey} objects (PublicKey-shaped), not bare strings -- same real gotcha as launchverify.js', () => {
+  const tx = distributeTx({ keys: [{ pubkey: { toBase58: () => OTHER } }, { pubkey: { toBase58: () => TREASURY } }] });
+  assert.equal(creatorFeeLamportsOf(tx, TREASURY), 10468);
+});
+
+function fakeConnection({ pages = [], txs = {} } = {}) {
+  const calls = { getSignaturesForAddress: [], getTransaction: [] };
+  return {
+    calls,
+    async getSignaturesForAddress(address, opts) {
+      calls.getSignaturesForAddress.push({ address, opts });
+      const idx = pages.length - calls.getSignaturesForAddress.length;
+      return pages[calls.getSignaturesForAddress.length - 1] ?? [];
+    },
+    async getTransaction(signature) {
+      calls.getTransaction.push(signature);
+      return txs[signature] ?? null;
+    },
+  };
+}
+
+function fakePriceSource(usd = 100) {
+  return { calls: 0, async fetchSolUsd() { this.calls++; return usd; } };
+}
+
+test('createPumpFeeSource: sums real DistributeCreatorFees lamports across the treasury\'s history and converts at the real SOL price', async () => {
+  const connection = fakeConnection({
+    pages: [[{ signature: 's2', err: null }, { signature: 's1', err: null }]],
+    txs: {
+      s2: distributeTx({ pre: [0, 2_000_000], post: [0, 2_005_000] }), // +5000 lamports
+      s1: distributeTx({ pre: [0, 1_000_000], post: [0, 1_010_468] }), // +10468 lamports
+    },
+  });
+  const priceSource = fakePriceSource(100); // $100/SOL
+  const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource });
+  assert.equal(source.kind, 'onchain');
+  const totalUsd = await source.fetchTotal();
+  // (5000 + 10468) lamports / 1e9 * 100 usd = 0.0015468 usd
+  assert.equal(totalUsd, Math.round(((5000 + 10468) / 1e9) * 100 * 100) / 100);
+});
+
+test('createPumpFeeSource: a failed signature is never fetched or counted', async () => {
+  const connection = fakeConnection({
+    pages: [[{ signature: 'ok1', err: null }, { signature: 'bad1', err: { InstructionError: [] } }]],
+    txs: { ok1: distributeTx() },
+  });
+  const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1) });
+  await source.fetchTotal();
+  assert.deepEqual(connection.calls.getTransaction, ['ok1'], 'the failed signature is skipped before ever calling getTransaction');
+});
+
+test('createPumpFeeSource: a non-DistributeCreatorFees transaction (e.g. a RAM launch) contributes 0', async () => {
+  const connection = fakeConnection({
+    pages: [[{ signature: 'launch1', err: null }]],
+    txs: { launch1: createV2Tx() },
+  });
+  const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1) });
+  assert.equal(await source.fetchTotal(), 0);
+});
+
+test('createPumpFeeSource: incremental -- the second call only asks for signatures newer than the first call\'s newest, via `until`', async () => {
+  let call = 0;
+  const seen = [];
+  const connection = {
+    async getSignaturesForAddress(address, opts) {
+      seen.push(opts);
+      call++;
+      if (call === 1) return [{ signature: 's2', err: null }, { signature: 's1', err: null }];
+      if (call === 2) return [{ signature: 's3', err: null }]; // one new real fee since last scan
+      return [];
+    },
+    async getTransaction(sig) {
+      return { s1: distributeTx({ pre: [0, 0], post: [0, 1000] }), s2: distributeTx({ pre: [0, 0], post: [0, 2000] }), s3: distributeTx({ pre: [0, 0], post: [0, 3000] }) }[sig];
+    },
+  };
+  const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1) });
+  const first = await source.fetchTotal();
+  assert.equal(first, Math.round(((1000 + 2000) / 1e9) * 1 * 100) / 100);
+  assert.equal(seen[0].until, undefined, 'the very first scan has no boundary yet');
+
+  const second = await source.fetchTotal();
+  assert.equal(seen[1].until, 's2', 'the second scan only asks for signatures newer than the newest one already counted');
+  assert.equal(second, Math.round(((1000 + 2000 + 3000) / 1e9) * 1 * 100) / 100, 'the running total carries forward, plus only the genuinely new fee');
+});
+
+test('createPumpFeeSource: the first scan is bounded by maxSignaturesFirstScan, newest-first, never an unbounded walk of a very old treasury', async () => {
+  const bigPage = Array.from({ length: 1000 }, (_, i) => ({ signature: `s${i}`, err: null }));
+  let calls = 0;
+  const connection = {
+    async getSignaturesForAddress() {
+      calls++;
+      return calls <= 3 ? bigPage : [];
+    },
+    async getTransaction() {
+      return distributeTx({ pre: [0, 0], post: [0, 1] });
+    },
+  };
+  const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1), maxSignaturesFirstScan: 1500 });
+  await source.fetchTotal();
+  assert.equal(calls, 2, 'stops paginating once the cap is reached, not after exhausting the whole real history');
+});
+
+test('createPumpFeeSource requires its real collaborators, never silently running with none', () => {
+  assert.throws(() => createPumpFeeSource({ treasury: TREASURY, priceSource: fakePriceSource() }), TypeError);
+  assert.throws(() => createPumpFeeSource({ connection: fakeConnection(), priceSource: fakePriceSource() }), TypeError);
+  assert.throws(() => createPumpFeeSource({ connection: fakeConnection(), treasury: TREASURY }), TypeError);
+});
+
+test('createCoinGeckoPriceSource: a real-shaped response parses; a bad one throws rather than guessing a price', async () => {
+  const ok = createCoinGeckoPriceSource({ fetchImpl: async () => ({ ok: true, json: async () => ({ solana: { usd: 123.45 } }) }) });
+  assert.equal(await ok.fetchSolUsd(), 123.45);
+
+  const badStatus = createCoinGeckoPriceSource({ fetchImpl: async () => ({ ok: false, status: 500 }) });
+  await assert.rejects(badStatus.fetchSolUsd());
+
+  const badShape = createCoinGeckoPriceSource({ fetchImpl: async () => ({ ok: true, json: async () => ({}) }) });
+  await assert.rejects(badShape.fetchSolUsd());
+
+  const zero = createCoinGeckoPriceSource({ fetchImpl: async () => ({ ok: true, json: async () => ({ solana: { usd: 0 } }) }) });
+  await assert.rejects(zero.fetchSolUsd(), 'a non-positive price is never usable, never silently accepted');
+});
+
+test('pumpFeePolicy: off unless RAMHERD_FEE_SOURCE is exactly "onchain" -- the mock stays the default', () => {
+  assert.equal(pumpFeePolicy({}).enabled, false);
+  assert.equal(pumpFeePolicy({ RAMHERD_FEE_SOURCE: 'true' }).enabled, false);
+  assert.equal(pumpFeePolicy({ RAMHERD_FEE_SOURCE: 'onchain' }).enabled, true);
+});

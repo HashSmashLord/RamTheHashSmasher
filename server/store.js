@@ -4,7 +4,9 @@
 // mutator — kept deliberately tiny and reviewed as such.
 
 import { join } from 'node:path';
+import { Connection } from '@solana/web3.js';
 import { createMockFeeSource, createFeeLedger } from './lib/ledger.js';
+import { createPumpFeeSource, createCoinGeckoPriceSource, connectionAdapter as pumpFeeConnectionAdapter, pumpFeePolicy } from './lib/pumpfee.js';
 import { computeAllocation, withLaunchCeiling } from './lib/budget.js';
 import { createSlotManager } from './lib/slots.js';
 import { createCoordinator, createCoordinatorView } from './lib/coordinator.js';
@@ -27,12 +29,26 @@ import { createPinataClient, pinataPolicy } from './lib/pinata.js';
  *   budgetConfig: import('./lib/budget.js').BudgetConfig,
  *   env?: NodeJS.ProcessEnv,
  *   loadSandboxSdk?: () => Promise<{ Sandbox: any }>,
- *   launchpad?: { publicBaseUrl: string, treasury: string },
+ *   launchpad?: { publicBaseUrl: string, treasury: string, rpcUrl?: string },
  *   log?: (line: string) => void,
  * }} opts
  */
-export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, launchpad = { publicBaseUrl: 'http://127.0.0.1:4700', treasury: undefined }, log = () => {} }) {
-  const feeSource = createMockFeeSource();
+export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, launchpad = { publicBaseUrl: 'http://127.0.0.1:4700', treasury: undefined, rpcUrl: undefined }, log = () => {} }) {
+  // "Fees collected, lifetime" (the homepage's own stat): real pump.fun creator-fee
+  // distributions to the treasury, read straight off chain -- opt-in with
+  // RAMHERD_FEE_SOURCE=onchain (server/lib/pumpfee.js); the mock (admin/auto-seed-set
+  // number) stays the default everywhere else, including every existing test, exactly
+  // like every other opt-in real integration in this file.
+  const pumpFee = pumpFeePolicy(env);
+  const feeSource =
+    pumpFee.enabled && launchpad.treasury
+      ? createPumpFeeSource({
+          connection: pumpFeeConnectionAdapter(new Connection(launchpad.rpcUrl || 'https://api.mainnet-beta.solana.com', 'confirmed')),
+          treasury: launchpad.treasury,
+          priceSource: createCoinGeckoPriceSource(),
+          log,
+        })
+      : createMockFeeSource();
   const ledger = createFeeLedger({ source: feeSource });
   const llmProvider = createLlmProvider(env);
   // Real HashSmash pipeline: opt-in with RAMHERD_PIPELINE=local (off by
