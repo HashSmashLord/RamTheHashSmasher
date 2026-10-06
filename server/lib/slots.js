@@ -295,8 +295,18 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
   /** @type {Map<string, Promise<any>>} slot id -> its latest advance() (steps of one slot never overlap) */
   const advanceChains = new Map();
 
+  // Bounded memory, same reasoning as cost.js's MAX_COST_ENTRIES: with the
+  // active loop running thousands of steps per sandbox session, an unbounded
+  // feed is a real, confirmed problem, not a theoretical one -- it quietly
+  // grew this process to the point the whole site stopped responding
+  // (2026-10-06, found live: /api/slots requests taking 18s+, then the proxy
+  // could no longer reach the app at all). Oldest entries age out silently;
+  // nothing here is ever edited, only the window is trimmed.
+  const MAX_FEED_ENTRIES = 300;
+
   function pushFeed(slot, type, message) {
     slot.feed.push({ ts: now(), type, message });
+    if (slot.feed.length > MAX_FEED_ENTRIES) slot.feed.splice(0, slot.feed.length - MAX_FEED_ENTRIES);
     slot.updatedAt = now();
     syncContext(slot);
   }
