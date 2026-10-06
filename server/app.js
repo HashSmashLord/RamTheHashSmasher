@@ -25,10 +25,13 @@ const DEFAULT_STATIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..'
 // connect-src: same-origin (the API) plus the Solana RPC the launch page's
 // browser-side signing talks to directly (src/launch.js's signAndSendLaunch,
 // via web3.Connection) — never routed through our own server, so it needs its
-// own allowance. Covers both clusters since SOLANA_CLUSTER picks between them
-// at runtime; the page is never on both at once.
+// own allowance. api.mainnet-beta.solana.com/api.devnet.solana.com are kept as
+// a fallback only: the public mainnet one actively refuses every browser-origin
+// request with 403 "Access forbidden" (confirmed 2026-10-06, not theoretical),
+// which is why the real default is a CORS-open public RPC instead (SOLANA_RPC_URL,
+// server/config.js) — the client reads it from GET /api/launchpad/config.
 const PAGE_CSP =
-  "default-src 'self'; img-src 'self' data:; frame-src https://*.e2b.app; connect-src 'self' https://api.mainnet-beta.solana.com https://api.devnet.solana.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
+  "default-src 'self'; img-src 'self' data:; frame-src https://*.e2b.app; connect-src 'self' https://*.publicnode.com https://api.mainnet-beta.solana.com https://api.devnet.solana.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
 const STATIC_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',

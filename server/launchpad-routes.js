@@ -76,6 +76,12 @@ export function createLaunchpadRoutes({ store, config, sendOk, sendError, readJs
     return {
       live,
       cluster: lp.cluster,
+      // The browser's own signing connection (src/launch.js's signAndSendLaunch) needs this
+      // directly: Solana Labs' public RPC (clusterApiUrl's default) refuses any browser-origin
+      // request with a flat 403 "Access forbidden", by design, on every single real attempt.
+      // Confirmed 2026-10-06 against the real endpoint with a real Origin header. This is
+      // CORS-open and real-tested the same way; see README "Solana RPC" for the swap story.
+      rpcUrl: lp.rpcUrl,
       treasury: lp.treasury,
       createFeeLamports: CREATE_FEE_LAMPORTS,
       createFeeSol: String(lamportsToSol(CREATE_FEE_LAMPORTS)),

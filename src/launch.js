@@ -630,7 +630,7 @@ $("sign-btn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Waiting for Phantom…";
   try {
-    const signature = await signAndSendLaunch({ provider: state.provider, ramId: state.ramId });
+    const signature = await signAndSendLaunch({ provider: state.provider, ramId: state.ramId, rpcUrl: state.config?.rpcUrl });
     setIndex("sign", `sent ${shortAddress(signature)}`, true);
   } catch (err) {
     setIndex("sign", "not sent", false);
