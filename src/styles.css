@@ -28,6 +28,11 @@
 
 :root {
   --u: 4px;                 /* the pixel unit */
+  /* LOCAL-ONLY TRIAL (2026-10-06), not pushed/deployed -- real value to revert to:
+     --live: #ffb000;  (and %23ffb000, not %23f4b728, in the three --dot-* data URIs
+     a few lines below). Ground stays true black (#000000) per Haidar -- only the one
+     amber accent (--live) is swapped for the Zcash gold, as a cryptographic-hint accent
+     wherever "live" already shows up: badges, the dither glow, the Discover hover. */
   --bg: #000000;
   --ink: #ffffff;
   --ink-2: #a8a8a8;         /* secondary text, 8.8:1 on the ground */
@@ -35,7 +40,7 @@
   --rule: #3a3a3a;          /* non-text rules */
   --rule-2: #1c1c1c;
   --ink-press: #d4d4d4;     /* a filled pill under the pointer */
-  --live: #ffb000;          /* only what is live right now */
+  --live: #f4b728;          /* only what is live right now -- trial: Zcash gold */
 
   --display: "Jersey 10", "Archivo", "Helvetica Neue", Arial, sans-serif;
   --label: "Silkscreen", "Archivo", "Helvetica Neue", Arial, sans-serif;
@@ -51,9 +56,9 @@
   --clip-notch: polygon(0 calc(2 * var(--u)), 0 calc(1 * var(--u)), calc(1 * var(--u)) calc(1 * var(--u)), calc(1 * var(--u)) 0, calc(100% - 1 * var(--u)) 0, calc(100% - 1 * var(--u)) calc(1 * var(--u)), 100% calc(1 * var(--u)), 100% calc(2 * var(--u)), 100% calc(100% - 2 * var(--u)), 100% calc(100% - 1 * var(--u)), calc(100% - 1 * var(--u)) calc(100% - 1 * var(--u)), calc(100% - 1 * var(--u)) 100%, calc(1 * var(--u)) 100%, calc(1 * var(--u)) calc(100% - 1 * var(--u)), 0 calc(100% - 1 * var(--u)), 0 calc(100% - 2 * var(--u)));
 
   /* ordered-dither glow tiles: one 4px amber pixel per 12 / 16 / 24px cell */
-  --dot-12: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='4' height='4' fill='%23ffb000' fill-opacity='0.5'/%3E%3C/svg%3E");
-  --dot-16: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect x='8' y='8' width='4' height='4' fill='%23ffb000' fill-opacity='0.6'/%3E%3C/svg%3E");
-  --dot-24: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect x='4' y='12' width='4' height='4' fill='%23ffb000' fill-opacity='0.6'/%3E%3C/svg%3E");
+  --dot-12: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='4' height='4' fill='%23f4b728' fill-opacity='0.5'/%3E%3C/svg%3E");
+  --dot-16: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect x='8' y='8' width='4' height='4' fill='%23f4b728' fill-opacity='0.6'/%3E%3C/svg%3E");
+  --dot-24: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect x='4' y='12' width='4' height='4' fill='%23f4b728' fill-opacity='0.6'/%3E%3C/svg%3E");
   /* sparse specks behind the board */
   --speck: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' shape-rendering='crispEdges'%3E%3Cpath fill='%231c1c1c' d='M10 18h2v2h-2zM12 18h2v2h-2zM14 18h2v2h-2zM10 20h2v2h-2zM14 20h2v2h-2zM10 22h2v2h-2zM14 22h2v2h-2zM10 24h2v2h-2zM14 24h2v2h-2zM10 26h2v2h-2zM12 26h2v2h-2zM14 26h2v2h-2zM68 6h2v2h-2zM66 8h2v2h-2zM68 8h2v2h-2zM68 10h2v2h-2zM68 12h2v2h-2zM66 14h2v2h-2zM68 14h2v2h-2zM70 14h2v2h-2zM38 58h2v2h-2zM40 58h2v2h-2zM42 58h2v2h-2zM38 60h2v2h-2zM42 60h2v2h-2zM38 62h2v2h-2zM42 62h2v2h-2zM38 64h2v2h-2zM42 64h2v2h-2zM38 66h2v2h-2zM40 66h2v2h-2zM42 66h2v2h-2zM86 74h2v2h-2zM84 76h2v2h-2zM86 76h2v2h-2zM86 78h2v2h-2zM86 80h2v2h-2zM84 82h2v2h-2zM86 82h2v2h-2zM88 82h2v2h-2zM22 86h2v2h-2zM24 86h2v2h-2zM26 86h2v2h-2zM22 88h2v2h-2zM26 88h2v2h-2zM22 90h2v2h-2zM26 90h2v2h-2zM22 92h2v2h-2zM26 92h2v2h-2zM22 94h2v2h-2zM24 94h2v2h-2zM26 94h2v2h-2zM52 30h2v2h-2zM50 32h2v2h-2zM52 32h2v2h-2zM52 34h2v2h-2zM52 36h2v2h-2zM50 38h2v2h-2zM52 38h2v2h-2zM54 38h2v2h-2z'/%3E%3C/svg%3E");
 
@@ -100,7 +105,7 @@ h3 { font-size: 1.5rem; line-height: 1; }
 p { margin: 0 0 0.9em; max-width: 66ch; }
 
 a { color: var(--ink); text-decoration-thickness: 2px; text-underline-offset: 0.2em; text-decoration-color: var(--ink-3); }
-a:hover { text-decoration-color: currentColor; }
+a:hover { text-decoration-color: var(--live); } /* every plain link's hover underline: one gold hint, everywhere */
 
 ::selection { background: var(--ink); color: var(--bg); }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
@@ -172,6 +177,7 @@ img { image-rendering: pixelated; }
 /* the filled pill: white face, black word */
 .pill:not(.ghost) { background: var(--ink); color: var(--bg); }
 .pill:not(.ghost):hover { background: var(--ink-press); }
+.pill:hover { filter: drop-shadow(0 0 calc(3 * var(--u)) var(--live)); } /* gold glow, both pill variants -- filter, not box-shadow, so clip-path doesn't cut it off */
 .pill:focus-visible { outline: none; box-shadow: inset 0 0 0 calc(2 * var(--u)) var(--ink), inset 0 0 0 calc(3 * var(--u)) var(--bg); }
 .pill:not(.ghost):disabled { background: var(--ink-3); cursor: default; }
 /* the ghost pill: the white ring and the black face are its two pseudo-elements, painted above its own background */
@@ -220,6 +226,9 @@ img { image-rendering: pixelated; }
 .fund-value { grid-column: 3; grid-row: 1; font-family: var(--display); font-size: 2rem; line-height: 1; text-align: right; white-space: nowrap; }
 .fund-of { color: var(--ink-3); white-space: normal; }
 .fund-sub { grid-column: 1 / -1; color: var(--ink-3); font-size: 0.85rem; margin-top: 0.35rem; }
+/* the reward-pool wallet link: a small aside, never competing with the "Launch your RAM
+   now" call to action right next to it. */
+.reward-wallet { font-size: 0.8em; color: var(--ink-3); margin-left: 0.4em; }
 .blocks { grid-column: 1 / -1; display: flex; gap: var(--u); margin-top: 0.6rem; }
 .blocks i { display: block; flex: 1 1 0; height: calc(3 * var(--u)); border: 2px solid var(--ink-3); }
 .blocks i.on { background: var(--ink); border-color: var(--ink); }
@@ -525,6 +534,18 @@ select.ctl option { background: var(--bg); color: var(--ink); }
 .facts > div:last-child { border-bottom: 2px solid var(--rule-2); }
 .facts dt { color: var(--ink-2); padding-top: 0.15rem; }
 .facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+/* The contract row: unshifted to the top of .facts (ram-page.js), so it needs to actually
+   read as the most important row, not just the first one -- the gold rule and slightly
+   larger dd do that without a second box fighting the rest of the page for attention. */
+.facts > .fact-contract { border-top-color: var(--live); border-top-width: var(--u); }
+.facts > .fact-contract dd { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; font-size: 1.05rem; }
+.copy-btn {
+  font-family: var(--label); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 0.2rem 0.5rem; background: none; color: var(--ink-2); border: 2px solid var(--rule); cursor: pointer;
+}
+.copy-btn:hover { color: var(--ink); border-color: var(--ink-2); }
+.copy-btn:disabled { color: var(--live); border-color: var(--live); cursor: default; }
+.pump-link { color: var(--live); }
 .ram-page-h2 { margin-top: clamp(3rem, 6vw, 4.5rem); }
 .history { list-style: none; margin: 1.5rem 0 0; padding: 0; border-top: 2px solid var(--rule-2); }
 .history li { display: grid; grid-template-columns: 6rem 12rem minmax(0, 1fr); column-gap: 1rem; align-items: baseline; padding: 0.85rem 0; border-bottom: 2px solid var(--rule-2); }
@@ -673,3 +694,16 @@ select.ctl option { background: var(--bg); color: var(--ink); }
 .disc-links a { color: var(--ink-2); text-decoration: none; }
 .disc-links a:hover, .disc-links a:focus-visible { color: var(--ink); text-decoration: underline; }
 .disc-empty { color: var(--ink-2); border-top: 2px solid var(--rule-2); padding-top: 1.6rem; margin-top: 0.4rem; }
+
+/* How it works (try-it.html): the approach/model lists and the two brief examples. Lives
+   here, not an inline <style> on that page, because this app's CSP (server/app.js PAGE_CSP)
+   has no style-src 'unsafe-inline' -- an inline <style> tag is silently dropped by the
+   browser with no console error, which is exactly what this page's old inline block did. */
+.tryit h3 { margin: 2rem 0 0.6rem; }
+.tryit .approach-list, .tryit .model-list { list-style: none; margin: 0 0 1.2rem; padding: 0; }
+.tryit .approach-list li, .tryit .model-list li { padding: 0.7rem 0; border-top: 2px solid var(--rule-2); }
+.tryit .approach-id, .tryit .model-id { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.85rem; color: var(--live); }
+.tryit .approach-label { display: block; margin-top: 0.15rem; }
+.tryit .approach-why, .tryit .model-track { display: block; color: var(--ink-2); font-size: 0.9rem; margin-top: 0.2rem; }
+.tryit .brief-example { margin: 0 0 0.9rem; padding: 0.8rem 1rem; background: var(--rule-2); border-left: var(--u) solid var(--live); font-size: 0.95rem; }
+.tryit .brief-example.bad { border-left-color: var(--ink-3); color: var(--ink-2); }

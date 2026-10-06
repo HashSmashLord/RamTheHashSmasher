@@ -90,35 +90,34 @@ export function mountRamPage({ feed }) {
     // Launched-through-the-launchpad RAMs only (roster RAMs have no token at all): the
     // real contract address, a link to it on-chain and on pump.fun, and how much its own
     // creator fees have actually generated so far -- real numbers off its own funding
-    // record (server/lib/rams.js / ramfunds.js), never estimated.
+    // record (server/lib/rams.js / ramfunds.js), never estimated. Unshifted to the front
+    // and styled (.fact-contract) so the contract is the first, most obvious thing on the
+    // page, not buried under the desk facts below it; the pump.fun link and a copy button
+    // sit right next to it in the same row, not a separate one a scroll away.
     if (detail.token) {
       const mint = detail.token.mint;
       const pump = pumpFunUrl(detail);
       const feesSol = detail.funding ? solFromLamports(detail.funding.creatorFeesLamports) : null;
-      rows.push(
+      rows.unshift(
         ["Token", `${detail.token.name} ($${detail.token.symbol})`],
         [
           "Contract",
           mint
-            ? `<a class="ext" href="https://solscan.io/token/${encodeURIComponent(mint)}" target="_blank" rel="noopener noreferrer" title="${mint}">${shortAddress(mint)}<span class="sr-only"> (opens in a new tab)</span></a>`
+            ? `<a class="ext" href="https://solscan.io/token/${encodeURIComponent(mint)}" target="_blank" rel="noopener noreferrer" title="${mint}">${shortAddress(mint)}<span class="sr-only"> (opens in a new tab)</span></a>` +
+              `<button type="button" class="copy-btn" data-copy="${mint}">Copy<span class="sr-only"> contract address</span></button>` +
+              (pump ? `<a class="ext pump-link" href="${pump}" target="_blank" rel="noopener noreferrer">pump.fun<span class="sr-only"> (opens in a new tab)</span></a>` : "")
             : "not minted yet",
           false,
           true,
-        ],
-        [
-          "pump.fun",
-          pump
-            ? `<a class="ext" href="${pump}" target="_blank" rel="noopener noreferrer">View on pump.fun<span class="sr-only"> (opens in a new tab)</span></a>`
-            : "not minted yet",
-          false,
-          true,
+          "fact-contract",
         ],
         ["Creator fees generated", feesSol !== null ? `${feesSol} SOL` : "0 SOL so far"],
       );
     }
     parts.facts.innerHTML = "";
-    for (const [k, v, isPath, isHtml] of rows) {
+    for (const [k, v, isPath, isHtml, rowClass] of rows) {
       const div = document.createElement("div");
+      if (rowClass) div.className = rowClass;
       const dt = document.createElement("dt");
       dt.textContent = k;
       const dd = document.createElement("dd");
@@ -129,6 +128,29 @@ export function mountRamPage({ feed }) {
       parts.facts.append(div);
     }
   }
+
+  // Click-to-copy on the contract address (delegated: the row is rebuilt on every render).
+  // navigator.clipboard needs a secure context; this site is always https (or localhost in
+  // dev), so it's always available -- still feature-checked, never thrown from a click.
+  $("ram-page-facts")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".copy-btn");
+    if (!btn) return;
+    const text = btn.dataset.copy;
+    if (!text || !navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      const was = btn.textContent;
+      btn.textContent = "Copied";
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.textContent = was;
+        btn.disabled = false;
+      }, 1200);
+    } catch {
+      // Clipboard permission denied or unavailable: the address is still right there,
+      // selectable by hand, and the solscan link still works either way.
+    }
+  });
 
   function renderHistory(detail) {
     parts.history.innerHTML = "";
