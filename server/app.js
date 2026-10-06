@@ -27,11 +27,12 @@ const DEFAULT_STATIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..'
 // via web3.Connection) — never routed through our own server, so it needs its
 // own allowance. api.mainnet-beta.solana.com/api.devnet.solana.com are kept as
 // a fallback only: the public mainnet one actively refuses every browser-origin
-// request with 403 "Access forbidden" (confirmed 2026-10-06, not theoretical),
-// which is why the real default is a CORS-open public RPC instead (SOLANA_RPC_URL,
-// server/config.js) — the client reads it from GET /api/launchpad/config.
+// request with 403 "Access forbidden" (confirmed 2026-10-06, not theoretical).
+// The real one in use is whatever SOLANA_RPC_URL is set to (server/config.js) —
+// Helius today (CORS-open, confirmed) — read by the client from GET
+// /api/launchpad/config. *.publicnode.com kept as the CORS-open free fallback.
 const PAGE_CSP =
-  "default-src 'self'; img-src 'self' data:; frame-src https://*.e2b.app; connect-src 'self' https://*.publicnode.com https://api.mainnet-beta.solana.com https://api.devnet.solana.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
+  "default-src 'self'; img-src 'self' data:; frame-src https://*.e2b.app; connect-src 'self' https://*.helius-rpc.com https://*.publicnode.com https://api.mainnet-beta.solana.com https://api.devnet.solana.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
 const STATIC_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
