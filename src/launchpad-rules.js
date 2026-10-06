@@ -83,7 +83,7 @@ export const TREASURY = '5M6Pc7ossZ8cuQAjnexH9vv2axEJoncgZ3C6uD2PJqHm';
  * (the slip itself) and any other page that wants to say "not live yet" / "live now"
  * honestly, instead of a hardcoded guess.
  */
-export const LAUNCHPAD_LIVE = false;
+export const LAUNCHPAD_LIVE = true;
 
 /** @param {{ live?: boolean }|null|undefined} config - the real `launchpad` block from GET /api/launchpad/config */
 export function isLaunchpadLive(config) {
