@@ -6,7 +6,7 @@
 import { join } from 'node:path';
 import { Connection } from '@solana/web3.js';
 import { createMockFeeSource, createFeeLedger } from './lib/ledger.js';
-import { createPumpFeeSource, createCoinGeckoPriceSource, createCoinGeckoZecPriceSource, connectionAdapter as pumpFeeConnectionAdapter, pumpFeePolicy } from './lib/pumpfee.js';
+import { createPumpFeeSource, createCoinGeckoPriceSource, createCoinGeckoZecPriceSource, createJupiterPriceSource, connectionAdapter as pumpFeeConnectionAdapter, pumpFeePolicy } from './lib/pumpfee.js';
 import { computeAllocation, withLaunchCeiling } from './lib/budget.js';
 import { createSlotManager } from './lib/slots.js';
 import { createCoordinator, createCoordinatorView } from './lib/coordinator.js';
@@ -46,6 +46,10 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
           connection: pumpFeeConnectionAdapter(new Connection(launchpad.rpcUrl || 'https://api.mainnet-beta.solana.com', 'confirmed')),
           treasury: launchpad.treasury,
           priceSource: createCoinGeckoPriceSource(),
+          // CollectCoinCreatorFee (post-migration) fees are paid in the migrated token
+          // itself, not SOL -- found real 2026-10-06 after the operator reported real
+          // fees well above what the SOL-only mechanism alone was counting.
+          tokenPriceSource: createJupiterPriceSource(),
           log,
         })
       : createMockFeeSource();

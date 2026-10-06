@@ -4,7 +4,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { creatorFeeLamportsOf, createPumpFeeSource, createCoinGeckoPriceSource, createCoinGeckoZecPriceSource, connectionAdapter, pumpFeePolicy } from '../server/lib/pumpfee.js';
+import { creatorFeeLamportsOf, creatorFeeTokenDeltasOf, createPumpFeeSource, createCoinGeckoPriceSource, createCoinGeckoZecPriceSource, createJupiterPriceSource, connectionAdapter, pumpFeePolicy } from '../server/lib/pumpfee.js';
 
 const TREASURY = 'Treasury111111111111111111111111111111111';
 const OTHER = 'Other1111111111111111111111111111111111111';
@@ -36,6 +36,57 @@ test('creatorFeeLamportsOf: only a real DistributeCreatorFees transaction counts
 test('creatorFeeLamportsOf: accountKeys as {pubkey} objects (PublicKey-shaped), not bare strings -- same real gotcha as launchverify.js', () => {
   const tx = distributeTx({ keys: [{ pubkey: { toBase58: () => OTHER } }, { pubkey: { toBase58: () => TREASURY } }] });
   assert.equal(creatorFeeLamportsOf(tx, TREASURY), 10468);
+});
+
+const MINT = 'Mint1111111111111111111111111111111111111';
+
+/** A real-shaped CollectCoinCreatorFee transaction: fee paid in MINT, into a token account the treasury owns. */
+function collectTx({
+  err = null,
+  pre = [{ accountIndex: 1, owner: OTHER, mint: MINT, uiTokenAmount: { amount: '24279182', decimals: 8 } }, { accountIndex: 2, owner: TREASURY, mint: MINT, uiTokenAmount: { amount: '7742975957', decimals: 8 } }],
+  post = [{ accountIndex: 1, owner: OTHER, mint: MINT, uiTokenAmount: { amount: '0', decimals: 8 } }, { accountIndex: 2, owner: TREASURY, mint: MINT, uiTokenAmount: { amount: '7767255139', decimals: 8 } }],
+} = {}) {
+  return { meta: { err, logMessages: ['Program log: Instruction: CollectCoinCreatorFee'], preTokenBalances: pre, postTokenBalances: post }, transaction: { message: { accountKeys: [TREASURY, OTHER] } } };
+}
+
+test('creatorFeeTokenDeltasOf: the treasury\'s own real token-account balance delta, identified by owner not address, for a real CollectCoinCreatorFee transaction', () => {
+  assert.deepEqual(creatorFeeTokenDeltasOf(collectTx(), TREASURY), [{ mint: MINT, decimals: 8, rawAmount: 24279182 }]);
+  assert.deepEqual(creatorFeeTokenDeltasOf(null, TREASURY), [], 'no transaction -> empty, never a guess');
+  assert.deepEqual(creatorFeeTokenDeltasOf(collectTx({ err: { InstructionError: [] } }), TREASURY), [], 'a failed transaction never moved real money');
+  assert.deepEqual(creatorFeeTokenDeltasOf(distributeTx(), TREASURY), [], 'a SOL-denominated DistributeCreatorFees tx is a different real instruction, never counted here');
+  // A token account the treasury does NOT own (a decrease, e.g. the source vault at index 1) never counts.
+  assert.deepEqual(creatorFeeTokenDeltasOf(collectTx(), OTHER), [], 'the queried address must match by owner, and OTHER only ever decreases here');
+});
+
+test('creatorFeeTokenDeltasOf: a real decrease, or missing balance data, is never reported as a positive fee', () => {
+  const flat = collectTx({
+    pre: [{ accountIndex: 2, owner: TREASURY, mint: MINT, uiTokenAmount: { amount: '1000', decimals: 6 } }],
+    post: [{ accountIndex: 2, owner: TREASURY, mint: MINT, uiTokenAmount: { amount: '1000', decimals: 6 } }],
+  });
+  assert.deepEqual(creatorFeeTokenDeltasOf(flat, TREASURY), []);
+  const noPreRecord = collectTx({
+    pre: [],
+    post: [{ accountIndex: 2, owner: TREASURY, mint: MINT, uiTokenAmount: { amount: '500', decimals: 6 } }],
+  });
+  assert.deepEqual(noPreRecord, noPreRecord); // sanity: construction doesn't throw
+  assert.deepEqual(creatorFeeTokenDeltasOf(noPreRecord, TREASURY), [{ mint: MINT, decimals: 6, rawAmount: 500 }], 'a brand-new token account (no prior balance) starts from an implicit 0');
+});
+
+test('createJupiterPriceSource: a real-shaped response parses per mint; a bad one throws rather than guessing a price', async () => {
+  const ok = createJupiterPriceSource({ fetchImpl: async (url) => {
+    assert.match(url, new RegExp(`ids=${MINT}`));
+    return { ok: true, async json() { return { [MINT]: { usdPrice: 1373.97 } }; } };
+  } });
+  assert.equal(await ok.fetchTokenUsd(MINT), 1373.97);
+
+  const badStatus = createJupiterPriceSource({ fetchImpl: async () => ({ ok: false, status: 500 }) });
+  await assert.rejects(badStatus.fetchTokenUsd(MINT));
+
+  const missing = createJupiterPriceSource({ fetchImpl: async () => ({ ok: true, async json() { return {}; } }) });
+  await assert.rejects(missing.fetchTokenUsd(MINT), 'an unpriced/unknown mint must never fall back to a guess');
+
+  const zero = createJupiterPriceSource({ fetchImpl: async () => ({ ok: true, async json() { return { [MINT]: { usdPrice: 0 } }; } }) });
+  await assert.rejects(zero.fetchTokenUsd(MINT));
 });
 
 function fakeConnection({ pages = [], txs = {} } = {}) {
@@ -91,6 +142,61 @@ test('createPumpFeeSource: a non-DistributeCreatorFees transaction (e.g. a RAM l
   });
   const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(1) });
   assert.equal(await source.fetchTotal(), 0);
+});
+
+function fakeTokenPriceSource(pricesByMint) {
+  const calls = [];
+  return { calls, async fetchTokenUsd(mint) { calls.push(mint); if (!(mint in pricesByMint)) throw new Error(`no price for ${mint}`); return pricesByMint[mint]; } };
+}
+
+test('createPumpFeeSource: without a tokenPriceSource, a CollectCoinCreatorFee transaction is never even inspected for token deltas -- SOL-only stays SOL-only, same as before this mechanism existed', async () => {
+  const connection = fakeConnection({ pages: [[{ signature: 's1', err: null }]], txs: { s1: collectTx() } });
+  const source = createPumpFeeSource({ connection, treasury: TREASURY, priceSource: fakePriceSource(100) }); // no tokenPriceSource
+  assert.equal(await source.fetchTotal(), 0, 'the real token fee is real, but this source was not given a way to price it, so it correctly reports 0, not a guess');
+});
+
+test('createPumpFeeSource: WITH a tokenPriceSource, a real CollectCoinCreatorFee token fee is priced and added to the SOL-denominated total -- the actual regression that undercounted real fees', async () => {
+  const connection = fakeConnection({
+    pages: [[{ signature: 'sol1', err: null }, { signature: 'tok1', err: null }]],
+    txs: {
+      sol1: distributeTx({ pre: [0, 1_000_000], post: [0, 1_010_468] }), // +10468 lamports
+      tok1: collectTx(), // +24279182 raw units of MINT (decimals 8) = 0.24279182 tokens
+    },
+  });
+  const source = createPumpFeeSource({
+    connection,
+    treasury: TREASURY,
+    priceSource: fakePriceSource(100), // $100/SOL
+    tokenPriceSource: fakeTokenPriceSource({ [MINT]: 1373.97 }), // $1373.97/MINT
+  });
+  const total = await source.fetchTotal();
+  const expectedSol = (10468 / 1e9) * 100;
+  const expectedToken = 0.24279182 * 1373.97;
+  assert.equal(total, Math.round((expectedSol + expectedToken) * 100) / 100);
+  assert.ok(total > 300, 'a real, meaningful token-denominated fee actually moves the total, not a rounding-error sliver');
+});
+
+test('createPumpFeeSource: a mint that fails to price is skipped, logged, and never blocks the SOL total or a different mint\'s real price', async () => {
+  const MINT2 = 'Mint2222222222222222222222222222222222222';
+  const collectTx2 = collectTx({
+    pre: [{ accountIndex: 1, owner: OTHER, mint: MINT2, uiTokenAmount: { amount: '0', decimals: 6 } }, { accountIndex: 2, owner: TREASURY, mint: MINT2, uiTokenAmount: { amount: '0', decimals: 6 } }],
+    post: [{ accountIndex: 1, owner: OTHER, mint: MINT2, uiTokenAmount: { amount: '0', decimals: 6 } }, { accountIndex: 2, owner: TREASURY, mint: MINT2, uiTokenAmount: { amount: '5000000', decimals: 6 } }],
+  });
+  const connection = fakeConnection({
+    pages: [[{ signature: 'priced', err: null }, { signature: 'unpriced', err: null }]],
+    txs: { priced: collectTx(), unpriced: collectTx2 },
+  });
+  const logs = [];
+  const source = createPumpFeeSource({
+    connection,
+    treasury: TREASURY,
+    priceSource: fakePriceSource(1),
+    tokenPriceSource: fakeTokenPriceSource({ [MINT]: 1000 }), // MINT2 deliberately has no price -> throws
+    log: (l) => logs.push(l),
+  });
+  const total = await source.fetchTotal();
+  assert.equal(total, Math.round(0.24279182 * 1000 * 100) / 100, 'MINT priced and counted; MINT2 skipped, not silently zeroed into a false confidence, but also never blocking MINT');
+  assert.ok(logs.some((l) => l.includes(MINT2) && l.includes('skipping')));
 });
 
 test('createPumpFeeSource: incremental -- the second call only asks for signatures newer than the first call\'s newest, via `until`', async () => {

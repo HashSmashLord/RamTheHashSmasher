@@ -1,31 +1,45 @@
 // A real `FeeSource` (ledger.js) that reads pump.fun's own real creator-fee
-// distributions to the treasury wallet, instead of the mock/admin-set number
-// every deploy has used so far. Confirmed real 2026-10-06 against a live,
-// finalized transaction at the real treasury address: its program logs read
-// "Program log: Instruction: DistributeCreatorFees", invoked by pump.fun's
-// own fee-sharing program (PUMP_FEE_SHARING_PROGRAM below), and the
-// treasury's own preBalance -> postBalance delta in that same transaction is
-// exactly the lamports it was paid. That is a different instruction than the
-// 0.01 SOL launch create-fee transfer (CreateV2, see launchverify.js) that
-// also lands in this same wallet -- only a DistributeCreatorFees transaction
-// ever counts here, so a RAM's own launch fee is never double-counted as a
-// "creator fee".
+// payments to the treasury wallet, instead of the mock/admin-set number every
+// deploy used before this file existed. Two real, separate mechanisms,
+// confirmed live against the real treasury 2026-10-06, both counted here:
+//
+//   1. DistributeCreatorFees (bonding-curve era), paid in native SOL straight
+//      into the treasury's own balance -- see creatorFeeLamportsOf.
+//   2. CollectCoinCreatorFee (after a token migrates off the bonding curve to
+//      pump's own AMM), paid in THAT TOKEN ITSELF into a token account the
+//      treasury owns, not SOL -- see creatorFeeTokenDeltasOf. Found live
+//      2026-10-06 after the operator reported real fees well above what
+//      mechanism 1 alone was reporting; every launched RAM's own token (and
+//      $RAM itself) can pay fees this way once it migrates, each in its own
+//      mint, each needing its own real USD price (createJupiterPriceSource).
+//
+// Neither is the 0.01 SOL launch create-fee transfer (CreateV2, see
+// launchverify.js) that also lands in this same wallet -- only these two real
+// instructions ever count here, so a RAM's own launch fee is never double-
+// counted as a "creator fee".
 //
 // Honesty: a signature whose transaction failed on chain (`err` set) is
 // skipped, never counted. Unknown/unparseable transactions count for 0, not
-// a guess. The real SOL/USD price comes from a real `PriceSource` (a
-// CoinGecko fetch below); if that fails, fetchTotal() throws rather than
-// silently using a stale or invented price.
+// a guess. Real USD prices come from real `PriceSource`s (CoinGecko for SOL/
+// ZEC, Jupiter per-mint for collected tokens); if the SOL price fails,
+// fetchTotal() throws rather than silently using a stale or invented price --
+// a single mint's price failing skips only that mint's contribution this
+// refresh (logged), so one illiquid or delisted token can never block every
+// other real fee from being counted.
 
 import { PublicKey } from '@solana/web3.js';
 
-/** pump.fun's real fee-sharing program, confirmed from a live transaction's own logs. */
+/** pump.fun's real fee-sharing program (bonding-curve era), confirmed from a live transaction's own logs. */
 export const PUMP_FEE_SHARING_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const DISTRIBUTE_LOG = 'Instruction: DistributeCreatorFees';
 
-function isDistributeCreatorFeesTx(tx) {
+/** pump's AMM program (post-migration), confirmed the same way. */
+export const PUMP_AMM_PROGRAM = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
+const COLLECT_LOG = 'Instruction: CollectCoinCreatorFee';
+
+function hasLog(tx, needle) {
   const logs = tx?.meta?.logMessages ?? [];
-  return logs.some((l) => typeof l === 'string' && l.includes(DISTRIBUTE_LOG));
+  return logs.some((l) => typeof l === 'string' && l.includes(needle));
 }
 
 /** jsonParsed accountKeys are [{pubkey, ...}, ...]; pubkey may be a string or a PublicKey (see launchverify.js's same gotcha). */
@@ -45,13 +59,47 @@ function accountKeysOf(tx) {
  */
 export function creatorFeeLamportsOf(tx, treasury) {
   if (!tx || tx.meta?.err) return 0;
-  if (!isDistributeCreatorFeesTx(tx)) return 0;
+  if (!hasLog(tx, DISTRIBUTE_LOG)) return 0;
   const i = accountKeysOf(tx).indexOf(treasury);
   if (i < 0) return 0;
   const pre = tx.meta?.preBalances?.[i];
   const post = tx.meta?.postBalances?.[i];
   if (typeof pre !== 'number' || typeof post !== 'number') return 0;
   return Math.max(0, post - pre);
+}
+
+/**
+ * The real token(s) (mint + raw amount, in that mint's own smallest unit) the
+ * treasury actually gained in one real CollectCoinCreatorFee transaction --
+ * paid in the migrated token itself, not SOL, into a token account the
+ * treasury owns (identified by `owner`, not by address: real-tested 2026-10-06,
+ * the token account's own address is just another PDA, never the treasury's
+ * own pubkey). Read from the real pre/postTokenBalances, the authoritative
+ * balance record, not the inner transferChecked instruction's own claimed
+ * amount -- same "trust the real delta, not the parsed instruction args"
+ * discipline creatorFeeLamportsOf already uses for the SOL case. Usually one
+ * entry; an array because nothing rules out a transaction touching more than
+ * one of the treasury's token accounts.
+ * @param {any} tx
+ * @param {string} treasury
+ * @returns {{ mint: string, decimals: number, rawAmount: number }[]}
+ */
+export function creatorFeeTokenDeltasOf(tx, treasury) {
+  if (!tx || tx.meta?.err) return [];
+  if (!hasLog(tx, COLLECT_LOG)) return [];
+  const pre = tx.meta?.preTokenBalances ?? [];
+  const post = tx.meta?.postTokenBalances ?? [];
+  const preByIndex = new Map(pre.map((b) => [b.accountIndex, b]));
+  const out = [];
+  for (const p of post) {
+    if (p.owner !== treasury) continue;
+    const before = preByIndex.get(p.accountIndex);
+    const preAmount = Number(before?.uiTokenAmount?.amount ?? 0);
+    const postAmount = Number(p.uiTokenAmount?.amount ?? 0);
+    const rawAmount = postAmount - preAmount;
+    if (rawAmount > 0) out.push({ mint: p.mint, decimals: p.uiTokenAmount?.decimals ?? 0, rawAmount });
+  }
+  return out;
 }
 
 /**
@@ -152,6 +200,28 @@ export function createCoinGeckoZecPriceSource({ fetchImpl = fetch } = {}) {
 }
 
 /**
+ * A real per-mint USD price from Jupiter's public (no-key) price API --
+ * unlike CoinGecko, this actually prices arbitrary pump.fun tokens (real-
+ * tested 2026-10-06 against both $RAM's own mint and an unrelated migrated
+ * token, both priced correctly from real DEX liquidity). Used only for
+ * CollectCoinCreatorFee's token-denominated fees; the SOL and ZEC prices
+ * above stay on CoinGecko, unchanged.
+ */
+export function createJupiterPriceSource({ fetchImpl = fetch } = {}) {
+  return {
+    kind: 'jupiter',
+    async fetchTokenUsd(mint) {
+      const res = await fetchImpl(`https://lite-api.jup.ag/price/v3?ids=${encodeURIComponent(mint)}`);
+      if (!res.ok) throw new Error(`Jupiter price fetch failed for ${mint}: ${res.status}`);
+      const body = await res.json();
+      const price = body?.[mint]?.usdPrice;
+      if (typeof price !== 'number' || !(price > 0)) throw new Error(`Jupiter returned no usable price for ${mint}`);
+      return price;
+    },
+  };
+}
+
+/**
  * The real `FeeSource` (ledger.js). Scans the treasury's real transaction
  * history for DistributeCreatorFees payments and converts the lamport total
  * to USD at the real current SOL price. Incremental: after the first call
@@ -164,16 +234,21 @@ export function createCoinGeckoZecPriceSource({ fetchImpl = fetch } = {}) {
  *   connection: { getSignaturesForAddress: Function, getTransaction: Function },
  *   treasury: string,
  *   priceSource: { fetchSolUsd: () => Promise<number> },
+ *   tokenPriceSource?: { fetchTokenUsd: (mint: string) => Promise<number> },
  *   maxSignaturesFirstScan?: number,
  *   log?: (line: string) => void,
  * }} opts
  */
-export function createPumpFeeSource({ connection, treasury, priceSource, maxSignaturesFirstScan = 2000, log = () => {} }) {
+export function createPumpFeeSource({ connection, treasury, priceSource, tokenPriceSource = null, maxSignaturesFirstScan = 2000, log = () => {} }) {
   if (!connection) throw new TypeError('createPumpFeeSource requires a connection');
   if (typeof treasury !== 'string' || !treasury) throw new TypeError('createPumpFeeSource requires a treasury address');
   if (!priceSource || typeof priceSource.fetchSolUsd !== 'function') throw new TypeError('createPumpFeeSource requires a priceSource');
 
   let totalLamports = 0;
+  // mint -> raw token amount (that mint's own smallest unit), accumulated forever, same as
+  // totalLamports -- converted to USD fresh every fetchTotal() call at whatever price is
+  // current then, never compounded/rounded per-transaction.
+  const tokenTotals = new Map(); // mint -> { rawAmount, decimals }
   let newestSeenSignature = null;
   let scannedAny = false;
 
@@ -207,11 +282,30 @@ export function createPumpFeeSource({ connection, treasury, priceSource, maxSign
         continue;
       }
       newLamports += creatorFeeLamportsOf(tx, treasury);
+      if (tokenPriceSource) {
+        for (const d of creatorFeeTokenDeltasOf(tx, treasury)) {
+          const existing = tokenTotals.get(d.mint) ?? { rawAmount: 0, decimals: d.decimals };
+          existing.rawAmount += d.rawAmount;
+          tokenTotals.set(d.mint, existing);
+        }
+      }
     }
     totalLamports += newLamports;
     scannedAny = true;
     const solUsd = await priceSource.fetchSolUsd();
-    return Math.round((totalLamports / 1e9) * solUsd * 100) / 100;
+    let totalUsd = (totalLamports / 1e9) * solUsd;
+    for (const [mint, { rawAmount, decimals }] of tokenTotals) {
+      if (rawAmount <= 0) continue;
+      try {
+        const tokenUsd = await tokenPriceSource.fetchTokenUsd(mint);
+        totalUsd += (rawAmount / 10 ** decimals) * tokenUsd;
+      } catch (err) {
+        // One illiquid/delisted/rate-limited mint must never block every other real fee
+        // (SOL-denominated or another mint) from being counted this refresh.
+        log(`pumpfee: could not price ${mint}'s collected fee this refresh, skipping it: ${err?.message || err}`);
+      }
+    }
+    return Math.round(totalUsd * 100) / 100;
   }
 
   return { kind: 'onchain', fetchTotal };
