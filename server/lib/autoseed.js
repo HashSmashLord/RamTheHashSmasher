@@ -18,8 +18,14 @@
 //      seconds, so doing this before listen would hold up health checks.
 //
 // Guardrails:
-//   - Roster only. Owned (launchpad) slots are never resized (setSlotCount
-//     already skips them) and never get a sandbox from here.
+//   - Funding/resizing (step 1) stays roster only: owned (launchpad) slots are
+//     never resized (setSlotCount already skips them) and have their own
+//     separate funding (ramfunds.js), untouched here.
+//   - Sandbox starting (step 2) covers BOTH roster and owned slots (2026-10-06,
+//     operator request): a launched RAM's own desk used to need a manual
+//     admin call after every restart, same as the roster used to before this
+//     file existed. Runs regardless of whether step 1 succeeded -- an owned
+//     slot's sandbox has nothing to do with roster funding.
 //   - Never lowers a fee total that is already high enough.
 //   - Mock fee source only, same rule as POST /api/admin/fees.
 //   - Never throws. A failed sandbox start is logged here and, through
@@ -94,13 +100,16 @@ export async function seedRosterFunding(store, { budgetConfig, rosterSize = ACTI
 }
 
 /**
- * Step 2: a sandbox for every active roster slot that has none. Starts them
- * in parallel (the manager enforces RAMHERD_SANDBOX_MAX; a start over the
- * limit fails like any other and is logged). Never rejects.
+ * Step 2: a sandbox for every active slot that has none -- roster AND owned
+ * (launchpad) slots alike, so a real launched RAM's desk comes back on its
+ * own after a restart, the same as the roster already did. Starts them in
+ * parallel (the manager enforces RAMHERD_SANDBOX_MAX for roster slots; owned
+ * slots are exempt from that cap, see sandbox.js's `exempt` Set -- a start
+ * over the limit fails like any other and is logged). Never rejects.
  *
  * @param {ReturnType<import('../store.js').createStore>} store
  * @param {{ log?: (line: string) => void }} [opts]
- * @returns {Promise<{ skipped?: string, results: Array<{ slotId: string, ok: boolean, sessionId?: string, error?: string }> }>}
+ * @returns {Promise<{ skipped?: string, results: Array<{ slotId: string, kind: string, ok: boolean, sessionId?: string, error?: string }> }>}
  */
 export async function startRosterSandboxes(store, { log = () => {} } = {}) {
   if (!store.slotManager.sandboxesEnabled) {
@@ -108,19 +117,22 @@ export async function startRosterSandboxes(store, { log = () => {} } = {}) {
     if (store.sandbox?.enabled) log(`auto-seed: no sandboxes started, ${why}.`);
     return { skipped: why, results: [] };
   }
-  const targets = store.slotManager.getSlots().filter((s) => s.kind === 'roster' && s.active && !isLive(s));
+  const targets = store.slotManager.getSlots().filter((s) => (s.kind === 'roster' || s.kind === 'owned') && s.active && !isLive(s));
+  // startSandbox already exempts owned slots from RAMHERD_SANDBOX_MAX internally
+  // (slots.js's startSandboxNow, keyed off slot.kind) -- nothing extra to pass here.
   const settled = await Promise.allSettled(targets.map((s) => store.slotManager.startSandbox(s.id)));
   const results = settled.map((r, i) => {
     const slotId = targets[i].id;
+    const kind = targets[i].kind;
     if (r.status === 'fulfilled') {
-      log(`auto-seed: ${slotId} sandbox running (${r.value.sandbox?.sessionId}).`);
-      return { slotId, ok: true, sessionId: r.value.sandbox?.sessionId };
+      log(`auto-seed: ${slotId} (${kind}) sandbox running (${r.value.sandbox?.sessionId}).`);
+      return { slotId, kind, ok: true, sessionId: r.value.sandbox?.sessionId };
     }
     const error = r.reason?.message || String(r.reason);
-    log(`auto-seed: ${slotId} sandbox failed to start, continuing with the rest: ${error}`);
-    return { slotId, ok: false, error };
+    log(`auto-seed: ${slotId} (${kind}) sandbox failed to start, continuing with the rest: ${error}`);
+    return { slotId, kind, ok: false, error };
   });
   const ok = results.filter((r) => r.ok).length;
-  log(`auto-seed: ${ok}/${results.length} roster sandbox(es) started.`);
+  log(`auto-seed: ${ok}/${results.length} sandbox(es) started (roster + owned).`);
   return { results };
 }

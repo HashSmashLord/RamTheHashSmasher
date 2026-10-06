@@ -159,7 +159,7 @@ test('startRosterSandboxes does nothing (and loads no SDK) when sandboxes are of
   assert.ok(store.slotManager.getSlots().every((s) => s.sandbox === null));
 });
 
-test('startRosterSandboxes starts one sandbox per active roster slot, never for owned or retired slots', async () => {
+test('startRosterSandboxes starts one sandbox per active roster AND active owned slot, never for retired ones', async () => {
   const sdk = fakeSdk();
   const { store, budgetConfig } = storeWith({ env: SANDBOX_ENV, sdk });
   store.slotManager.setSlotCount(8);
@@ -167,16 +167,28 @@ test('startRosterSandboxes starts one sandbox per active roster slot, never for 
   const owned = store.slotManager.createOwnedSlot({ ramId: 'ram-x', owner: 'Wallet1111', track: 'blake3-r1-exploratory', approach: 'mine', model: 'm', brief: 'b' });
   const seeded = await seedRosterFunding(store, { budgetConfig });
   const r = await startRosterSandboxes(store);
-  assert.equal(r.results.length, ACTIVE_TRACKS.length);
+  assert.equal(r.results.length, ACTIVE_TRACKS.length + 1); // roster + the one owned slot
   assert.ok(r.results.every((x) => x.ok));
-  assert.deepEqual(sdk.calls.create.sort(), [...seeded.rosterSlotIds].sort());
-  assert.ok(!sdk.calls.create.includes(owned.id));
+  const expectedIds = [...seeded.rosterSlotIds, owned.id].sort();
+  assert.deepEqual(sdk.calls.create.sort(), expectedIds);
   for (const id of seeded.rosterSlotIds) assert.equal(store.slotManager.getSlot(id).sandbox.status, 'running');
-  assert.equal(store.slotManager.getSlot(owned.id).sandbox, null);
+  assert.equal(store.slotManager.getSlot(owned.id).sandbox.status, 'running');
+  assert.ok(r.results.find((x) => x.slotId === owned.id).kind === 'owned');
   // a second run starts nothing new (all already running)
   const again = await startRosterSandboxes(store);
   assert.equal(again.results.length, 0);
-  assert.equal(sdk.calls.create.length, ACTIVE_TRACKS.length);
+  assert.equal(sdk.calls.create.length, ACTIVE_TRACKS.length + 1);
+  await cleanup(store);
+});
+
+test('startRosterSandboxes starts an owned slot even when roster funding was never on (index.js no longer gates it on seeded.ok)', async () => {
+  const sdk = fakeSdk();
+  const { store } = storeWith({ env: SANDBOX_ENV, sdk });
+  // No seedRosterFunding call at all -- the roster is unfunded/empty.
+  const owned = store.slotManager.createOwnedSlot({ ramId: 'ram-y', owner: 'Wallet2222', track: 'sha256-r32-exploratory', approach: 'mine', model: 'm', brief: 'b' });
+  const r = await startRosterSandboxes(store);
+  assert.deepEqual(r.results, [{ slotId: owned.id, kind: 'owned', ok: true, sessionId: sdk.calls.create.includes(owned.id) ? store.slotManager.getSlot(owned.id).sandbox.sessionId : undefined }]);
+  assert.equal(store.slotManager.getSlot(owned.id).sandbox.status, 'running');
   await cleanup(store);
 });
 
@@ -190,7 +202,7 @@ test('startRosterSandboxes: one failed start is logged + on that slot\'s feed; t
   assert.deepEqual(bad.map((x) => x.slotId), ['slot-2']);
   assert.match(bad[0].error, /429/);
   assert.equal(r.results.filter((x) => x.ok).length, ACTIVE_TRACKS.length - 1);
-  assert.ok(logs.some((l) => /slot-2 sandbox failed to start, continuing/.test(l)));
+  assert.ok(logs.some((l) => /slot-2 \(roster\) sandbox failed to start, continuing/.test(l)));
   assert.ok(logs.some((l) => l.includes(`${ACTIVE_TRACKS.length - 1}/${ACTIVE_TRACKS.length}`)));
   const s2 = store.slotManager.getSlot('slot-2');
   assert.equal(s2.sandbox.status, 'failed');

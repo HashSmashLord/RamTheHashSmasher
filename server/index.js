@@ -17,7 +17,12 @@ const autoSeed = autoSeedPolicy(process.env);
 const seeded = autoSeed.enabled ? await seedRosterFunding(app.store, { budgetConfig: config.budget, log: config.log }) : null;
 const address = await app.listen();
 console.log(`herd listening on http://${address.address}:${address.port}`);
-if (seeded?.ok) startRosterSandboxes(app.store, { log: config.log });
+// Runs whenever auto-seed is on, regardless of whether roster funding (above)
+// succeeded: an owned (launchpad) slot's sandbox has nothing to do with the
+// roster's funding step, and used to silently never restart if that step
+// failed for any reason. Roster sandboxes are still skipped if the roster
+// itself never got funded (startRosterSandboxes only targets active slots).
+if (autoSeed.enabled) startRosterSandboxes(app.store, { log: config.log });
 
 let closing = false;
 async function shutdown() {
