@@ -119,6 +119,33 @@ test('desk viewer: idle text with no sandbox, a sandboxed iframe for the live st
   assert.equal(frame.children.length, 0, 'a destroyed viewer never embeds anything');
 });
 
+test('desk viewer: the live iframe reloads periodically, so a dropped noVNC websocket (stuck on its own Connect button) cannot persist forever', async () => {
+  let clock = 1_000_000;
+  const next = { state: 'live', url: GOOD, expiresAt: '2026-10-05T17:00:00.000Z', sessionId: 'sbx1' };
+  const desk = createDeskViewer({ ramLabel: 'ram-01', slotId: 'slot-0', doc: fakeDoc(), load: async () => next, now: () => clock });
+  const [, frame] = desk.el.children;
+
+  await desk.refresh();
+  const first = frame.children[0];
+  assert.equal(first.src, GOOD);
+
+  // well under the reload interval: same stream, same iframe, no reload
+  clock += 30_000;
+  await desk.refresh();
+  assert.equal(frame.children[0], first);
+
+  // past the reload interval: same stream URL, but a fresh iframe -- this is
+  // what re-triggers noVNC's own autoconnect after a silent disconnect
+  clock += 70_000;
+  await desk.refresh();
+  const second = frame.children[0];
+  assert.notEqual(second, first, 'a new iframe element, not the same one left stale');
+  assert.equal(second.src, GOOD);
+  assert.equal(frame.children.length, 1, 'the stale iframe is replaced, not appended alongside');
+
+  desk.destroy();
+});
+
 // --- why there is no desk: one honest line per real state ---
 
 test('deskWhy reads the slot record: never / starting / stopped / expired / ended / failed', () => {

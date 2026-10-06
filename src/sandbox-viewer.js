@@ -183,7 +183,7 @@ const BADGE = {
  *
  * @param {{ ramLabel: string, slotId: string, doc?: Document, load?: typeof loadDesk, copy?: Partial<typeof DEFAULT_COPY> }} opts
  */
-export function createDeskViewer({ ramLabel, slotId, doc = document, load = loadDesk, copy = {} }) {
+export function createDeskViewer({ ramLabel, slotId, doc = document, load = loadDesk, copy = {}, now = () => Date.now() }) {
   const words = { ...DEFAULT_COPY, ...copy };
   const el = doc.createElement("div");
   el.className = "desk";
@@ -200,7 +200,17 @@ export function createDeskViewer({ ramLabel, slotId, doc = document, load = load
   el.append(line, frameWrap, badge);
 
   let shownUrl = null;
+  let shownAt = 0;
   let destroyed = false;
+  // noVNC's own autoconnect only runs once, on the iframe's initial load -- if its
+  // websocket ever drops for any reason (a network blip, the tab getting backgrounded
+  // and throttled, E2B's own connection recycling), noVNC falls back to its manual
+  // "Connect" button and stays there forever, since nothing here ever reloads the
+  // iframe while its URL is unchanged (real, reported live 2026-10-06: a viewer saw
+  // exactly this, stuck on the Connect screen with autoconnect=true in the URL).
+  // Forcing a reload periodically re-triggers a fresh autoconnect attempt, bounding
+  // how long any one disconnect can persist instead of requiring a page refresh.
+  const RELOAD_INTERVAL_MS = 90_000;
 
   function setLine(text, state) {
     line.textContent = text;
@@ -220,7 +230,8 @@ export function createDeskViewer({ ramLabel, slotId, doc = document, load = load
   function showLive(desk) {
     const until = desk.expiresAt ? clockTime(desk.expiresAt) : null;
     setLine(words.live(ramLabel, until), "live");
-    if (shownUrl === desk.url) return;
+    const nowMs = now();
+    if (shownUrl === desk.url && nowMs - shownAt < RELOAD_INTERVAL_MS) return;
     const iframe = doc.createElement("iframe");
     iframe.className = "desk-iframe";
     iframe.title = `${ramLabel}'s desktop, live, view only`;
@@ -234,6 +245,7 @@ export function createDeskViewer({ ramLabel, slotId, doc = document, load = load
     frameWrap.replaceChildren(iframe);
     frameWrap.hidden = false;
     shownUrl = desk.url;
+    shownAt = nowMs;
   }
 
   async function refresh() {
