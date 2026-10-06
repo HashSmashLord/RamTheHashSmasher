@@ -37,6 +37,23 @@ test('isLaunched / launchedRams: only RAM_STATUSES "active" counts, never draft/
   assert.deepEqual(launchedRams([]), []);
 });
 
+test('launchedRams: newest launch first ("the last made tokens"), by updatedAt -- the moment confirmLaunch() made each one active, not the earlier, less honest createdAt (draft start)', () => {
+  const rams = [
+    { id: 'old', status: 'active', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z' },
+    { id: 'newest', status: 'active', createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-09T00:00:00Z' },
+    { id: 'middle', status: 'active', createdAt: '2026-01-09T00:00:00Z', updatedAt: '2026-01-07T00:00:00Z' },
+    { id: 'not-launched', status: 'draft', createdAt: '2026-01-10T00:00:00Z', updatedAt: '2026-01-10T00:00:00Z' },
+  ];
+  assert.deepEqual(launchedRams(rams).map((r) => r.id), ['newest', 'middle', 'old'], 'sorted by updatedAt descending, draft never included');
+
+  // A RAM missing updatedAt (should not happen for an active one) sorts last, never crashes.
+  const missing = [
+    { id: 'has-one', status: 'active', updatedAt: '2026-01-05T00:00:00Z' },
+    { id: 'no-updatedAt', status: 'active' },
+  ];
+  assert.deepEqual(launchedRams(missing).map((r) => r.id), ['has-one', 'no-updatedAt']);
+});
+
 test('ramRoundLabel: the RAM\'s own recorded family and rounds, never the raw track id', () => {
   assert.equal(ramRoundLabel({ hashFamily: 'SHA-256', rounds: 31 }), 'SHA-256 r31');
   assert.equal(ramRoundLabel({ hashFamily: 'BLAKE3', rounds: 2 }), 'BLAKE3 r2');

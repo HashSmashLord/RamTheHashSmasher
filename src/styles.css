@@ -636,3 +636,23 @@ select.ctl option { background: var(--bg); color: var(--ink); }
   .chains li:last-child { border-bottom: 0; padding-bottom: 0; }
   .ex-head h3 { font-size: 1.75rem; }
 }
+
+/* Discover (/discover): a grid of launched RAMs' token cards. Was an inline <style> block in
+   discover.html; moved here because the page's CSP (server/app.js PAGE_CSP) sets default-src
+   'self' with no style-src 'unsafe-inline', so an inline block is silently dropped by the
+   browser — confirmed live: #discover-grid computed display:block, gap:normal until this move. */
+.disc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.6rem; border-top: 2px solid var(--rule-2); padding-top: 1.8rem; margin-top: 0.4rem; }
+.disc-card { display: flex; gap: 1rem; padding: 1rem; border: 2px solid var(--rule-2); min-width: 0; }
+.disc-art { flex: none; display: block; width: 64px; height: 64px; border: var(--u) solid var(--ink); clip-path: var(--clip-notch); overflow: hidden; background: var(--bg); }
+.disc-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.disc-art .screen-idle { display: block; width: 70%; height: 70%; margin: 15%; fill: var(--ink-2); }
+.disc-lines { min-width: 0; flex: 1; }
+.disc-head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin: 0; }
+.disc-name { font-family: var(--display); font-size: 1.3rem; line-height: 1.1; text-decoration: none; color: var(--ink); }
+.disc-name:hover, .disc-name:focus-visible { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 0.12em; }
+.disc-symbol { color: var(--ink-3); font-size: 0.85rem; }
+.disc-meta { display: flex; flex-wrap: wrap; gap: 0 0.7rem; color: var(--ink-2); font-size: 0.85rem; margin: 0.4rem 0 0; }
+.disc-links { display: flex; gap: 1rem; margin: 0.7rem 0 0; font-size: 0.85rem; }
+.disc-links a { color: var(--ink-2); text-decoration: none; }
+.disc-links a:hover, .disc-links a:focus-visible { color: var(--ink); text-decoration: underline; }
+.disc-empty { color: var(--ink-2); border-top: 2px solid var(--rule-2); padding-top: 1.6rem; margin-top: 0.4rem; }
