@@ -119,5 +119,28 @@ export function createCostLedger({ now = () => new Date().toISOString(), maxEntr
     return [...perModel.entries()].map(([model, t]) => ({ model, totals: { ...t } }));
   }
 
-  return { record, totals, forSlot, forRam, byModel, list: () => entries.map(copyEntry) };
+  /**
+   * Real spend in the last `windowMs`, summed from the real per-call entries
+   * (each has its own real `ts`) -- not an estimate, not the all-time total.
+   * Bounded by the same windowing as `entries` itself: if more than
+   * `maxEntries` real calls happen inside the window, the oldest ones in that
+   * window have already aged out and this undercounts rather than overcounts
+   * -- the same honest tradeoff the rest of this module already makes for
+   * per-entry detail (totals() itself is still exact; only this windowed cut
+   * of it depends on entries still being around).
+   * @param {number} windowMs
+   */
+  function epochTotals(windowMs) {
+    // Date.parse(now()), not Date.now(): consistent with every entry's own ts (also now()),
+    // and real-tested 2026-10-06 that skipping this made every entry compare against the
+    // real wall clock instead of an injected test clock, silently excluding everything.
+    const cutoff = Date.parse(now()) - windowMs;
+    const t = emptyTotals();
+    for (const e of entries) {
+      if (Date.parse(e.ts) >= cutoff) addInto(t, e.usage);
+    }
+    return t;
+  }
+
+  return { record, totals, epochTotals, forSlot, forRam, byModel, list: () => entries.map(copyEntry) };
 }

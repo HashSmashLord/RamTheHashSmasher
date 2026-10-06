@@ -200,7 +200,7 @@ export function createApp(config) {
   // ---- public read routes ----
 
   function getLedger(req, res) {
-    sendOk(res, { ledger: store.ledger.getSnapshot() });
+    sendOk(res, { ledger: { ...store.ledger.getSnapshot(), totalZec: store.totalZec() } });
   }
 
   function getAllocation(req, res) {

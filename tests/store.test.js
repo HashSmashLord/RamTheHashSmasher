@@ -170,3 +170,19 @@ test('a grown ceiling raises only the roster\'s own cap: owned RAMs neither coun
   assert.equal(after.filter((s) => s.kind === 'owned').length, 3);
   assert.equal(store.getAllocation().maxSlots, 15); // and the ceiling is still 15
 });
+
+test('getAllocation().computeSpentEpochUsd is real, off costLedger\'s own real entries -- $0 for a fresh store, never null or a guess', async () => {
+  const store = createStore({ budgetConfig, env: {} });
+  assert.equal(store.getAllocation().computeSpentEpochUsd, 0);
+  store.costLedger.record({ slotId: 'slot-0', model: 'm', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2, costUsd: 0.05 } });
+  store.costLedger.record({ slotId: 'slot-1', model: 'm', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2, costUsd: 0.07 } });
+  assert.equal(store.getAllocation().computeSpentEpochUsd, 0.12);
+});
+
+test('totalZec() is null until a real ZEC price has actually been fetched -- never a guessed conversion, and absent entirely (no zecPriceSource) when the fee source is the default mock', async () => {
+  const store = createStore({ budgetConfig, env: {} }); // RAMHERD_FEE_SOURCE unset -> mock fee source
+  assert.equal(store.feeSource.kind, 'mock');
+  assert.equal(store.totalZec(), null, 'no real price fetched yet (and never will be, for a mock source)');
+  await store.refreshZecPrice(); // a no-op: pumpFee is off, so there is no zecPriceSource to call
+  assert.equal(store.totalZec(), null);
+});

@@ -6,7 +6,7 @@
 import { join } from 'node:path';
 import { Connection } from '@solana/web3.js';
 import { createMockFeeSource, createFeeLedger } from './lib/ledger.js';
-import { createPumpFeeSource, createCoinGeckoPriceSource, connectionAdapter as pumpFeeConnectionAdapter, pumpFeePolicy } from './lib/pumpfee.js';
+import { createPumpFeeSource, createCoinGeckoPriceSource, createCoinGeckoZecPriceSource, connectionAdapter as pumpFeeConnectionAdapter, pumpFeePolicy } from './lib/pumpfee.js';
 import { computeAllocation, withLaunchCeiling } from './lib/budget.js';
 import { createSlotManager } from './lib/slots.js';
 import { createCoordinator, createCoordinatorView } from './lib/coordinator.js';
@@ -50,6 +50,22 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
         })
       : createMockFeeSource();
   const ledger = createFeeLedger({ source: feeSource });
+  // A real ZEC/USD price, cached (never fetched per-request) and refreshed on the same
+  // cadence as the fee ledger itself (server/index.js). Purely a second, real way to show
+  // the one real USD fee total pumpfee.js already has -- not a separate ZEC-denominated
+  // source, and never guessed: null until the first real fetch succeeds.
+  const zecPriceSource = pumpFee.enabled ? createCoinGeckoZecPriceSource() : null;
+  let zecUsdPrice = null;
+  async function refreshZecPrice() {
+    if (!zecPriceSource) return null;
+    zecUsdPrice = await zecPriceSource.fetchZecUsd();
+    return zecUsdPrice;
+  }
+  function totalZec() {
+    if (zecUsdPrice === null) return null;
+    const { totalUsd } = ledger.getSnapshot();
+    return Math.round((totalUsd / zecUsdPrice) * 1e6) / 1e6;
+  }
   const llmProvider = createLlmProvider(env);
   // Real HashSmash pipeline: opt-in with RAMHERD_PIPELINE=local (off by
   // default). Its credential-free stages are local and free; the paid judge
@@ -163,6 +179,8 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
     return withLaunchCeiling(budgetConfig, launchesThatRaisedCeiling.size);
   }
 
+  const EPOCH_MS = 24 * 60 * 60 * 1000;
+
   function getAllocation() {
     const { totalUsd } = ledger.getSnapshot();
     return {
@@ -170,6 +188,10 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
       // Where maxSlots comes from, so the number can be explained honestly.
       maxSlotsBase: budgetConfig.maxSlots,
       launchesConfirmed: launchesThatRaisedCeiling.size,
+      // Real spend in the last 24h, off costLedger's own real per-call entries (server/lib/cost.js
+      // epochTotals) -- genuinely $0 in mock mode (every call there records a real, honest zero),
+      // and the real figure once RAMHERD_LIVE is on and real OpenRouter calls are billing.
+      computeSpentEpochUsd: costLedger.epochTotals(EPOCH_MS).costUsd,
     };
   }
 
@@ -202,5 +224,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
     getAllocation,
     currentBudgetConfig,
     reallocateSlotsFromBudget,
+    refreshZecPrice,
+    totalZec,
   };
 }

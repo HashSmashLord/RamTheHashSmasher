@@ -130,6 +130,28 @@ export function createCoinGeckoPriceSource({ fetchImpl = fetch } = {}) {
 }
 
 /**
+ * A real ZEC/USD price from CoinGecko's public (no-key) endpoint -- separate
+ * call from the SOL price above (different id, cached independently by
+ * whoever calls this; this function itself never caches), used only to show
+ * the same real fee total a second way, in ZEC, never to track real ZEC
+ * actually arriving anywhere (there is no ZEC-denominated FeeSource; this is
+ * a display conversion of the one real USD figure pumpfee.js already has).
+ */
+export function createCoinGeckoZecPriceSource({ fetchImpl = fetch } = {}) {
+  return {
+    kind: 'coingecko',
+    async fetchZecUsd() {
+      const res = await fetchImpl('https://api.coingecko.com/api/v3/simple/price?ids=zcash&vs_currencies=usd');
+      if (!res.ok) throw new Error(`CoinGecko ZEC price fetch failed: ${res.status}`);
+      const body = await res.json();
+      const price = body?.zcash?.usd;
+      if (typeof price !== 'number' || !(price > 0)) throw new Error('CoinGecko returned no usable zcash.usd price');
+      return price;
+    },
+  };
+}
+
+/**
  * The real `FeeSource` (ledger.js). Scans the treasury's real transaction
  * history for DistributeCreatorFees payments and converts the lamport total
  * to USD at the real current SOL price. Incremental: after the first call

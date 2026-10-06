@@ -28,13 +28,15 @@ export async function renderFundLines() {
   // The figures are visible from the first paint; only later writes are printed.
   const fees = $("stat-fees");
   if (write(fees, money(s.feesCollectedLifetime)) && !first) print(fees);
+  // The same real total a second way, in ZEC, at the real current ZEC/USD price
+  // (server/lib/pumpfee.js createCoinGeckoZecPriceSource) -- null (so this stays blank)
+  // until that real price has actually been fetched once, never a guessed conversion.
+  write($("stat-fees-zec"), s.feesCollectedLifetimeZec != null ? `(≈ ${s.feesCollectedLifetimeZec} ZEC)` : "");
 
-  // The real server sends null for the spend (no route measures it per epoch yet —
-  // see getStats() in mock-data.js). Then the line says so in words, and the connector
-  // says plainly that the budget IS whatever fees came in (allocationFraction is 1 in
-  // budget.js -- it's not a separate fixed quota), not just a number sitting next to
-  // it. The bar is hidden either way: an empty bar would say "nothing spent", which is
-  // not what null means.
+  // computeSpentEpoch is a real number straight off costLedger's own real per-call entries
+  // (store.js getAllocation) -- genuinely $0 in mock mode (an honest zero, not "unknown"),
+  // so `tracked` below is effectively always true once this is wired up; `!= null` is kept
+  // as the real signal anyway, in case a future caller ever has a genuine reason to send null.
   const spent = $("stat-budget");
   const tracked = s.computeSpentEpoch != null;
   if (write(spent, tracked ? money(s.computeSpentEpoch) : "not tracked yet") && !first) print(spent);

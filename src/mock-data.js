@@ -477,13 +477,12 @@ export const RAMherdAPI = {
       }
       return {
         feesCollectedLifetime: ledger.totalUsd,
+        feesCollectedLifetimeZec: ledger.totalZec ?? null,
         computeBudgetEpoch: allocation.budgetUsd,
-        // No route exposes real per-epoch spend yet (server/lib/cost.js tracks
-        // lifetime, and no route serves even that). Real spend IS happening when
-        // RAMHERD_LIVE is on, so a "$0.00" here would read as a measurement that
-        // says nothing was spent. null means "not tracked": fund-lines.js says so
-        // in words instead of printing a dollar figure.
-        computeSpentEpoch: null,
+        // Real spend in the last 24h, off server/lib/cost.js's own real per-call entries
+        // (store.js getAllocation -> costLedger.epochTotals). Genuinely $0 in mock mode
+        // (every call there records an honest zero); the real figure once RAMHERD_LIVE is on.
+        computeSpentEpoch: allocation.computeSpentEpochUsd,
         epochLabel: "this 24h epoch",
         slotsActive: rosterActive.length,
         slotsMax: allocation.maxSlots,

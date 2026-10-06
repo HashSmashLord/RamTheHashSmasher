@@ -39,10 +39,16 @@ if (pumpFeePolicy(process.env).enabled) {
   // server coming up. Without this, a fresh boot sits at the ledger's untouched-since-
   // construction $0 for up to the first full PUMP_FEE_REFRESH_MS tick -- a real, honest,
   // but needlessly long "nothing collected yet" window right after every restart.
-  app.store.ledger.refresh().catch((err) => config.log(`pumpfee: first refresh on boot failed, the periodic tick will retry: ${err?.message || err}`));
-  setInterval(() => {
-    app.store.ledger.refresh().catch((err) => config.log(`pumpfee: periodic refresh failed, will retry next tick: ${err?.message || err}`));
-  }, PUMP_FEE_REFRESH_MS).unref();
+  const refreshPumpFee = () =>
+    Promise.all([
+      app.store.ledger.refresh().catch((err) => config.log(`pumpfee: refresh failed, will retry next tick: ${err?.message || err}`)),
+      // Same real ZEC/USD price used to show the fee total a second way (server/lib/pumpfee.js
+      // createCoinGeckoZecPriceSource) -- refreshed alongside the fee itself, not fetched
+      // per-request, so a CoinGecko hiccup here never blocks or slows down a real page load.
+      app.store.refreshZecPrice().catch((err) => config.log(`pumpfee: ZEC price refresh failed, will retry next tick: ${err?.message || err}`)),
+    ]);
+  refreshPumpFee();
+  setInterval(refreshPumpFee, PUMP_FEE_REFRESH_MS).unref();
 }
 
 let closing = false;

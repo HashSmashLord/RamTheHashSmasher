@@ -25,6 +25,32 @@ test('totals() sums tokens and cost across every recorded call', () => {
   assert.equal(totals.costUnknownCalls, 0);
 });
 
+test('epochTotals: sums only real entries within the window, off their own real ts -- not the all-time total', () => {
+  let clock = Date.parse('2026-01-01T00:00:00.000Z');
+  const ledger = createCostLedger({ now: () => new Date(clock).toISOString() });
+  ledger.record({ slotId: 'slot-0', model: 'm', usage: usage({ costUsd: 0.01 }) }); // t=0
+  clock += 23 * 60 * 60 * 1000; // +23h: inside a 24h window
+  ledger.record({ slotId: 'slot-0', model: 'm', usage: usage({ costUsd: 0.02 }) });
+  clock += 2 * 60 * 60 * 1000; // +25h total: the first entry is now outside a 24h window
+  ledger.record({ slotId: 'slot-0', model: 'm', usage: usage({ costUsd: 0.04 }) });
+
+  const DAY = 24 * 60 * 60 * 1000;
+  const epoch = ledger.epochTotals(DAY);
+  assert.equal(epoch.calls, 2, 'only the two most recent calls are within the last 24h from "now"');
+  assert.equal(epoch.costUsd, 0.06, '0.02 + 0.04, not the first 0.01');
+  assert.equal(ledger.totals().costUsd, 0.07, 'the all-time total is unaffected by the window');
+
+  const everything = ledger.epochTotals(DAY * 30);
+  assert.equal(everything.calls, 3);
+  assert.equal(everything.costUsd, 0.07);
+});
+
+test('epochTotals: a fresh ledger (no real calls yet) is an honest zero, not null or an error', () => {
+  const ledger = createCostLedger();
+  const epoch = ledger.epochTotals(24 * 60 * 60 * 1000);
+  assert.deepEqual(epoch, { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0, costUnknownCalls: 0, calls: 0 });
+});
+
 test('a call with no reported cost (costUsd null) counts as unknown, not zero', () => {
   const ledger = createCostLedger();
   ledger.record({ slotId: 'slot-0', model: 'm', usage: usage({ costUsd: null }) });

@@ -4,7 +4,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { creatorFeeLamportsOf, createPumpFeeSource, createCoinGeckoPriceSource, connectionAdapter, pumpFeePolicy } from '../server/lib/pumpfee.js';
+import { creatorFeeLamportsOf, createPumpFeeSource, createCoinGeckoPriceSource, createCoinGeckoZecPriceSource, connectionAdapter, pumpFeePolicy } from '../server/lib/pumpfee.js';
 
 const TREASURY = 'Treasury111111111111111111111111111111111';
 const OTHER = 'Other1111111111111111111111111111111111111';
@@ -235,6 +235,23 @@ test('connectionAdapter.getTransaction: a real "not found yet" response (result:
     fetchImpl: async () => ({ ok: true, async json() { return { jsonrpc: '2.0', id: 1, result: null }; } }),
   });
   assert.equal(await adapter.getTransaction('s'), null);
+});
+
+test('createCoinGeckoZecPriceSource: a real-shaped response parses; a bad one throws rather than guessing a price', async () => {
+  const ok = createCoinGeckoZecPriceSource({ fetchImpl: async (url) => {
+    assert.match(url, /ids=zcash/);
+    return { ok: true, async json() { return { zcash: { usd: 1370.16 } }; } };
+  } });
+  assert.equal(await ok.fetchZecUsd(), 1370.16);
+
+  const badStatus = createCoinGeckoZecPriceSource({ fetchImpl: async () => ({ ok: false, status: 500 }) });
+  await assert.rejects(badStatus.fetchZecUsd());
+
+  const badShape = createCoinGeckoZecPriceSource({ fetchImpl: async () => ({ ok: true, async json() { return { solana: { usd: 1 } }; } }) });
+  await assert.rejects(badShape.fetchZecUsd(), 'the solana price shape must never be mistaken for a zcash one');
+
+  const zero = createCoinGeckoZecPriceSource({ fetchImpl: async () => ({ ok: true, async json() { return { zcash: { usd: 0 } }; } }) });
+  await assert.rejects(zero.fetchZecUsd());
 });
 
 test('pumpFeePolicy: off unless RAMHERD_FEE_SOURCE is exactly "onchain" -- the mock stays the default', () => {
