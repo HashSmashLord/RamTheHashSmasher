@@ -404,7 +404,7 @@ select.ctl option { background: var(--bg); color: var(--ink); }
 
 /* ---------- the board: one screen per RAM ---------- */
 
-.herder, .board, .ideas, .rules { background-image: var(--speck); }
+.herder, .board, .ideas, .rules, .discover { background-image: var(--speck); }
 .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.6rem 2rem; }
 .tile { min-width: 0; }
 

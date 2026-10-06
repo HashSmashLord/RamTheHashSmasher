@@ -836,6 +836,20 @@ const launchpadAPI = {
     await simulatedLatency(200, 400);
     return { ...mockBuildTransaction(id, mint), mock: true };
   },
+
+  /**
+   * GET /api/launchpad/rams (no `owner`) -> 200 { ok, rams }: every RAM anyone has ever
+   * drafted, in any status. Used by the Discover page (/discover), which filters the list
+   * down to actually-launched RAMs itself (src/discover-view.js) — this method never filters,
+   * so it stays the one honest mirror of the real route.
+   */
+  async listRams() {
+    if (await backendReady) return apiRequest("GET", "/api/launchpad/rams");
+    await simulatedLatency();
+    // Fallback: nothing has been drafted in this browser session, so an honestly empty list
+    // (never invented rows) — matching the real server with nobody ever having launched.
+    return { status: 200, body: { ok: true, rams: [...mockLaunchpad.rams.values()] }, mock: true };
+  },
 };
 
 RAMherdAPI.launchpad = launchpadAPI;

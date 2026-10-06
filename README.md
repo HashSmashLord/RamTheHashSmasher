@@ -268,6 +268,10 @@ src/
   submit.html + submit.js  the idea slip and the human-review notice
   rules.html + rules.js    what this can and can't claim (nothing dynamic but the menu)
   launch.html + launch.js + launch.css + launchpad-rules.js   the entry slip (not live)
+  discover.html + discover.js + discover-view.js   every actually-launched RAM's token,
+                           browsable with no id needed: image, name, symbol, hash family and
+                           round, model, a link to its own herd.html#ram/<id> page, and its
+                           real pump.fun link once a mint is on record
 
   nav.js            the top bar's menu toggle, called by every page
   ui.js             the listing's primitives: status words, pixel glyphs, the judge's column,
