@@ -312,8 +312,10 @@ export function mountRamPage({ feed }) {
       const agent = fleet.find((a) => a.id === open.id);
       if (agent) updateNow(agent);
     },
+    // Returned (not fire-and-forget) so herd.js's poll interval can await it before its
+    // own scrollY check, same reason as board.js's refreshDesks().
     refreshDesk() {
-      if (open && open.desk) open.desk.refresh();
+      return open && open.desk ? open.desk.refresh() : undefined;
     },
   };
 }

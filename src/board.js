@@ -110,14 +110,16 @@ function updateTile(t, agent, first) {
  * Mounts the board into #tiles. `render()` fetches the fleet, diffs the tiles and returns
  * the fleet (so the page can hand it to the RAM page); `refreshDesks()` re-checks every
  * screen's stream.
- * @param {{ feed: Awaited<ReturnType<typeof createDeskFeed>> }} opts
+ * @param {{ feed: Awaited<ReturnType<typeof createDeskFeed>>, getFleet?: typeof RAMherdAPI.getFleet }} opts
+ *   `getFleet` defaults to the real `RAMherdAPI.getFleet`; overridable so tests can drive a
+ *   synthetic, growing fleet without a real backend (see tests/board.test.js).
  */
-export function mountBoard({ feed }) {
+export function mountBoard({ feed, getFleet = RAMherdAPI.getFleet }) {
   const grid = $("tiles");
   const tiles = new Map();
 
   async function render() {
-    const fleet = await RAMherdAPI.getFleet();
+    const fleet = await getFleet();
     // Scroll bug, real-tested 2026-10-06: diffing by id already avoids a full rebuild, but
     // this grid is live and its cards are not a fixed height -- any one card's text growing
     // or shrinking on a routine update (a longer status line, a judge score appearing, and
@@ -130,6 +132,19 @@ export function mountBoard({ feed }) {
     // of a navigation.
     const scrollY = window.scrollY;
     const seen = new Set();
+    // A brand-new tile's own desk check (sandbox-viewer.js's refresh()) is a fetch: it can
+    // still be settling the tile's screen (idle text <-> badge <-> iframe) after this loop
+    // returns -- a real async-settle gap in the scrollY guard below, checked 2026-10-06
+    // against a growing roster (budget.js's withLaunchCeiling raises maxSlots as RAMs
+    // launch, so new tiles can and do appear while someone is already scrolled down).
+    // Today that settling never actually moves anything: .screen's CSS (aspect-ratio +
+    // overflow:hidden, every bit of desk markup position:absolute) makes the box's size
+    // independent of its content, so toggling idle text for a live iframe reflows nothing.
+    // But that CSS is the only thing closing this gap, not this guard -- awaiting each new
+    // tile's first refresh() before the check below closes it here too, so a later change
+    // to that CSS (e.g. a thumbnail image in a tile) can't silently reopen the scroll-jump
+    // bug this file already fixed once (see the comment below and herd.js's poll interval).
+    const firstRefreshes = [];
     for (const agent of fleet) {
       seen.add(agent.id);
       let t = tiles.get(agent.id);
@@ -138,7 +153,7 @@ export function mountBoard({ feed }) {
         t = buildTile(agent, feed);
         tiles.set(agent.id, t);
         grid.appendChild(t.el);
-        t.desk.refresh();
+        firstRefreshes.push(t.desk.refresh());
       }
       updateTile(t, agent, first);
     }
@@ -149,12 +164,16 @@ export function mountBoard({ feed }) {
         tiles.delete(id);
       }
     }
+    if (firstRefreshes.length) await Promise.all(firstRefreshes);
     if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
     return fleet;
   }
 
-  function refreshDesks() {
-    for (const t of tiles.values()) t.desk.refresh();
+  // Same reasoning as render()'s firstRefreshes above: each tile's desk.refresh() is a
+  // fetch, so the caller (herd.js's poll interval) needs to await this to guard against
+  // it settling after its own scrollY check, not before.
+  async function refreshDesks() {
+    await Promise.all([...tiles.values()].map((t) => t.desk.refresh()));
   }
 
   return { render, refreshDesks };

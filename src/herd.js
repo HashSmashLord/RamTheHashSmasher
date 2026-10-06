@@ -39,10 +39,13 @@ RAMherdAPI.subscribeLive(tick, 4000);
 // text and a live iframe), which reflows the grid and silently moves a scrolled
 // reader's position -- a second, separate interval from the 4s fleet tick, so it needed
 // its own snapshot-and-restore; fixing render() alone left this one still jumping.
+//
+// Both refresh calls are awaited (checked 2026-10-06): each tile's own desk check is a
+// fetch, so without this the scrollY check below could run before that fetch's DOM work
+// actually lands, the same async-settle gap closed in board.js's render(). See its comment.
 setInterval(async () => {
   const scrollY = window.scrollY;
   await feed.refresh();
-  board.refreshDesks();
-  page.refreshDesk();
+  await Promise.all([board.refreshDesks(), page.refreshDesk()]);
   if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
 }, DESK_POLL_MS);
