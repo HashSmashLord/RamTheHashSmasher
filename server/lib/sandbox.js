@@ -253,6 +253,18 @@ export function createSandboxManager({
   const live = new Map();
   /** slotId -> in-flight start promise (prevents double creates for one slot) */
   const starting = new Map();
+  /** slotIds exempt from maxConcurrent: a real launched RAM's own sandbox,
+   * never competing with the roster for the same small cap. Still a real
+   * sandbox billing real money either way -- this exempts it from the COUNT,
+   * not from existing. See slots.js's startSandboxNow, which passes this for
+   * any slot.kind === 'owned'. */
+  const exempt = new Set();
+  function nonExemptCount() {
+    let n = 0;
+    for (const id of live.keys()) if (!exempt.has(id)) n++;
+    for (const id of starting.keys()) if (!exempt.has(id)) n++;
+    return n;
+  }
   /** listeners told when E2B ended a sandbox that this manager did not stop */
   const endedListeners = new Set();
   let sdkPromise = null;
@@ -370,12 +382,18 @@ export function createSandboxManager({
    * call while one is live or starting returns the same session.
    *
    * @param {string} slotId
+   * @param {{ exempt?: boolean }} [opts] exempt: true keeps this slot's sandbox
+   *   out of the maxConcurrent count entirely (a real launched RAM's own
+   *   sandbox; see the `exempt` Set above). Each call's own exempt flag is
+   *   remembered for stop()/counts even though start() itself is the only
+   *   place a caller passes it.
    */
-  async function start(slotId) {
+  async function start(slotId, { exempt: isExempt = false } = {}) {
     if (typeof slotId !== 'string' || !slotId) throw new TypeError('slotId is required');
+    if (isExempt) exempt.add(slotId);
     if (live.has(slotId)) return live.get(slotId).info;
     if (starting.has(slotId)) return starting.get(slotId);
-    if (live.size + starting.size >= maxConcurrent) {
+    if (!isExempt && nonExemptCount() >= maxConcurrent) {
       throw new Error(`sandbox limit reached (${maxConcurrent} running); stop one first`);
     }
     const p = createFor(slotId).finally(() => starting.delete(slotId));
@@ -396,6 +414,7 @@ export function createSandboxManager({
     const entry = live.get(slotId);
     if (!entry) return null;
     live.delete(slotId);
+    exempt.delete(slotId);
     syncWatch();
     const stoppedMs = now();
     // The SDK's kill answers false (no throw) when E2B no longer has the sandbox.

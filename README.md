@@ -203,7 +203,7 @@ to override. It is still the next step for **cost**.
 | `RAMHERD_SANDBOX=e2b` | off | enables sandboxes (also needs `E2B_API_KEY`); without it the SDK is never even imported |
 | `RAMHERD_SANDBOX_TEMPLATE` | `desktop` | template name/id (a smaller custom template is the next cost step) |
 | `RAMHERD_SANDBOX_TIMEOUT_MIN` | 15 | E2B-side hard kill timeout per sandbox (1 to 1440) |
-| `RAMHERD_SANDBOX_MAX` | 6 | max concurrent sandboxes from this server (1 to 100) |
+| `RAMHERD_SANDBOX_MAX` | 6 | max concurrent sandboxes from this server (1 to 100) — roster only; a launched RAM's own (owned) sandbox is exempt from this count entirely (`server/lib/sandbox.js`'s `exempt` Set, set by `slots.js` for every `slot.kind === 'owned'`), so a real launch is never blocked by roster sandboxes already running. Still real E2B billing either way — exempt from the cap, not from cost |
 | `RAMHERD_SANDBOX_RECONCILE_SEC` | 15 | how often, while any sandbox is live, to ask E2B whether each still runs (0 turns the check off) |
 | `RAMHERD_SANDBOX_AUTORESTART` | unset (off) | `true` = when E2B's hard timeout ends an active roster RAM's sandbox, start a fresh one (workbench task + banner rerun; nothing carries over). Never for owned RAMs, admin-stopped sandboxes, or ones gone before their hard stop. Switch at runtime: `POST /api/admin/sandboxes/autorestart {"enabled": false}` |
 | `RAMHERD_SANDBOX_AUTORESTART_BACKOFF_SEC` | 30 | wait before retrying a failed restart; doubles each retry, capped at 10 min |

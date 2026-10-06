@@ -608,7 +608,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     slot.sandbox = { provider: sandboxManager.provider, status: 'starting', sessionId: null, requestedAt: now() };
     pushFeed(slot, 'sandbox-starting', 'Starting an isolated desktop sandbox for this RAM.');
     try {
-      const info = await sandboxManager.start(id);
+      const info = await sandboxManager.start(id, { exempt: slot.kind === 'owned' });
       slot.sandbox = { ...info, status: 'running' };
       pushFeed(slot, 'sandbox-started', `Desktop sandbox ${info.sessionId} running (${info.template}), hard stop at ${info.expiresAt}.`);
       if (sandboxContext && typeof sandboxManager.runTask === 'function') startContext(slot, info.sessionId);

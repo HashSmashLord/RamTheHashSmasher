@@ -252,6 +252,22 @@ test('the concurrency cap refuses extra sandboxes before calling E2B', async () 
   assert.equal(sdk.calls.create.length, 3);
 });
 
+test('exempt: true (a launched RAM\'s own owned slot) never counts against the cap', async () => {
+  const sdk = fakeSdk();
+  const m = manager(sdk, { maxConcurrent: 2 });
+  await m.start('a');
+  await m.start('b'); // cap now full on non-exempt slots
+  // A third owned-slot sandbox still starts: it's exempt from the count.
+  await m.start('owned-1', { exempt: true });
+  await m.start('owned-2', { exempt: true });
+  assert.equal(sdk.calls.create.length, 4);
+  // A third NON-exempt one is still refused; the exempt ones never ate the cap.
+  await assert.rejects(m.start('c'), /sandbox limit reached \(2/);
+  await m.stop('owned-1');
+  await m.start('owned-3', { exempt: true });
+  assert.equal(sdk.calls.create.length, 5);
+});
+
 test('stop kills the sandbox and reports how long it ran', async () => {
   const sdk = fakeSdk();
   const m = manager(sdk);
