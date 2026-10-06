@@ -34,6 +34,12 @@ if (autoSeed.enabled) startRosterSandboxes(app.store, { log: config.log });
 // crashes the process.
 const PUMP_FEE_REFRESH_MS = 10 * 60 * 1000; // 10 minutes: plenty fresh, gentle on the free public RPC/CoinGecko
 if (pumpFeePolicy(process.env).enabled) {
+  // Kicked off here, after listen(), not awaited: the real scan can take real minutes
+  // (real-tested 2026-10-06 against the live treasury), and this must never delay the
+  // server coming up. Without this, a fresh boot sits at the ledger's untouched-since-
+  // construction $0 for up to the first full PUMP_FEE_REFRESH_MS tick -- a real, honest,
+  // but needlessly long "nothing collected yet" window right after every restart.
+  app.store.ledger.refresh().catch((err) => config.log(`pumpfee: first refresh on boot failed, the periodic tick will retry: ${err?.message || err}`));
   setInterval(() => {
     app.store.ledger.refresh().catch((err) => config.log(`pumpfee: periodic refresh failed, will retry next tick: ${err?.message || err}`));
   }, PUMP_FEE_REFRESH_MS).unref();
