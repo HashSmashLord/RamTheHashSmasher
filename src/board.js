@@ -116,17 +116,19 @@ export function mountBoard({ feed }) {
   const grid = $("tiles");
   const tiles = new Map();
 
-  // Scroll bug, real-tested 2026-10-06: diffing tiles by id already avoids a full
-  // rebuild, but a live board's cards are not a fixed height -- a status line changing
-  // length, a desk swapping its "no desk running" text for a live iframe, and so on,
-  // reflow the grid and silently drag an already-scrolled reader along. Not fixed here
-  // directly: herd.js sets up one page-lifetime ui.js watchScrollAnchor() that reacts to
-  // the page's real height changing, whatever this module (or anything else) does to
-  // cause it -- see that function's own header for why a per-call fix here was tried
-  // first and real-tested wrong (twice).
-
   async function render() {
     const fleet = await RAMherdAPI.getFleet();
+    // Scroll bug, real-tested 2026-10-06: diffing by id already avoids a full rebuild, but
+    // this grid is live and its cards are not a fixed height -- any one card's text growing
+    // or shrinking on a routine update (a longer status line, a judge score appearing, and
+    // so on) reflows the whole grid and silently moves an already-scrolled reader's position,
+    // even with the tile count unchanged (confirmed: tiles stayed at 16, scrollY still jumped
+    // ~800px on an ordinary tick). Snapshotting scrollY around the mutations and restoring it
+    // right after cancels exactly that shift, while a reader's own scrolling between ticks is
+    // untouched -- same "preserve what the reader was looking at through a reflow" intent as
+    // ram-page.js's board-return scroll restore, just for this page's own live updates instead
+    // of a navigation.
+    const scrollY = window.scrollY;
     const seen = new Set();
     for (const agent of fleet) {
       seen.add(agent.id);
@@ -147,6 +149,7 @@ export function mountBoard({ feed }) {
         tiles.delete(id);
       }
     }
+    if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
     return fleet;
   }
 
