@@ -89,7 +89,7 @@ export function computeAllocation(feeTotalUsd, config = DEFAULT_BUDGET_CONFIG) {
 
 /**
  * Roster ceiling growth from the launchpad: every launchpad RAM the operator
- * confirms (status -> active: a real 0.2 SOL, wallet-signed launch) raises the
+ * confirms (status -> active: a real 0.01 SOL, wallet-signed launch) raises the
  * ORIGINAL roster's `maxSlots` by this many seats.
  *
  * Why +1: one confirmed launch is one real, paid-for unit of demand, so the

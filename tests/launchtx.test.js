@@ -118,7 +118,7 @@ test('inspection decodes the launch: fee to treasury, creator = user, 100% of cr
   assert.equal(r.ok, true, r.problems.join('; '));
   const [fee, create, cfg, upd] = r.instructions;
   assert.deepEqual(fee, { step: 'create-fee', from: user, to: DEFAULT_TREASURY, lamports: CREATE_FEE_LAMPORTS });
-  assert.equal(CREATE_FEE_LAMPORTS, 0.2 * 1e9);
+  assert.equal(CREATE_FEE_LAMPORTS, 0.01 * 1e9);
   assert.equal(create.creator, user);
   assert.equal(create.mint, mint);
   assert.equal(create.name, META.name);

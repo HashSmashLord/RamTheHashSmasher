@@ -70,8 +70,8 @@ export const IMAGE_LIMITS = Object.freeze({
 
 const IMAGE_ID = /^img-[0-9a-f]{24}$/;
 
-export const CREATE_FEE_SOL = '0.2';
-export const CREATE_FEE_LAMPORTS = 200_000_000;
+export const CREATE_FEE_SOL = '0.01';
+export const CREATE_FEE_LAMPORTS = 10_000_000;
 
 /** The HashRammers treasury: receives the create fee and 100% of the token's creator fees. */
 export const TREASURY = '5M6Pc7ossZ8cuQAjnexH9vv2axEJoncgZ3C6uD2PJqHm';

@@ -4,7 +4,7 @@
 // public keys and strings into a transaction object (and back, for checking).
 //
 // The launch is one v0 transaction, in this order:
-//   1. System transfer: user -> treasury, the 0.2 SOL RAM creation fee.
+//   1. System transfer: user -> treasury, the 0.01 SOL RAM creation fee.
 //   2. pump `create_v2`: the user's token, creator = the user, user = payer.
 //   3. pump-fees `create_fee_sharing_config`: makes the coin's creator the
 //      per-mint fee-sharing config (signed by the creator, i.e. the user).
@@ -41,8 +41,8 @@ import { PUMP_SDK, PUMP_PROGRAM_ID, PUMP_FEE_PROGRAM_ID } from '@pump-fun/pump-s
 
 /** The operator's treasury (docs/PRD.md, "Decided"). Public address only. */
 export const DEFAULT_TREASURY = '5M6Pc7ossZ8cuQAjnexH9vv2axEJoncgZ3C6uD2PJqHm';
-/** 0.2 SOL, in lamports. */
-export const CREATE_FEE_LAMPORTS = 200_000_000;
+/** 0.01 SOL, in lamports. */
+export const CREATE_FEE_LAMPORTS = 10_000_000;
 /** Solana's max serialized transaction size (one packet). */
 export const MAX_TX_BYTES = 1232;
 /** Basis points that make 100%. */

@@ -74,8 +74,8 @@ test('constants: six approaches, six models, limits, fee and treasury', () => {
     tokenName: { min: 1, max: 32 },
     tokenSymbol: { min: 1, max: 10 },
   });
-  assert.equal(CREATE_FEE_SOL, '0.2');
-  assert.equal(CREATE_FEE_LAMPORTS, 200_000_000);
+  assert.equal(CREATE_FEE_SOL, '0.01');
+  assert.equal(CREATE_FEE_LAMPORTS, 10_000_000);
   assert.equal(TREASURY, '5M6Pc7ossZ8cuQAjnexH9vv2axEJoncgZ3C6uD2PJqHm');
 });
 

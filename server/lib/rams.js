@@ -14,7 +14,7 @@
 // itself is only ever proven by the wallet signing the launch transaction; a
 // draft is just a request and costs nothing.
 //
-// Money: the RAM's funding account (ramfunds.js) gets the 0.2 SOL create fee
+// Money: the RAM's funding account (ramfunds.js) gets the 0.01 SOL create fee
 // on activation and any creator fees later reported for its token; a judged
 // HashSmash win writes an owed payout to the owner's wallet (payouts.js).
 // Nothing here can send, sign or claim anything.
@@ -59,7 +59,7 @@ export const MAX_URI_LENGTH = 200;
 // Global (all clients together, one fixed key) cap on Pinata pins. Every draft
 // would otherwise pin attacker-chosen text to the operator's real Pinata
 // account, limited only per IP. 20 per hour is far above real use today (the
-// launchpad isn't live; a real launch is a 0.2 SOL, wallet-signed action) but
+// launchpad isn't live; a real launch is a 0.01 SOL, wallet-signed action) but
 // stops an IP-rotating flood from burning the account's pin quota. A draft
 // over the cap is still created; it just keeps its self-hosted metadata URI,
 // exactly as when a pin fails.

@@ -85,8 +85,8 @@ test('GET /api/launchpad/config is honest: not live, why not, the treasury, the 
   assert.ok(launchpad.notLiveBecause.some((r) => r.includes('lookup table')));
   assert.ok(launchpad.notLiveBecause.some((r) => r.includes('No real Phantom wallet')));
   assert.equal(launchpad.treasury, DEFAULT_TREASURY);
-  assert.equal(launchpad.createFeeLamports, 200_000_000);
-  assert.equal(launchpad.createFeeSol, '0.2');
+  assert.equal(launchpad.createFeeLamports, 10_000_000);
+  assert.equal(launchpad.createFeeSol, '0.01');
   assert.equal(launchpad.hashFamilies.length, 3);
   assert.equal(launchpad.models.length, 6);
   assert.equal(launchpad.cluster, 'devnet');
@@ -222,7 +222,7 @@ test('admin: confirm needs the token and brief approval; then an owned slot runs
   assert.equal(after.slots.find((x) => x.id === active.slotId).active, true);
 
   const view = await (await s.get(`/api/launchpad/rams/${ram.id}`)).json();
-  assert.deepEqual(view.ram.funding, { createFeeLamports: 200_000_000, creatorFeesLamports: 0, computeSpentUsd: 0 });
+  assert.deepEqual(view.ram.funding, { createFeeLamports: 10_000_000, creatorFeesLamports: 0, computeSpentUsd: 0 });
 });
 
 test('admin: creator fees, compute and a judged win are booked to that RAM; payouts are public records', async (t) => {
@@ -237,7 +237,7 @@ test('admin: creator fees, compute and a judged win are booked to that RAM; payo
   assert.equal((await s.postJson(`/api/admin/launchpad/rams/${ram.id}/creator-fees`, { lamports: 777 }, h)).status, 200);
   assert.equal((await s.postJson(`/api/admin/launchpad/rams/${ram.id}/compute`, { usd: 1.25 }, h)).status, 200);
   const funding = (await (await s.get(`/api/launchpad/rams/${ram.id}`)).json()).ram.funding;
-  assert.deepEqual(funding, { createFeeLamports: 200_000_000, creatorFeesLamports: 777, computeSpentUsd: 1.25 });
+  assert.deepEqual(funding, { createFeeLamports: 10_000_000, creatorFeesLamports: 777, computeSpentUsd: 1.25 });
 
   assert.equal((await s.postJson(`/api/admin/launchpad/rams/${ram.id}/win`, { candidateRef: 'c1', verdict: 'in-review', prizeLamports: 10 }, h)).status, 400);
   const win = await s.postJson(`/api/admin/launchpad/rams/${ram.id}/win`, { candidateRef: 'c1', verdict: 'accepted', prizeLamports: 1_000_000_000 }, h);

@@ -1,7 +1,7 @@
 // Per-RAM funding ledger for user-created (launchpad) RAMs.
 //
 // Separate from the shared pool ledger (ledger.js) on purpose: a launchpad
-// RAM is funded by its own 0.2 SOL create fee and by the creator fees of its
+// RAM is funded by its own 0.01 SOL create fee and by the creator fees of its
 // own token, and its compute spend is charged to it alone. Nothing here moves
 // money. Entries are append-only records of what was paid in (as reported by
 // the operator / a future on-chain reader) and what compute was charged.
