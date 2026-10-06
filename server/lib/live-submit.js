@@ -82,6 +82,21 @@ export function liveSubmitBenchmarkId(env = process.env) {
 }
 
 /**
+ * Candidate kinds this harness will ever live-submit. `loop-draft`: a RAM's
+ * own claim, eligible only once it is genuinely `submission_state: 'ready'`
+ * (the structural validator plus an independent adversarial verification
+ * PASS; checked below, not re-derived here). `research`: hashsmash.js's
+ * RESEARCH_CANDIDATES -- today exactly sha256-r32-exploratory's committed
+ * package -- a prepared, already-checked-in research artifact, not a raw
+ * model guess; the operator explicitly asked (2026-10-07) for it to be
+ * live-submittable too, after being told it skips the adversarial-verify
+ * gate loop-drafts go through. `harness-draft` (the organizer's empty
+ * template, no RAM-authored claim at all) is never eligible, for either
+ * kind: there is nothing real to submit.
+ */
+const LIVE_SUBMIT_CANDIDATE_KINDS = Object.freeze(['loop-draft', 'research']);
+
+/**
  * Pure gate over a hashsmash.js runCycle result. Never weaker than the
  * pipeline's own verdicts: every listed condition must hold.
  *
@@ -92,7 +107,9 @@ export function liveSubmitEligibility(cycle) {
   const reasons = [];
   const c = cycle?.candidate;
   if (!c) return { eligible: false, reasons: ['no candidate in this cycle'] };
-  if (c.kind !== 'loop-draft') reasons.push(`candidate kind is "${c.kind}", and only a RAM's own adversarially verified loop-draft is ever live-submitted`);
+  if (!LIVE_SUBMIT_CANDIDATE_KINDS.includes(c.kind)) {
+    reasons.push(`candidate kind is "${c.kind}", and only ${LIVE_SUBMIT_CANDIDATE_KINDS.map((k) => `"${k}"`).join(' or ')} is ever live-submitted`);
+  }
   if (c.submissionState !== 'ready') reasons.push(`submission_state is "${c.submissionState}", not "ready"`);
   if (!cycle.precheck?.ok) reasons.push('precheck did not pass');
   const stage = (name) => (cycle.stages || []).find((s) => s.stage === name);
@@ -142,6 +159,27 @@ export function collectCandidateFiles(candidateDir, candidate) {
   const h = createHash('sha256');
   for (const f of files) h.update(`${f.path}\0${f.content}\0`);
   return { files, packageSha256: h.digest('hex'), totalBytes };
+}
+
+/**
+ * Cheap pre-check, using only this harness's own ledger -- no sandbox, no
+ * clone. Real reason this exists: a `research` candidate (sha256-r32's
+ * committed package) reports the exact same numbers on every single
+ * pipeline cycle, unlike a loop-draft (produced once per session); without
+ * this, maybeLiveSubmit (slots.js) would pay for a real `yukon clone` inside
+ * the sandbox on every cycle just to re-decide "no improvement," burning
+ * real sandbox time for nothing new. This is the same base rule
+ * decideLiveSubmission applies (via decideYukonSubmission) once a clone
+ * actually happens; checking it first is a pure optimization, never a
+ * looser gate -- decideLiveSubmission still re-checks everything for real
+ * once inside the sandbox.
+ *
+ * @param {{ timeLog2: number, successProbability: number }} candidate
+ * @param {{ timeLog2: number }|null} lastSubmitted
+ * @returns {{ shouldSubmit: boolean, reason: string }}
+ */
+export function canPossiblyImprove(candidate, lastSubmitted) {
+  return decideYukonSubmission({ bestResult: candidate, lastSubmitted });
 }
 
 /**
@@ -217,36 +255,66 @@ export function buildLiveSubmissionNote({ track, candidate, attribution = null, 
   const slot = attribution?.slotId ?? 'unknown';
   const model = attribution?.model ?? 'unknown';
   const approach = attribution?.approach ?? 'unknown';
+  const isResearchPackage = candidate.kind === 'research';
   const lines = [
     `# HashRammers submission note: ${track}`,
     '',
     '## What this is',
     '',
-    `An autonomous AI research agent ("RAM") in the HashRammers harness produced this package: RAM slot \`${slot}\`, model \`${model}\`, approach \`${approach}\`. No human wrote or reviewed the claim, the proof text, or this note. The harness submitted it automatically with no human checkpoint, at its operator's explicit instruction.`,
+    isResearchPackage
+      // Honest for sha256-r32's real provenance: a prepared, already-checked-in research
+      // package (not a model's own single-session draft), included in live submission at
+      // the operator's explicit instruction (2026-10-07) after being told it skips the
+      // adversarial-verify gate a RAM's own loop-draft goes through -- never claim an
+      // "autonomous RAM produced this" story this candidate kind does not have.
+      ? `This package is prepared, written content committed to the HashRammers harness's own repository (not a model's single-session draft): \`${track}\`'s research package, RAM slot \`${slot}\`. It did not go through this harness's adversarial-verification gate (that gate only applies to a RAM's own loop-authored claims); it is included in live submission by the operator's explicit instruction. Its own disclosed heuristics, scope and limitations are below, verbatim from claim.json.`
+      : `An autonomous AI research agent ("RAM") in the HashRammers harness produced this package: RAM slot \`${slot}\`, model \`${model}\`, approach \`${approach}\`. No human wrote or reviewed the claim, the proof text, or this note. The harness submitted it automatically with no human checkpoint, at its operator's explicit instruction.`,
     '',
     `Claimed bound: time_log2 ${candidate.timeLog2}, success probability ${candidate.successProbability}, memory_log2_bytes ${claim?.claim?.memory_log2_bytes ?? 'n/a'}, submission_state ${candidate.submissionState}.`,
     `Comparison: the track's current incumbent package in the cloned benchmark declares time_log2 ${incumbentTimeLog2 ?? 'unknown'}; ${lastSubmitted ? `this harness last submitted time_log2 ${lastSubmitted.timeLog2} on this track` : 'this harness has not submitted on this track before'}.`,
     '',
     '## How it was produced (environment, method, commands)',
     '',
-    '1. During its research loop the RAM ran a real IACR ePrint search and/or a real GitHub lookup of other competitors\' open pull requests for this track. The claim must cite one of those real results; the citation is checked in code against what that session actually fetched.',
-    '2. A dedicated drafting call proposed exactly three numbers (time_log2, memory_log2_bytes, success_probability) and one disclosed heuristic (statement, scope, extrapolation, limitations). A structural validator rejected out-of-range values, success probability below 0.39, overclaiming language in the limitations, and uncited or invented references.',
-    '3. A second, independent model call, prompted adversarially to find a real reason not to trust the claim, had to return PASS. Only then may the package leave `draft`. That verdict and its stated reason are recorded verbatim in claim.json\'s restrictions below.',
-    '4. Every structural field not originated by the RAM (target profile, rounds, lane, baseline reference, time unit, preprocessing, advice) is the organizer\'s unmodified `draft_claim()` template value.',
-    '5. Organizer checks actually run, with real outcomes:',
-    `   - harness precheck (schema and layout): ${checks.precheck ?? 'n/a'}`,
-    `   - \`python3 scripts/local_tracks.py check ${track}\` on the harness's pinned copy of the benchmark: ${checks.check ?? 'n/a'}`,
-    `   - \`python3 scripts/hashsmash_pipeline.py intake --track ${track}\` on the same copy: ${checks.intake ?? 'n/a'}`,
-    `   - \`python3 scripts/local_tracks.py check ${track}\` again on this exact \`yukon clone\`, with this package written in: passed (otherwise nothing is submitted)`,
-    `   - package sha256 (this harness's own hash over path and content of every file): ${checks.packageSha256 ?? 'n/a'}`,
-    '6. The live AI judge was not run locally. No provider credentials are used by this harness for that, and `yukon run` was not used. Judging is left to Yukon\'s isolated judge job.',
+    ...(isResearchPackage
+      ? [
+        '1. This package was written and committed to the harness\'s repository ahead of time, not drafted by a model in this session; see proof.md below for its own full methodology and sourcing.',
+        '2. It still had to pass, for real, the same organizer checks every submission here does (outcomes below) before this harness would submit it.',
+        '3. Organizer checks actually run, with real outcomes:',
+        `   - harness precheck (schema and layout): ${checks.precheck ?? 'n/a'}`,
+        `   - \`python3 scripts/local_tracks.py check ${track}\` on the harness's pinned copy of the benchmark: ${checks.check ?? 'n/a'}`,
+        `   - \`python3 scripts/hashsmash_pipeline.py intake --track ${track}\` on the same copy: ${checks.intake ?? 'n/a'}`,
+        `   - \`python3 scripts/local_tracks.py check ${track}\` again on this exact \`yukon clone\`, with this package written in: passed (otherwise nothing is submitted)`,
+        `   - package sha256 (this harness's own hash over path and content of every file): ${checks.packageSha256 ?? 'n/a'}`,
+        '4. The live AI judge was not run locally. No provider credentials are used by this harness for that, and `yukon run` was not used. Judging is left to Yukon\'s isolated judge job.',
+      ]
+      : [
+        '1. During its research loop the RAM ran a real IACR ePrint search and/or a real GitHub lookup of other competitors\' open pull requests for this track. The claim must cite one of those real results; the citation is checked in code against what that session actually fetched.',
+        '2. A dedicated drafting call proposed exactly three numbers (time_log2, memory_log2_bytes, success_probability) and one disclosed heuristic (statement, scope, extrapolation, limitations). A structural validator rejected out-of-range values, success probability below 0.39, overclaiming language in the limitations, and uncited or invented references.',
+        '3. A second, independent model call, prompted adversarially to find a real reason not to trust the claim, had to return PASS. Only then may the package leave `draft`. That verdict and its stated reason are recorded verbatim in claim.json\'s restrictions below.',
+        '4. Every structural field not originated by the RAM (target profile, rounds, lane, baseline reference, time unit, preprocessing, advice) is the organizer\'s unmodified `draft_claim()` template value.',
+        '5. Organizer checks actually run, with real outcomes:',
+        `   - harness precheck (schema and layout): ${checks.precheck ?? 'n/a'}`,
+        `   - \`python3 scripts/local_tracks.py check ${track}\` on the harness's pinned copy of the benchmark: ${checks.check ?? 'n/a'}`,
+        `   - \`python3 scripts/hashsmash_pipeline.py intake --track ${track}\` on the same copy: ${checks.intake ?? 'n/a'}`,
+        `   - \`python3 scripts/local_tracks.py check ${track}\` again on this exact \`yukon clone\`, with this package written in: passed (otherwise nothing is submitted)`,
+        `   - package sha256 (this harness's own hash over path and content of every file): ${checks.packageSha256 ?? 'n/a'}`,
+        '6. The live AI judge was not run locally. No provider credentials are used by this harness for that, and `yukon run` was not used. Judging is left to Yukon\'s isolated judge job.',
+      ]),
     '',
     '## Limitations, stated plainly',
     '',
-    '- No new collision, witness or certificate is claimed. The certificate manifest is empty.',
-    '- The bound is an AI agent\'s own estimate under the single disclosed heuristic below, grounded in a short literature or competitor read. Usually only the cited paper\'s title or the competitor PR\'s own text was read, not the full paper.',
-    '- The adversarial verification is another model call. It is not a human review and not a proof. Passing local check and intake is mechanical validity only, not qualification.',
-    '- Treat the claim with the skepticism appropriate to a single-session, unreviewed, model-authored estimate.',
+    ...(isResearchPackage
+      ? [
+        '- This is prepared, written content, not a model-drafted estimate -- its own stated limitations (claim.json\'s heuristics and restrictions, below) are the real ones to weigh, not a generic disclaimer.',
+        '- It did not pass through this harness\'s adversarial-verification model call; that check does not apply to a prepared package the way it does to a RAM\'s own draft.',
+        '- No new collision, witness or certificate is claimed. The certificate manifest is empty.',
+      ]
+      : [
+        '- No new collision, witness or certificate is claimed. The certificate manifest is empty.',
+        '- The bound is an AI agent\'s own estimate under the single disclosed heuristic below, grounded in a short literature or competitor read. Usually only the cited paper\'s title or the competitor PR\'s own text was read, not the full paper.',
+        '- The adversarial verification is another model call. It is not a human review and not a proof. Passing local check and intake is mechanical validity only, not qualification.',
+        '- Treat the claim with the skepticism appropriate to a single-session, unreviewed, model-authored estimate.',
+      ]),
     '',
     '## claim.json restrictions (verbatim)',
     '',

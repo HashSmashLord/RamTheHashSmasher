@@ -131,15 +131,18 @@ test('the default benchmark id is the one real id this codebase has, and is over
 
 // ---- eligibility: never weaker than the pipeline's own verdicts ----
 
-test('liveSubmitEligibility: only a ready loop-draft with precheck ok, real check ok and real intake ok', () => {
+test('liveSubmitEligibility: a ready loop-draft, or (since 2026-10-07) a ready research package, with precheck ok, real check ok and real intake ok', () => {
   assert.equal(liveSubmitEligibility(cycleFor()).eligible, true);
+  // The research package (sha256-r32's committed package) is eligible too, despite never
+  // going through the adversarial-verify gate a loop-draft does -- operator's explicit
+  // instruction. Only harness drafts (the organizer's empty template) are never eligible.
+  assert.equal(liveSubmitEligibility(cycleFor({ kind: 'research' })).eligible, true);
   const no = (over, re) => {
     const e = liveSubmitEligibility(cycleFor(over));
     assert.equal(e.eligible, false, JSON.stringify(over));
     assert.match(e.reasons.join('; '), re);
   };
-  no({ kind: 'harness-draft' }, /only a RAM's own adversarially verified loop-draft/);
-  no({ kind: 'research' }, /candidate kind is "research"/);
+  no({ kind: 'harness-draft' }, /only "loop-draft" or "research" is ever live-submitted/);
   no({ state: 'draft' }, /submission_state is "draft"/);
   no({ check: 'rejected' }, /organizer check outcome is "rejected"/);
   no({ intake: 'draft-not-submitted' }, /organizer intake outcome is "draft-not-submitted"/);
@@ -315,10 +318,19 @@ test('submitLive (flag on): a ready, ok/ok loop-draft reaches the submitter with
   assert.match(seen[0].checks.intake, /^ok/);
   assert.match(res.packageSha256, /^[0-9a-f]{64}$/);
 
-  for (const over of [{ state: 'draft' }, { kind: 'harness-draft' }, { kind: 'research' }, { check: 'rejected' }, { intake: 'draft-not-submitted' }, { successProbability: 0.1 }, { track: 'md5-r64-exploratory' }]) {
+  for (const over of [{ state: 'draft' }, { kind: 'harness-draft' }, { check: 'rejected' }, { intake: 'draft-not-submitted' }, { successProbability: 0.1 }, { track: 'md5-r64-exploratory' }]) {
     await assert.rejects(() => r.submitLive(cycleFor(over), { submitter }), /live submission refused/, JSON.stringify(over));
   }
   assert.equal(seen.length, 1, 'no non-eligible candidate ever reached the submitter');
+});
+
+test('submitLive (flag on): a ready, ok/ok RESEARCH package (sha256-r32\'s committed package) reaches the submitter too -- operator\'s explicit instruction, 2026-10-07, despite never passing the adversarial-verify gate a loop-draft does', async () => {
+  const r = createHashSmashRunner({ workspacesDir: join(TMP, 'ws-on-research'), attributionDir: join(TMP, 'attr'), env: ON_ENV });
+  const seen = [];
+  const submitter = async (payload) => { seen.push(payload); return { ok: true, submitted: true, steps: [] }; };
+  const res = await r.submitLive(cycleFor({ kind: 'research' }), { submitter });
+  assert.equal(res.submitted, true);
+  assert.equal(seen.length, 1);
 });
 
 // ---- slots.js wiring ----
@@ -400,8 +412,8 @@ test('slots.js, flag on: the same claim is never sent twice; only a genuine impr
   assert.equal(ledger.get(TRACK).timeLog2, 128);
 });
 
-test('slots.js, flag on: a draft, a non-ok intake, a harness draft or the research package never triggers it', async () => {
-  for (const over of [{ state: 'draft', intake: 'draft-not-submitted' }, { kind: 'harness-draft', state: 'draft', intake: 'draft-not-submitted' }, { kind: 'research' }, { check: 'rejected' }]) {
+test('slots.js, flag on: a draft, a non-ok intake, or a harness draft never triggers it; a research package that is not itself ready/ok/ok still doesn\'t either', async () => {
+  for (const over of [{ state: 'draft', intake: 'draft-not-submitted' }, { kind: 'harness-draft', state: 'draft', intake: 'draft-not-submitted' }, { kind: 'research', state: 'draft', intake: 'draft-not-submitted' }, { check: 'rejected' }]) {
     const ledger = createLiveSubmissionLedger();
     const { sbx, calls } = fakeSbx();
     const { slot, runTaskCalls } = await runOneCycle({ cycle: cycleFor(over), sbx, liveSubmit: { policy: liveSubmitPolicy(ON_ENV), ledger, env: ON_ENV } });
@@ -410,6 +422,16 @@ test('slots.js, flag on: a draft, a non-ok intake, a harness draft or the resear
     assert.equal(ledger.get(TRACK), null);
     assert.equal(slot.feed.some((f) => f.type === 'live-submit-done'), false);
   }
+});
+
+test('slots.js, flag on: a genuinely ready, ok/ok RESEARCH package (not a loop-draft) is submitted for real too -- operator\'s explicit instruction, 2026-10-07', async () => {
+  const ledger = createLiveSubmissionLedger();
+  const { sbx, calls } = fakeSbx({ incumbentTimeLog2: 136 });
+  const { slot, runTaskCalls } = await runOneCycle({ cycle: cycleFor({ kind: 'research' }), sbx, liveSubmit: { policy: liveSubmitPolicy(ON_ENV), ledger, env: ON_ENV } });
+  assert.equal(runTaskCalls.length, 1);
+  assert.equal(calls.filter((c) => c.cmd.startsWith('yukon submit')).length, 1);
+  assert.ok(slot.feed.some((f) => f.type === 'live-submit-started'));
+  assert.equal(ledger.get(TRACK).timeLog2, 131);
 });
 
 test('slots.js, flag on: a failed real submit is reported and never recorded as submitted', async () => {

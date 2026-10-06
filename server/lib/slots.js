@@ -195,7 +195,7 @@
 // (ramfunds.js), not the shared pool.
 
 import { assignmentForIndex, ACTIVE_TRACKS } from './targets.js';
-import { liveSubmitEligibility, runLiveSubmissionInSandbox } from './live-submit.js';
+import { liveSubmitEligibility, runLiveSubmissionInSandbox, canPossiblyImprove } from './live-submit.js';
 import { yukonStepMessage } from './yukon-sandbox.js';
 import { contextPayload } from './sandbox-context.js';
 import {
@@ -716,8 +716,12 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
    * intake came back ok. A no-op unless the operator wired `liveSubmit` in
    * with its policy allowed (store.js does so only under
    * RAMHERD_HASHSMASH_LIVE_SUBMIT=true + a real YUKON_API_KEY); then a no-op
-   * for anything liveSubmitEligibility rejects (harness drafts, the research
-   * package, unverified drafts, non-ok check/intake). For an eligible cycle
+   * for anything liveSubmitEligibility rejects (harness drafts, an unverified
+   * loop-draft, non-ok check/intake). Since 2026-10-07 (operator's explicit
+   * instruction) a `research` candidate -- sha256-r32's committed package --
+   * is also eligible once it passes those same real checks, despite never
+   * going through the adversarial-verify gate a loop-draft does; see
+   * live-submit.js's LIVE_SUBMIT_CANDIDATE_KINDS. For an eligible cycle
    * there is no further checkpoint, human or model: it goes straight to
    * hashsmash.js submitLive (which re-checks everything itself) and the real
    * `yukon submit` in this RAM's own running sandbox. At most one submission
@@ -732,6 +736,17 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       return;
     }
     const { track } = cycle;
+    // Cheap pre-check against this harness's own ledger, before paying for a real sandbox
+    // round-trip (install/login/clone): a `research` candidate (e.g. sha256-r32's committed
+    // package) reports the same numbers on every cycle, so without this a real `yukon clone`
+    // would run every single cycle just to re-decide "no improvement." Never a looser gate:
+    // the real decideLiveSubmission inside the sandbox still re-checks everything for real,
+    // including against the live incumbent this cheap check cannot see.
+    const preDecision = canPossiblyImprove(cycle.candidate, liveSubmit.ledger.get(track));
+    if (!preDecision.shouldSubmit) {
+      pushFeed(slot, 'live-submit-skipped', `Not live-submitting this candidate: ${preDecision.reason}.`);
+      return;
+    }
     if (!sandboxManager || typeof sandboxManager.runTask !== 'function' || slot.sandbox?.status !== 'running') {
       pushFeed(slot, 'live-submit-skipped', `Not live-submitting: the Yukon CLI runs inside this RAM's own sandbox, and it has no running sandbox right now.`);
       return;

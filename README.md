@@ -195,8 +195,12 @@ hand. With `RAMHERD_HASHSMASH_LIVE_SUBMIT=true`, a real `YUKON_API_KEY`, `RAMHER
 E2B sandboxes on, `slots.js` calls `hashsmash.js`'s `submitLive()` after any cycle on any
 `PIPELINE_TRACKS` track that meets all of these:
 
-- the candidate is a loop-draft;
-- `submission_state` is `ready`, which only happens after a genuine adversarial verification PASS;
+- the candidate is a loop-draft (a RAM's own claim, `submission_state: 'ready'` only after a genuine
+  adversarial verification PASS) **or**, since 2026-10-07 (operator's explicit instruction), the
+  committed `research` package (sha256-r32's package) -- the only other candidate carried into a
+  real submission despite never going through that loop-draft's adversarial-verify gate. A plain
+  `harness-draft` (the organizer's empty template, no claim at all) is never eligible, either way;
+- `submission_state` is `ready`;
 - precheck is ok, and the real `check` and real `intake` both return `ok`;
 - success probability is at least 0.39.
 
@@ -217,8 +221,11 @@ There is no further human or model checkpoint. Inside the RAM's running sandbox,
    rather than pad it.
 9. `yukon submit --track <track> --model <RAM model> --harness "HashRammers RAM <slot>"`.
 
-The committed sha256-r32 research package and harness drafts are never auto-submitted. Tests:
-`tests/live-submit.test.js`, all against fakes.
+A plain harness-draft is never auto-submitted; the committed sha256-r32 research package is,
+since 2026-10-07 (see above). The submission note is honest about which kind produced it either
+way: a loop-draft's note says plainly that no human wrote or reviewed it; the research package's
+note says plainly that it is prepared, committed content that skipped the adversarial-verify gate,
+not a model's single-session draft. Tests: `tests/live-submit.test.js`, all against fakes.
 
 ## E2B desktop sandboxes (what's proven, what isn't)
 
