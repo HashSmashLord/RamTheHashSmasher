@@ -290,7 +290,7 @@ export function loopGrounding(slot) {
       pr.results.length
         ? pr.results.slice(0, 5).map((r) => `PR #${r.number}${r.login ? ` by @${r.login}` : ''}${r.claimedScore ? ` (claimed score ${r.claimedScore})` : ''}`).join('; ')
         : 'none currently open mention this track'
-    } (their own self-reported, unverified claims; an open PR may still be rejected or wrong, never treat one as proven).`;
+    } (their own self-reported, unverified claims; an open PR may still be rejected or wrong, never treat one as proven; a text match only means its own note mentions this track, not that the PR is necessarily that track's own submission).`;
   }
   return out;
 }
@@ -1001,7 +1001,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         slot.lastPeerReview = { track: p.track, url: p.url, results: p.results, at: now() };
         pushFeed(slot, 'sandbox-peer-review', `Looked up real open pull requests on the HashSmash repository for ${p.track} in a terminal on desktop ${entry.sessionId} (this RAM's model asked to see other competitors' submissions). ${
           p.results.length
-            ? `Found: ${p.results.slice(0, 3).map((r) => `PR #${r.number}${r.login ? ` by @${r.login}` : ''}${r.claimedScore ? ` (claimed score ${r.claimedScore})` : ''}`).join('; ')}. Other competitors' own self-reported, unverified claims on an open PR — never treated as proven or copied.`
+            ? `Found: ${p.results.slice(0, 3).map((r) => `PR #${r.number}${r.login ? ` by @${r.login}` : ''}${r.claimedScore ? ` (claimed score ${r.claimedScore})` : ''}`).join('; ')}. Other competitors' own self-reported, unverified claims on an open PR — never treated as proven or copied (a text match on this track's name does not guarantee the PR is actually that track's own submission).`
             : `No open pull requests currently mention ${p.track}.`
         }`);
       }

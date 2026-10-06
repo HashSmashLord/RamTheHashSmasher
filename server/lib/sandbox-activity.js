@@ -402,8 +402,18 @@ export function peerSubmissionsUrl() {
  * (argv[1], case-insensitive), and prints at most MAX_PEER_RESULTS of them
  * as one JSON array on stdout. Every field comes straight from the real API
  * response; nothing here invents or estimates a value. "claimed score" is
- * read out of the PR body with a plain regex because that is literally how a
- * submitter states it (self-reported, never recomputed or checked here).
+ * read out of the PR's own title/body with a plain regex because that is
+ * literally how a submitter states it (self-reported, never recomputed or
+ * checked here).
+ *
+ * Known, real limitation (checked against the live repo on 2026-10-06, e.g.
+ * real PR #257): a submitter's free-text note sometimes discusses several
+ * tracks in passing (e.g. explaining which ones it did NOT pick), so a text
+ * match on `track` means "this PR's text mentions the track", not "this PR
+ * is necessarily that track's own submission". This is the same shape of
+ * imprecision as any text search (an ePrint title match isn't "this paper
+ * is relevant" either) and is disclosed to the model the same honest way in
+ * slots.js's feed/grounding text, rather than silently over-trusted.
  */
 export const PARSE_PEERS_PY = String.raw`import json,re,sys
 track=(sys.argv[1] if len(sys.argv)>1 else '').lower()
@@ -419,9 +429,13 @@ for pr in prs:
     continue
   title=str(pr.get('title') or '')
   body=str(pr.get('body') or '')
-  if track not in (title+' '+body).lower():
+  combined=title+' '+body
+  if track not in combined.lower():
     continue
-  m=re.search(r'claimed\s+score[:\s]+([0-9][0-9.]*)',body,re.I)
+  # Checked against the real repo (2026-10-06): a submitter's claimed score is
+  # as likely to be stated in the PR's own title ("(claimed score: 1.5)") as
+  # in its body, so both are searched; searching body alone silently missed it.
+  m=re.search(r'claimed\s+score[:\s]+([0-9][0-9.]*)',combined,re.I)
   out.append({
     'number': pr.get('number'),
     'login': ((pr.get('user') or {}).get('login')),
