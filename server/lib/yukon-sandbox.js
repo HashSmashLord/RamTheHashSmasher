@@ -122,8 +122,23 @@ export function createSandboxRun(sbx, { apiKey = null } = {}) {
       });
       return { exitCode: res?.exitCode ?? 0, stdout: scrub(res?.stdout ?? '', apiKey), stderr: scrub(res?.stderr ?? '', apiKey), timedOut: false };
     } catch (err) {
-      const message = scrub(err?.message ?? String(err), apiKey);
-      return { exitCode: null, stdout: '', stderr: message, timedOut: /timeout/i.test(message), spawnError: err?.name ?? 'error' };
+      // A real nonzero exit throws a CommandExitError (the e2b SDK's own class -- see
+      // node_modules/e2b/dist/index.d.ts), which carries real .exitCode/.stdout/.stderr
+      // getters, not just a generic .message. Real bug, found 2026-10-06 debugging a real
+      // blake3-r1 "yukon install: exit status 1" failure: this catch block was only ever
+      // reading err.message (literally "exit status 1" for this error class, Go's own
+      // generic exec.ExitError text -- the base Error constructor's message, not the real
+      // output), discarding the actual stdout/stderr the SDK had already captured right
+      // there on the exception. Duck-typed (`'stdout' in err`), not an instanceof check:
+      // robust across SDK versions without this module importing the `e2b` package itself
+      // just for one class check.
+      const hasRealOutput = err && typeof err === 'object' && 'stdout' in err && 'stderr' in err;
+      const stdout = hasRealOutput ? scrub(err.stdout ?? '', apiKey) : '';
+      const stderr = hasRealOutput
+        ? scrub(err.stderr ?? '', apiKey) || scrub(err?.message ?? String(err), apiKey)
+        : scrub(err?.message ?? String(err), apiKey);
+      const exitCode = hasRealOutput && typeof err.exitCode === 'number' ? err.exitCode : null;
+      return { exitCode, stdout, stderr, timedOut: /timeout/i.test(stderr), spawnError: err?.name ?? 'error' };
     }
   };
 }

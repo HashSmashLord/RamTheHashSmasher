@@ -104,6 +104,43 @@ test('createSandboxRun scrubs a real key out of a thrown error message', async (
   assert.match(res.stderr, /\[redacted\]/);
 });
 
+/** A real e2b CommandExitError shape (exitCode/stdout/stderr getters on the thrown object), not a bare Error. */
+function fakeCommandExitError({ exitCode = 1, stdout = '', stderr = '', message = 'exit status 1' } = {}) {
+  const err = new Error(message);
+  err.name = 'CommandExitError';
+  Object.defineProperty(err, 'exitCode', { get: () => exitCode });
+  Object.defineProperty(err, 'stdout', { get: () => stdout });
+  Object.defineProperty(err, 'stderr', { get: () => stderr });
+  return err;
+}
+
+test('createSandboxRun: a real CommandExitError\'s own stdout/stderr/exitCode are surfaced, not just its generic "exit status N" message -- real bug, 2026-10-06, found debugging a real blake3-r1 yukon install failure that only ever showed "exit status 1" with no real diagnostic detail', async () => {
+  const sbx = { commands: { run: async () => { throw fakeCommandExitError({ exitCode: 1, stdout: 'Installing yukon...\n', stderr: 'curl: command not found\n' }); } } };
+  const run = createSandboxRun(sbx, {});
+  const res = await run('bash', ['-lc', 'curl -fsSL https://api.yukon.org/yukon/install.sh | sh']);
+  assert.equal(res.exitCode, 1, 'the real exit code, not null');
+  assert.equal(res.stdout, 'Installing yukon...\n', 'the real stdout the SDK had already captured');
+  assert.equal(res.stderr, 'curl: command not found\n', 'the real stderr, not the generic "exit status 1" wrapper message');
+});
+
+test('createSandboxRun: a real CommandExitError with empty stderr falls back to its own message, never an empty string', async () => {
+  const sbx = { commands: { run: async () => { throw fakeCommandExitError({ exitCode: 1, stdout: '', stderr: '' }); } } };
+  const run = createSandboxRun(sbx, {});
+  const res = await run('yukon', ['setup']);
+  assert.equal(res.exitCode, 1);
+  assert.equal(res.stderr, 'exit status 1', 'no real stderr captured, so the error\'s own message is still better than nothing');
+});
+
+test('createSandboxRun: a real key is still scrubbed out of a CommandExitError\'s real stdout/stderr, not just a generic message', async () => {
+  const sbx = { commands: { run: async () => { throw fakeCommandExitError({ exitCode: 1, stdout: `using key ${KEY}\n`, stderr: `auth failed for ${KEY}` }); } } };
+  const run = createSandboxRun(sbx, { apiKey: KEY });
+  const res = await run('yukon', ['login', 'x']);
+  assert.equal(res.stdout.includes(KEY), false);
+  assert.equal(res.stderr.includes(KEY), false);
+  assert.match(res.stdout, /\[redacted\]/);
+  assert.match(res.stderr, /\[redacted\]/);
+});
+
 // ---- runYukonSandboxCycle: the full sequence, and the gate ----
 
 /** A fake sandbox whose `commands.run` answers per-step and records every call. */
