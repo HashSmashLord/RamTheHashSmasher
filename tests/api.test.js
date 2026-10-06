@@ -14,7 +14,7 @@ test('GET /api/health is public and ok', async (t) => {
 test('security headers and no-store caching on every response', async (t) => {
   const s = await startApp();
   t.after(() => s.stop());
-  for (const path of ['/api/health', '/api/ledger', '/api/slots', '/no-such-route']) {
+  for (const path of ['/api/health', '/api/ledger', '/api/slots', '/api/changelog', '/no-such-route']) {
     const res = await s.get(path);
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(res.headers.get('x-frame-options'), 'DENY');
@@ -37,6 +37,18 @@ test('GET /api/ledger and /api/allocation reflect mock fee state with no fees ye
   assert.equal(ledger.ledger.totalUsd, 0);
   const allocation = await (await s.get('/api/allocation')).json();
   assert.equal(allocation.allocation.slotCount, 0);
+});
+
+test('GET /api/changelog is public and serves the cached (empty, until something refreshes it) commit list honestly, never an error', async (t) => {
+  const s = await startApp();
+  t.after(() => s.stop());
+  const res = await s.get('/api/changelog');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.changelog.commits, []);
+  assert.equal(body.changelog.updatedAt, null);
+  assert.equal(body.changelog.repo, 'HashSmashLord/RamTheHashSmasher');
 });
 
 test('admin routes reject requests without the admin token', async (t) => {

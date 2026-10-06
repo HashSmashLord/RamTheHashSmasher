@@ -57,6 +57,16 @@ if (pumpFeePolicy(process.env).enabled) {
   setInterval(refreshPumpFee, PUMP_FEE_REFRESH_MS).unref();
 }
 
+// Real changelog (server/lib/changelog.js): this repo's own public commit history from
+// GitHub's public API. Always-on (see store.js for why, unlike the opt-in integrations
+// above) -- kicked off here, after listen(), not awaited, same reasoning as the pump-fee
+// refresh: a slow or rate-limited GitHub call must never delay the server coming up.
+// refresh() itself catches its own failures and keeps the last good cache, so this never
+// needs a .catch() here and can never crash the process.
+const CHANGELOG_REFRESH_MS = 10 * 60 * 1000; // 10 minutes: fresh enough for a commit log, well inside GitHub's unauthenticated 60/hour rate limit
+app.store.changelog.refresh();
+setInterval(() => app.store.changelog.refresh(), CHANGELOG_REFRESH_MS).unref();
+
 let closing = false;
 async function shutdown() {
   if (closing) return;

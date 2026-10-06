@@ -11,7 +11,7 @@ test('serves the frontend from src/ on the same origin as the API', async (t) =>
   assert.match(page.headers.get('content-type'), /^text\/html/);
   assert.match(page.headers.get('content-security-policy'), /default-src 'self'/);
   assert.match(await page.text(), /HashRammers/);
-  for (const [path, type] of [['/herd.html', /text\/html/], ['/herder.html', /text\/html/], ['/submit.html', /text\/html/], ['/rules.html', /text\/html/], ['/index.js', /javascript/], ['/herd.js', /javascript/], ['/ui.js', /javascript/], ['/styles.css', /text\/css/], ['/mock-data.js', /javascript/], ['/favicon.svg', /svg/], ['/fonts/archivo-variable.woff2', /woff2/]]) {
+  for (const [path, type] of [['/herd.html', /text\/html/], ['/herder.html', /text\/html/], ['/submit.html', /text\/html/], ['/rules.html', /text\/html/], ['/logs.html', /text\/html/], ['/index.js', /javascript/], ['/herd.js', /javascript/], ['/ui.js', /javascript/], ['/logs.js', /javascript/], ['/styles.css', /text\/css/], ['/mock-data.js', /javascript/], ['/favicon.svg', /svg/], ['/fonts/archivo-variable.woff2', /woff2/]]) {
     const res = await s.get(path);
     assert.equal(res.status, 200, path);
     assert.match(res.headers.get('content-type'), type, path);
@@ -25,7 +25,7 @@ test('serves the frontend from src/ on the same origin as the API', async (t) =>
 test('clean URLs (no .html) serve the same pages, and still work alongside the old .html links', async (t) => {
   const s = await startApp();
   t.after(() => s.stop());
-  for (const path of ['/herd', '/herder', '/submit', '/rules', '/launch']) {
+  for (const path of ['/herd', '/herder', '/submit', '/rules', '/launch', '/logs']) {
     const clean = await s.get(path);
     const withExt = await s.get(`${path}.html`);
     assert.equal(clean.status, 200, path);

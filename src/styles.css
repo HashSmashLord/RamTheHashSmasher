@@ -707,3 +707,20 @@ select.ctl option { background: var(--bg); color: var(--ink); }
 .tryit .approach-why, .tryit .model-track { display: block; color: var(--ink-2); font-size: 0.9rem; margin-top: 0.2rem; }
 .tryit .brief-example { margin: 0 0 0.9rem; padding: 0.8rem 1rem; background: var(--rule-2); border-left: var(--u) solid var(--live); font-size: 0.95rem; }
 .tryit .brief-example.bad { border-left-color: var(--ink-3); color: var(--ink-2); }
+
+/* Logs (/logs): real commits to this site, server/lib/changelog.js's own real GitHub read,
+   grouped by day. Prefixed .changelog- rather than .log-, which the Herder's own Q&A log
+   (.log-entries/.log-mark/.log-q/.log-a above) already owns. */
+.changelog { padding-top: clamp(2.5rem, 5vw, 4rem); }
+.changelog-status { color: var(--ink-3); font-size: 0.85rem; margin: 0 0 1.6rem; }
+.changelog-day { margin: 0 0 2.2rem; }
+.changelog-day-head { font-family: var(--display); font-size: 1.15rem; margin: 0 0 0.3rem; padding-top: 0.8rem; border-top: 2px solid var(--rule-2); }
+.changelog-lines { list-style: none; margin: 0; padding: 0; }
+.changelog-line { padding: 0.9rem 0; border-top: 2px solid var(--rule-2); display: flex; flex-direction: column; gap: 0.4rem; }
+.changelog-subject { margin: 0; font-size: 1rem; }
+.changelog-subject a { color: var(--ink); text-decoration: none; }
+.changelog-subject a:hover, .changelog-subject a:focus-visible { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.12em; }
+.changelog-meta { display: flex; flex-wrap: wrap; gap: 0.15rem 0.8rem; margin: 0; color: var(--ink-3); font-size: 0.8rem; }
+.changelog-sha { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.changelog-body { margin: 0; color: var(--ink-2); font-size: 0.9rem; max-width: 70ch; white-space: pre-wrap; }
+.changelog-empty { color: var(--ink-2); border-top: 2px solid var(--rule-2); padding-top: 1.6rem; margin-top: 0.4rem; }

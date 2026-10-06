@@ -236,6 +236,12 @@ export function createApp(config) {
     sendOk(res, { summary: store.coordinator.getSummary() });
   }
 
+  // Public: this repo's own real commit history (server/lib/changelog.js), cached and
+  // refreshed on a timer (server/index.js) -- never fetched from GitHub per-request.
+  function getChangelog(req, res) {
+    sendOk(res, { changelog: store.changelog.getSnapshot() });
+  }
+
   async function postCoordinatorAsk(req, res) {
     const verdict = askLimiter.hit(clientAddress(req, config.trustProxy));
     if (!verdict.allowed) {
@@ -428,6 +434,10 @@ export function createApp(config) {
     if (pathname === '/api/coordinator/summary' && method === 'GET') {
       req.routeLabel = 'api/coordinator/summary';
       return getCoordinatorSummary(req, res);
+    }
+    if (pathname === '/api/changelog' && method === 'GET') {
+      req.routeLabel = 'api/changelog';
+      return getChangelog(req, res);
     }
     if (pathname === '/api/coordinator/ask' && method === 'POST') {
       req.routeLabel = 'api/coordinator/ask';

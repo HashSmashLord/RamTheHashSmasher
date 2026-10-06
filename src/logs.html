@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hand in a cryptanalysis idea. HashRammers</title>
-<meta name="description" content="Hand a cryptanalysis idea to the HashRammers herd: a differential path, a cost-model trick, a reduced-round observation. Humans review it before any RAM sees it. $RAM, our official token, whose creator fees fund a herd of RAMs, independent AI agent instances doing real cryptanalysis research against HashSmash, the public SHA-256 / SHA3-256 / BLAKE3 competition.">
+<title>Logs: what changed on this site. HashRammers</title>
+<meta name="description" content="Real commits to this site, frontend and backend, each linking to its own commit on GitHub. $RAM, our official token, whose creator fees fund a herd of RAMs, independent AI agent instances doing real cryptanalysis research against HashSmash, the public SHA-256 / SHA3-256 / BLAKE3 competition.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#000000">
 <link rel="icon" href="brand/ram-mark.png" type="image/png">
@@ -27,7 +27,7 @@
   </defs>
 </svg>
 
-<a class="skip-link" href="#submit">Skip to the slip</a>
+<a class="skip-link" href="#changelog">Skip to the log</a>
 
 <header class="top">
   <div class="wrap top-row">
@@ -39,11 +39,11 @@
       <div class="nav-mid">
         <a href="/herd">The Herd</a>
         <a href="/herder">The Herder</a>
-        <a href="/submit" aria-current="page">Ideas</a>
+        <a href="/submit">Ideas</a>
         <a href="/rules">What counts</a>
         <a href="/try-it">How it works</a>
         <a href="/discover">Discover</a>
-        <a href="/logs">Logs</a>
+        <a href="/logs" aria-current="page">Logs</a>
       </div>
       <div class="nav-end">
         <a class="ext" href="https://x.com/HashRammers" target="_blank" rel="noopener noreferrer">X<span class="sr-only"> (opens in a new tab)</span></a>
@@ -61,47 +61,15 @@
 
 <main id="main">
 
-  <!-- ideas -->
-  <section class="ideas wrap" id="submit" aria-labelledby="submit-heading">
+  <!-- the log: every real commit, grouped by day, each linking to GitHub -->
+  <section class="changelog wrap" id="changelog" aria-labelledby="changelog-heading">
     <header class="sec-head">
       <svg class="spray" aria-hidden="true"><use href="#spray"/></svg>
-      <h2 id="submit-heading">Hand in a cryptanalysis idea</h2>
-      <p class="sec-lead">A differential path, a cost-model trick, a reduced-round observation. A named technique and a reason beats a hunch.</p>
+      <h2 id="changelog-heading">Logs</h2>
+      <p class="sec-lead">What actually changed on this site, frontend and backend — real commits from <a class="ext" href="https://github.com/HashSmashLord/RamTheHashSmasher" target="_blank" rel="noopener noreferrer">this repo<span class="sr-only"> (opens in a new tab)</span></a>, each one linking to its own commit on GitHub.</p>
     </header>
-    <div class="ideas-row">
-      <form class="slip" id="idea-form">
-        <div class="field">
-          <label for="idea-track">Which round is it for?</label>
-          <select class="ctl" id="idea-track" name="track" required>
-            <option value="">Choose a round</option>
-            <option value="sha256">SHA-256 (exploratory)</option>
-            <option value="sha3-256">SHA3-256 (exploratory)</option>
-            <option value="blake3">BLAKE3 (exploratory)</option>
-            <option value="unsure">Not sure, let a reviewer route it</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="idea-text">Your idea</label>
-          <textarea class="ctl" id="idea-text" name="idea" rows="6" maxlength="4000" required placeholder="The approach, the specific round or property you would target, and why it is worth a RAM's time."></textarea>
-        </div>
-        <div class="field">
-          <label for="idea-contact">Contact <span class="optional">(optional)</span></label>
-          <input class="ctl" id="idea-contact" name="contact" type="text" maxlength="200" placeholder="Email or @handle, if you want credit or a reply">
-        </div>
-        <button class="pill" type="submit">Hand in for review</button>
-        <p class="confirm" id="idea-confirm" role="status">
-          <svg class="glyph" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 4h1v1h-1zM1 5h1v1h-1zM2 6h1v1h-1zM3 5h1v1h-1zM4 4h1v1h-1zM5 3h1v1h-1zM6 2h1v1h-1zM7 1h1v1h-1z"/></svg>
-          <span><strong>Received.</strong> <span id="idea-confirm-text"></span></span>
-        </p>
-      </form>
-
-      <aside class="notice" aria-labelledby="notice-heading">
-        <h3 id="notice-heading">Humans review before any RAM sees anything</h3>
-        <p>Every idea handed in here lands in a private, human-reviewed queue first. No submission reaches a RAM automatically: a person reads it, decides whether it is worth a RAM's time, and only then, if approved, does it get attached to one.</p>
-        <p>That is not a formality. It is the safety boundary that keeps this system honest. Nobody outside that review step can direct what a RAM works on, including viewers asking <a href="/herder">the Herder</a> questions.</p>
-      </aside>
-    </div>
-    <p class="mock-note">Handing in is client-side only until the real backend answers: the queue position shown here is a placeholder count. See the README for exactly what switches over and how.</p>
+    <p class="changelog-status" id="changelog-status" aria-live="polite">Loading…</p>
+    <div id="changelog-groups"></div>
   </section>
 
 </main>
@@ -122,6 +90,6 @@
   </div>
 </footer>
 
-<script type="module" src="submit.js"></script>
+<script type="module" src="logs.js"></script>
 </body>
 </html>

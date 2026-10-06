@@ -23,6 +23,7 @@ import { createRamFunds } from './lib/ramfunds.js';
 import { createPayoutBook } from './lib/payouts.js';
 import { createRamRegistry } from './lib/rams.js';
 import { createPinataClient, pinataPolicy } from './lib/pinata.js';
+import { createChangelogSource, createChangelogCache } from './lib/changelog.js';
 
 /**
  * @param {{
@@ -163,6 +164,12 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
   // before; nothing else changes either way.
   const pinata = pinataPolicy(env);
   const pinataClient = pinata.configured ? createPinataClient({ jwt: pinata.jwt }) : null;
+  // Logs page (/logs, server/lib/changelog.js): this repo's own real commit history from
+  // GitHub's public API. Always-on, unlike every other integration above -- it reads one
+  // public repo's public, keyless commit list, so there is no secret, no cost and nothing
+  // to gate behind a RAMHERD_* flag (see changelog.js's header for the full reasoning).
+  // Cached here; server/index.js refreshes it on a timer, same as the fee ledger.
+  const changelog = createChangelogCache({ source: createChangelogSource(), log });
   // Roster ceiling growth (budget.js withLaunchCeiling): each launchpad RAM
   // confirmed active adds SLOTS_PER_CONFIRMED_LAUNCH to the roster's maxSlots.
   // Append-only, like ramFunds/payouts: an id is only ever added, never
@@ -233,6 +240,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
     ideaQueue,
     costLedger,
     pinata,
+    changelog,
     ramFunds,
     payouts,
     rams,
