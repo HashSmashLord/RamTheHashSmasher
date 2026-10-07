@@ -33,6 +33,14 @@
 //     may still be rejected or wrong — never trusted, never copied, treated
 //     exactly like an ePrint paper's title: real, citable material to read
 //     and reason about, not proof of anything.
+//   - (2026-10-07) when the RAM's own model asked to READ one specific IACR
+//     ePrint paper (a final "READ: <id>" line), Chrome is pointed at that
+//     paper's own page (typed into the address bar) and the same page is
+//     fetched with curl and parsed for its real title, authors, abstract and
+//     keywords (readPaper / parseEprintPaperPage) — the fix for the loop's
+//     long-flagged title-only literature access. Only ever
+//     https://eprint.iacr.org/<YYYY>/<N>, built from a validated id; the PDF
+//     body is not read and nothing says it was.
 //
 // Checked against the real E2B `desktop` template on 2026-10-05 (a probe
 // sandbox, `command -v` + /usr/share/applications): Mousepad 0.5.8, gedit and
@@ -83,6 +91,17 @@ export const DEFAULT_MAX_THINKING_PER_SESSION = 60;
  * even if a model gets enthusiastic about proposing drafts.
  */
 export const DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION = 3;
+/**
+ * The real research tools (2026-10-07): bounded EXPERIMENT / VERIFY runs
+ * (research-tools.js, host CPU only, no paid call) and READ of one ePrint
+ * paper page. Each is still rate limited and capped per session, same shape
+ * as SEARCH/PEERS, so no single tool can take over the loop.
+ */
+export const DEFAULT_EXPERIMENT_EVERY = 1;
+export const DEFAULT_MAX_EXPERIMENTS_PER_SESSION = 20;
+export const DEFAULT_MAX_VERIFIES_PER_SESSION = 20;
+export const DEFAULT_READ_EVERY = 1;
+export const DEFAULT_MAX_READS_PER_SESSION = 12;
 /** max_tokens for the dedicated drafting call (slots.js's LOOP_DRAFT_SYSTEM). */
 export const LOOP_DRAFT_MAX_TOKENS = 700;
 /** max_tokens for the adversarial verification call (slots.js's LOOP_VERIFY_SYSTEM) -- a two-line verdict, no reasoning dump needed. */
@@ -114,39 +133,72 @@ export function asciiText(text) {
 }
 
 /**
- * Splits a model's thinking text into the note and three optional trailing
+ * Splits a model's thinking text into the note and its optional trailing
  * signal lines: a "SEARCH: ..." query, a "PEERS: ..." request to look at
- * real competitors' own open submissions on this track, and a "DRAFT: ..."
+ * real competitors' own open submissions on this track, a "DRAFT: ..."
  * line the model uses only when it believes its real research this session
  * gives it something specific and disclosed to propose as an improved
- * candidate claim (slots.js's active loop then decides, with its own real
- * gates, whether to act on any of these — this function only extracts what
- * was said).
+ * candidate claim, and (2026-10-07, the real research tools) an
+ * "EXPERIMENT: ..." request for a real bounded computation against this
+ * track's exact target (research-tools.js), a "VERIFY: ..." request to
+ * recompute a candidate pair under the target for real, and a "READ: ..."
+ * request to fetch one IACR ePrint paper's own page (title, authors,
+ * abstract). slots.js's active loop then decides, with its own real gates
+ * and rate limits, whether to act on any of these — this function only
+ * extracts what was said. READ only ever yields a bare ePrint id (the URL
+ * is built from it later, on the one allowed domain); anything else is null.
  */
 export function parseThinking(text) {
   const lines = String(text ?? '').split('\n');
   let search = null;
   let peers = null;
   let draft = null;
+  let experiment = null;
+  let verify = null;
+  let read = null;
   const kept = [];
   for (const line of lines) {
-    const mSearch = /^\s*\**\s*SEARCH\s*:\s*(.+)$/i.exec(line);
-    const mPeers = /^\s*\**\s*PEERS\s*:\s*(.+)$/i.exec(line);
-    const mDraft = /^\s*\**\s*DRAFT\s*:\s*(.+)$/i.exec(line);
-    if (mSearch) search = mSearch[1];
-    else if (mPeers) peers = mPeers[1];
-    else if (mDraft) draft = mDraft[1];
-    else kept.push(line);
+    const m = /^\s*\**\s*(SEARCH|PEERS|DRAFT|EXPERIMENT|VERIFY|READ)\s*:\**\s*(.+)$/i.exec(line);
+    if (!m) { kept.push(line); continue; }
+    const value = m[2].replace(/\*+\s*$/, '');
+    switch (m[1].toUpperCase()) {
+      case 'SEARCH': search = value; break;
+      case 'PEERS': peers = value; break;
+      case 'DRAFT': draft = value; break;
+      case 'EXPERIMENT': experiment = value; break;
+      case 'VERIFY': verify = value; break;
+      default: read = value;
+    }
   }
   const query = search ? search.replace(/[^A-Za-z0-9 .+-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
   const peersReason = peers ? peers.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
   const reason = draft ? draft.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+  const experimentText = experiment ? experiment.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+  const verifyText = verify ? verify.replace(/\s+/g, ' ').trim().slice(0, 2 * 2 * 4096 + 8) : '';
   return {
     note: kept.join('\n').trim(),
     search: query.length >= 3 ? query : null,
     peersReason: peersReason.length >= 5 ? peersReason : null,
     draftReason: reason.length >= 5 ? reason : null,
+    experiment: experimentText.length >= 5 ? experimentText : null,
+    verify: verifyText.length >= 4 ? verifyText : null,
+    read: read ? eprintIdFrom(read) : null,
   };
+}
+
+/**
+ * The one form a READ request may take: an IACR ePrint id (YYYY/N), given
+ * bare, as "ePrint YYYY/N", or as that paper's own eprint.iacr.org URL.
+ * Anything else — another domain, a path, a query string — is null: there
+ * is no open browsing here, only this one archive's paper pages.
+ */
+export function eprintIdFrom(text) {
+  const t = String(text ?? '').trim();
+  const m = /^(?:e?print\s+|https?:\/\/eprint\.iacr\.org\/)?(\d{4})\/(\d{1,6})(?:\.pdf)?\/?$/i.exec(t);
+  if (!m) return null;
+  const year = Number(m[1]);
+  if (year < 1996 || year > 2100) return null;
+  return `${m[1]}/${Number(m[2])}`;
 }
 
 /**
@@ -184,6 +236,7 @@ export function parseDraftAttempt(text) {
     successProbability: num(field('SUCCESS_PROBABILITY')),
     heuristicId: field('HEURISTIC_ID'),
     citedPaperId: field('CITED_PAPER_ID'),
+    experimentId: field('EXPERIMENT_ID'),
     statement: field('STATEMENT'),
     scope: field('SCOPE'),
     extrapolation: field('EXTRAPOLATION'),
@@ -518,7 +571,120 @@ export async function browsePeerSubmissions(sbx, { assignment, windowId = null, 
   return { windowId: id, url: peerSubmissionsUrl(), track, results: parsePeerSubmissions(out?.stdout) };
 }
 
+/**
+ * Real full-page literature reading (2026-10-07; fixes the long-standing,
+ * repeatedly flagged gap that the loop's ePrint access was title-only).
+ *
+ * Domain discipline, same as everything else here: the only URL this ever
+ * fetches is `https://eprint.iacr.org/<YYYY>/<N>`, built from an id that
+ * passed eprintIdFrom — never a model-supplied URL, never another site.
+ * The page is fetched with the sandbox's own curl (the sandbox reaches
+ * eprint.iacr.org, checked 2026-10-05) and parsed HERE, in Node, so the
+ * parser is tested against a real recorded ePrint page. What comes back is
+ * exactly what the paper's own page says: title, authors, abstract,
+ * keywords, category, publication info, PDF link. The PDF body is NOT read
+ * (no PDF text extraction is attempted; abstract-level text is what is
+ * reported, and every downstream message says so).
+ */
+export const EPRINT_PAPER_BASE = 'https://eprint.iacr.org/';
+/** Longest page body read back from the sandbox (a real ePrint paper page is ~17 KB). */
+export const MAX_PAPER_PAGE_BYTES = 262_144;
+/** Longest abstract kept per paper (real abstracts run ~1-2.5 KB). */
+export const MAX_ABSTRACT_CHARS = 4000;
+
+export function eprintPaperUrl(id) {
+  const clean = eprintIdFrom(id);
+  if (!clean) throw new RangeError(`not an IACR ePrint paper id: ${String(id).slice(0, 40)}`);
+  return `${EPRINT_PAPER_BASE}${clean}`;
+}
+
+function decodeEntities(s) {
+  return String(s)
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+}
+
+const stripTags = (s) => decodeEntities(String(s).replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+
+/**
+ * Parses a real IACR ePrint paper page (the archive's own HTML, as fetched)
+ * into its real fields. Prefers the page's own `citation_*` meta tags and
+ * the visible "Abstract" block; a field the page does not have is null/[],
+ * never a guess. A page with no title at all (e.g. the archive's 404 page,
+ * whose <title> is empty) is reported as not found.
+ */
+export function parseEprintPaperPage(html, id) {
+  const page = String(html ?? '');
+  const metas = (name) => [...page.matchAll(new RegExp(`<meta\\s+name="${name}"\\s+content="([^"]*)"`, 'gi'))].map((m) => decodeEntities(m[1]).trim()).filter(Boolean);
+  const title = metas('citation_title')[0]
+    || stripTags(/<h3[^>]*>([\s\S]*?)<\/h3>/i.exec(page)?.[1] ?? '')
+    || null;
+  if (!title) return { found: false, id, url: `${EPRINT_PAPER_BASE}${id}` };
+  const authors = metas('citation_author');
+  const visibleAbstract = /<h5[^>]*>\s*Abstract\s*<\/h5>\s*<p[^>]*>([\s\S]*?)<\/p>/i.exec(page)?.[1];
+  const ogAbstract = /<meta\s+property="og:description"\s+content="([^"]*)"/i.exec(page)?.[1];
+  let abstract = visibleAbstract ? stripTags(visibleAbstract) : ogAbstract ? decodeEntities(ogAbstract).replace(/\s+/g, ' ').trim() : '';
+  if (abstract.length > MAX_ABSTRACT_CHARS) abstract = `${abstract.slice(0, MAX_ABSTRACT_CHARS - 3)}...`;
+  const keywordsBlock = /<dd\s+class="keywords">([\s\S]*?)<\/dd>/i.exec(page)?.[1] ?? '';
+  const keywords = [...keywordsBlock.matchAll(/<a[^>]*>([\s\S]*?)<\/a>/gi)].map((m) => stripTags(m[1])).filter(Boolean);
+  const dd = (label) => {
+    const m = new RegExp(`<dt>\\s*${label}\\s*</dt>\\s*<dd[^>]*>([\\s\\S]*?)</dd>`, 'i').exec(page);
+    return m ? stripTags(m[1]) || null : null;
+  };
+  return {
+    found: true,
+    id,
+    url: `${EPRINT_PAPER_BASE}${id}`,
+    title: decodeEntities(title).replace(/\s+/g, ' ').trim().slice(0, 300),
+    authors: authors.slice(0, 20),
+    abstract,
+    keywords: keywords.slice(0, 12),
+    category: dd('Category'),
+    publicationInfo: dd('Publication info'),
+    pdfUrl: metas('citation_pdf_url')[0] ?? null,
+    bodyRead: false,
+  };
+}
+
+/** The one real shell command that fetches a paper page inside the sandbox (fixed domain, id already validated). */
+export function paperPageCommand(id) {
+  return `curl -sS -m 20 -A 'ramherd-research-loop' ${shQuote(eprintPaperUrl(id))} | head -c ${MAX_PAPER_PAGE_BYTES}`;
+}
+
+/**
+ * Points the desktop's Chrome at the paper's own ePrint page (typed into the
+ * address bar, so a viewer sees which paper is being read), then fetches the
+ * same page with the sandbox's curl and parses it here. Returns
+ * { windowId, url, paper } where `paper` is parseEprintPaperPage's real
+ * output (`found: false` if the archive has no such paper).
+ */
+export async function readPaper(sbx, { id, windowId = null, typeDelayMs = 25 }) {
+  const run = (cmd, opts) => sbx.commands.run(cmd, opts);
+  const clean = eprintIdFrom(id);
+  if (!clean) throw new RangeError(`not an IACR ePrint paper id: ${String(id).slice(0, 40)}`);
+  const url = eprintPaperUrl(clean);
+  let wid = windowId;
+  if (wid) {
+    const still = await run(`xdotool getwindowname ${wid} 2>/dev/null || echo GONE`);
+    if (String(still?.stdout ?? '').trim() === 'GONE') wid = null;
+  }
+  if (!wid) {
+    await run(`google-chrome --no-first-run --no-default-browser-check --password-store=basic --disable-features=Translate --user-data-dir=${CHROME_PROFILE_DIR} --start-maximized about:blank >/dev/null 2>&1`, { background: true, timeoutMs: 0 });
+    const found = await run(`timeout 25 xdotool search --sync --onlyvisible --class google-chrome 2>/dev/null | tail -n 1 || true`, { timeoutMs: 35_000 });
+    wid = String(found?.stdout ?? '').trim();
+    if (!/^\d+$/.test(wid)) throw new Error('browser window did not appear on the sandbox desktop');
+    await run('sleep 2');
+  }
+  await run(`xdotool windowactivate --sync ${wid} >/dev/null 2>&1 || true`);
+  await run('xdotool key --clearmodifiers ctrl+l');
+  await run(`xdotool type --delay ${typeDelayMs} -- ${shQuote(url)} && xdotool key Return`, { timeoutMs: 30_000 });
+  const fetched = await run(`${paperPageCommand(clean)} || true`, { timeoutMs: 40_000 });
+  return { windowId: wid, url, paper: parseEprintPaperPage(fetched?.stdout ?? '', clean) };
+}
+
 /** What store.js hands to createSlotManager as `sandboxActivity`. */
 export const desktopActivity = Object.freeze({
-  ensureNotepad, typeIntoNotepad, browseLiterature, ensureResearchTerminal, inspectRepoFile, browsePeerSubmissions,
+  ensureNotepad, typeIntoNotepad, browseLiterature, ensureResearchTerminal, inspectRepoFile, browsePeerSubmissions, readPaper,
 });

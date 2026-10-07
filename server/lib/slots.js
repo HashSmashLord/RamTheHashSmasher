@@ -153,6 +153,32 @@
 // candidate 'ready' or score-critical. The realistic, honest default stays
 // "no attack found": most sessions never reach this path at all, and most
 // that do will be told "no" or rejected, same as the ordinary harness draft.
+// Real research tools (2026-10-07; optional `researchTools`, store.js passes
+// research-tools.js's realResearchTools whenever the loop is on). A thinking
+// step may also end with "EXPERIMENT: ...", "VERIFY: ..." or "READ: <ePrint
+// id>" (LOOP_THINKING_SYSTEM). EXPERIMENT runs a REAL bounded computation
+// against this track's exact reduced-round target (a birthday count on a
+// digest prefix, or an input-difference/output-bias measurement) on a worker
+// thread, capped in samples and wall time, and reports the real sample count
+// actually run; VERIFY recomputes a candidate pair (or the closest pair an
+// experiment recorded, "EXP#<n>") under the target; READ fetches one IACR
+// ePrint paper's own page (title, authors, abstract; never the PDF body,
+// never another domain). Any pair either tool reports is also recomputed by
+// the organizer's own reference Python (pipelineRunner.organizerDigests, the
+// call its certificate checker makes); if the two ever disagree the result is
+// discarded, never reported. Each completed result is recorded on the slot as
+// EXP#<n> and grounds later thinking steps; a drafted claim may cite it
+// (CITED_PAPER_ID: EXP#<n>, or an additional EXPERIMENT_ID), resolved by
+// hashsmash.js findCitedReference against real session state exactly like a
+// paper or PR, and the adversarial verification call is shown its real
+// recorded numbers. These tools only improve what goes INTO a claim:
+// validateLoopAttempt's existing checks and runLoopVerification's gate are
+// unchanged (validateLoopAttempt only gained extra rejections), and a
+// prefix match, biased bit or low-weight difference is never a collision.
+// Rate limited / capped per session (experimentEvery,
+// maxExperimentsPerSession, maxVerifiesPerSession, readEvery,
+// maxReadsPerSession); host CPU only, no paid call.
+//
 // Guardrails:
 //   - never starts in mock mode (`activeLoop.live`, from llm.js isLiveMode),
 //     and stops itself if a thinking call ever comes back mocked;
@@ -202,8 +228,15 @@ import {
   parseThinking, parseDraftAttempt, parseVerifyVerdict, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
   DEFAULT_BROWSE_EVERY, DEFAULT_PEERS_EVERY, DEFAULT_MAX_THINKING_PER_SESSION, LOOP_THINKING_MAX_TOKENS,
   DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION, LOOP_DRAFT_MAX_TOKENS, LOOP_VERIFY_MAX_TOKENS,
+  DEFAULT_EXPERIMENT_EVERY, DEFAULT_MAX_EXPERIMENTS_PER_SESSION, DEFAULT_MAX_VERIFIES_PER_SESSION, DEFAULT_READ_EVERY, DEFAULT_MAX_READS_PER_SESSION,
 } from './sandbox-activity.js';
-import { validateLoopAttempt, findCitedReference } from './hashsmash.js';
+import { validateLoopAttempt, findCitedReference, describeExperimentRef, citationLabel } from './hashsmash.js';
+import { parseExperimentRequest, parseVerifyRequest } from './research-tools.js';
+
+/** How many of a slot's own experiment/verify records (EXP#n) are kept citable. */
+export const MAX_EXPERIMENT_RECORDS = 10;
+/** How many papers a slot has actually read are kept (newest wins). */
+export const MAX_READ_PAPERS = 8;
 
 // 'validated' = the candidate passed HashSmash's real local intake (mechanical
 // checks only). It is not judged, not scored, and not submitted anywhere.
@@ -228,8 +261,18 @@ export const LOOP_THINKING_SYSTEM = 'You are a HashSmash solver agent whose work
   + 'If looking up published literature would genuinely help this step, end with one line "SEARCH: <a short query for the IACR ePrint archive>"; otherwise do not add that line. '
   + 'Separately: if seeing what other real competitors on this exact same track have actually submitted (their own claimed, unverified scores and notes, as open pull requests on the real HashSmash repository) would genuinely help, end with one line "PEERS: <one short reason>"; otherwise do not add that line either. '
   + 'Separately again: if, and only if, what you have actually read and thought about this session gives you something specific and disclosed you could honestly put in an improved candidate claim '
-  + '(a real heuristic with a stated scope and limitations, citing a real paper you actually looked up this session), end with one more line "DRAFT: <one short reason>" so you can be asked for it properly next step. '
-  + 'The honest default is that you do not have this yet; most steps should not add that line, and adding it when you are not sure is worse than leaving it off.';
+  + '(a real heuristic with a stated scope and limitations, citing a real paper you actually looked up or read, a real competitor PR, or one of your own real experiments this session), end with one more line "DRAFT: <one short reason>" so you can be asked for it properly next step. '
+  + 'The honest default is that you do not have this yet; most steps should not add that line, and adding it when you are not sure is worse than leaving it off. '
+  + 'You also have three real tools; use one only when it would genuinely test or inform what you are thinking. '
+  + 'To run a real, bounded computation against this exact target (the organizer\'s own reduced-round function, actually computed, at most a couple of seconds), end with one line in one of these two forms: '
+  + '"EXPERIMENT: birthday bits=<8-44> samples=<up to 262144> [len=<message bytes 1-256>] [vary=<first>-<last byte that varies>] [seed=<word>]" '
+  + '(counts distinct message pairs whose digests agree on the first <bits> bits, against what a random function would give), or '
+  + '"EXPERIMENT: differential at=<byte index> xor=<hex input difference> samples=<up to 65536> [len=<1-256>] [seed=<word>]" '
+  + '(measures the real output difference for that input difference: mean and minimum weight, output bits that never flip, statistically biased bits). '
+  + 'To recompute a candidate message pair under this exact target, end with "VERIFY: <hex message a> <hex message b>", or "VERIFY: EXP#<n>" to re-check the closest pair one of your experiments recorded. '
+  + 'To read one IACR ePrint paper\'s own page (its real title, authors and abstract; not the PDF body), end with "READ: <ePrint id, e.g. 2026/1080>". '
+  + 'Real results come back to you next step with their real sample counts. A prefix match, a biased bit or a low-weight difference is evidence about the target, never a collision; '
+  + 'report what the numbers actually show, including when they look exactly like a random function.';
 
 /** System prompt for the dedicated, rarer "do you really have something to draft" call (see runLoopDraftAttempt). */
 export const LOOP_DRAFT_SYSTEM = 'You are the same HashSmash solver agent, now asked a narrower question than before. '
@@ -238,11 +281,13 @@ export const LOOP_DRAFT_SYSTEM = 'You are the same HashSmash solver agent, now a
   + 'Answer in EXACTLY this plain-text format and nothing else, no markdown, nothing before or after it. First line: "ATTEMPT: yes" or "ATTEMPT: no". '
   + 'If, and only if, yes, add every one of these lines, each with a real, specific, honestly-limited value, in this order: '
   + 'TIME_LOG2: <plain number>, MEMORY_LOG2_BYTES: <plain number>, SUCCESS_PROBABILITY: <plain number between 0.39 and 1>, '
-  + 'HEURISTIC_ID: <short slug, letters/digits/._- only>, CITED_PAPER_ID: <EITHER the exact IACR ePrint id, e.g. 2026/1234, from your own last real search results below, OR, if you are instead citing a real competitor pull request you actually looked at this session, exactly "PR#<its number>" e.g. PR#302 — never invent or remember either one from elsewhere>, '
+  + 'HEURISTIC_ID: <short slug, letters/digits/._- only>, CITED_PAPER_ID: <EITHER the exact IACR ePrint id, e.g. 2026/1234, from your own last real search results below, OR, if you are instead citing a real competitor pull request you actually looked at this session, exactly "PR#<its number>" e.g. PR#302, OR, if you are citing one of your own real experiment or verify results from this session, exactly its id e.g. EXP#3 — never invent or remember any of these from elsewhere>, '
+  + 'EXPERIMENT_ID: <EXP#<n> of one of your own real experiments this session that also supports this, or NONE>, '
   + 'STATEMENT: <the specific heuristic you are proposing, one or two sentences>, SCOPE: <exactly what construction, parameters or premise this is argued or measured for>, '
   + 'EXTRAPOLATION: <what you actually did this session that supports it, and precisely how far beyond that you are extending it>, '
   + 'LIMITATIONS: <what is NOT proven here, stated as plainly as the sha256-r32 research package does it — no collision found, an estimate under one disclosed premise, etc.>. '
   + 'Never write that something is proven, verified, confirmed or guaranteed when it is only estimated or argued from a short literature read or another competitor\'s own unverified, self-reported claim. '
+  + 'An experiment you ran measured exactly what its recorded numbers say and nothing more: a prefix match, a biased output bit or a low-weight difference is not a collision, and never claim this session found a collision unless a VERIFY result you were given says so. '
   + 'If you cannot honestly give a real CITED_PAPER_ID taken from the results you were actually given this session, answer "ATTEMPT: no".';
 
 /**
@@ -256,12 +301,13 @@ export const LOOP_VERIFY_SYSTEM = 'You are an independent, skeptical reviewer ch
   + 'You did not write this claim and have no stake in it being right. Your only job is to find a real reason it should NOT be trusted yet, if one genuinely exists. '
   + 'You are given the claim\'s own disclosed statement, scope, extrapolation and limitations, its numeric claim, and the real paper or competitor pull request it cites. '
   + 'Check specifically: does the extrapolation actually follow from what the cited source is described as saying, or is it a stretch beyond what a title or short read could support; does the stated scope genuinely match this exact target (hash family, round count, construction); are the disclosed limitations honestly complete, not hiding a bigger gap than stated; is the numeric claim (time/memory/success probability) plausible for what is being described, not suspiciously strong for a single session\'s literature read. '
+  + 'When the claim cites or names one of the agent\'s own experiments, you are given its real recorded numbers: check that the claim does not stretch a truncated-prefix match, a biased output bit or a low-weight output difference into a full-collision cost argument without a stated, plausible bridge, and that the numeric claim is consistent with what was actually measured. '
   + 'A cited source existing and being topically relevant is not enough on its own — the SPECIFIC extrapolation this RAM is making from it has to actually hold up to that scrutiny. '
   + 'If, after genuinely checking each of those, you cannot find a real problem, answer "VERDICT: PASS". Otherwise answer "VERDICT: FAIL". The honest default, like every other check in this system, is to find the real problem if one exists, not to wave a claim through because it sounds plausible or technically written. '
   + 'Answer in EXACTLY this plain-text format and nothing else, no markdown, nothing before or after it: first line "VERDICT: PASS" or "VERDICT: FAIL", second line "REASON: <one or two sentences, specific to what you actually checked, not generic>".';
 
 /** Feed entry types that are the RAM's research history (what a thinking step is grounded in). */
-const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|pipeline-.*|sandbox-browse|sandbox-peer-review|sandbox-task-done|suggestion-attached)$/;
+const HISTORY_TYPES = /^(thinking|running-experiment|validated|submitted|failed|pipeline-.*|sandbox-browse|sandbox-peer-review|sandbox-read|research-.*|sandbox-task-done|suggestion-attached)$/;
 
 /**
  * Updates, on the slot itself, the best REAL numeric result a pipeline run
@@ -328,6 +374,20 @@ export function loopGrounding(slot) {
         : 'none currently open mention this track'
     } (their own self-reported, unverified claims; an open PR may still be rejected or wrong, never treat one as proven; a text match only means its own note mentions this track, not that the PR is necessarily that track's own submission).`;
   }
+  const read = (slot.readPapers ?? []).slice(-3);
+  if (read.length) {
+    out += ` Papers you actually read this session (title, authors and abstract from the paper's own ePrint page; the PDF body was not read): ${
+      read.map((p, i) => `${p.id} "${clip(p.title, 120)}"${p.authors?.length ? ` by ${clip(p.authors.join(', '), 80)}` : ''}${
+        p.abstract ? ` -- abstract: ${clip(p.abstract, i === read.length - 1 ? 900 : 300)}` : ' -- the page had no abstract'
+      }`).join(' || ')
+    }.`;
+  }
+  const exps = (slot.experiments ?? []).slice(-4);
+  if (exps.length) {
+    out += ` Your own real experiments this session (actually computed; cite one as EXP#<n>): ${
+      exps.map((e) => (e.status === 'completed' ? describeExperimentRef({ id: e.id, result: e.result, organizerCheck: e.organizerCheck }) : `${e.id}: ${e.status} -- ${clip(e.error ?? 'no result', 160)} (no result exists; not citable)`)).map((t) => clip(t, 420)).join(' || ')
+    }.`;
+  }
   return out;
 }
 
@@ -348,6 +408,7 @@ function freezeCopy(value) {
  *   sandboxActivity?: typeof import('./sandbox-activity.js').desktopActivity|null,
  *   activeLoop?: { enabled?: boolean, live: boolean, stepPauseMs?: number, minStepPauseMs?: number, browseEvery?: number, maxThinkingPerSession?: number, maxDraftAttemptsPerSession?: number, maxFailures?: number }|null,
  *   yukonSandbox?: typeof import('./yukon-sandbox.js')|null,
+ *   researchTools?: { runExperiment: (req: any) => Promise<any>, verifyPair: (p: { track: string, messageAHex: string, messageBHex: string }) => any }|null,
  *   liveSubmit?: { policy: { allowed: boolean }, ledger: ReturnType<typeof import('./live-submit.js').createLiveSubmissionLedger>, env?: NodeJS.ProcessEnv, runInSandbox?: typeof runLiveSubmissionInSandbox }|null,
  *   setTimer?: (fn: () => void, ms: number) => any,
  *   clearTimer?: (handle: any) => void,
@@ -355,7 +416,7 @@ function freezeCopy(value) {
  *   idPrefix?: string,
  * }} opts
  */
-export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, autoRestart = null, sandboxActivity = null, activeLoop = null, yukonSandbox = null, liveSubmit = null, setTimer = setTimeout, clearTimer = clearTimeout, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
+export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxManager = null, sandboxTask = null, sandboxContext = null, costLedger = null, modelOverride = null, autoRestart = null, sandboxActivity = null, activeLoop = null, yukonSandbox = null, liveSubmit = null, researchTools = null, setTimer = setTimeout, clearTimer = clearTimeout, now = () => new Date().toISOString(), idPrefix = 'slot' }) {
   if (!llmProvider || typeof llmProvider.complete !== 'function') {
     throw new TypeError('createSlotManager requires an llmProvider with complete()');
   }
@@ -391,6 +452,11 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       peersEvery: Math.max(1, activeLoop.peersEvery ?? DEFAULT_PEERS_EVERY),
       maxThinkingPerSession: Math.max(1, activeLoop.maxThinkingPerSession ?? DEFAULT_MAX_THINKING_PER_SESSION),
       maxDraftAttemptsPerSession: Math.max(1, activeLoop.maxDraftAttemptsPerSession ?? DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION),
+      experimentEvery: Math.max(1, activeLoop.experimentEvery ?? DEFAULT_EXPERIMENT_EVERY),
+      maxExperimentsPerSession: Math.max(0, activeLoop.maxExperimentsPerSession ?? DEFAULT_MAX_EXPERIMENTS_PER_SESSION),
+      maxVerifiesPerSession: Math.max(0, activeLoop.maxVerifiesPerSession ?? DEFAULT_MAX_VERIFIES_PER_SESSION),
+      readEvery: Math.max(1, activeLoop.readEvery ?? DEFAULT_READ_EVERY),
+      maxReadsPerSession: Math.max(0, activeLoop.maxReadsPerSession ?? DEFAULT_MAX_READS_PER_SESSION),
       maxFailures: Math.max(1, activeLoop.maxFailures ?? 5),
       shutDown: false,
     };
@@ -589,13 +655,16 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         ? { model, system: LOOP_THINKING_SYSTEM, prompt: `${base}${loopGrounding(slot)}`, maxTokens: LOOP_THINKING_MAX_TOKENS }
         : { model, system: 'You are a HashSmash solver agent. Describe, in one sentence, the next concrete thing you will try.', prompt: base });
       let text = result.text;
-      slot.lastThink = { mocked: Boolean(result.mocked), search: null, peersReason: null, draftReason: null };
+      slot.lastThink = { mocked: Boolean(result.mocked), search: null, peersReason: null, draftReason: null, experiment: null, verify: null, read: null };
       if (fromLoop) {
-        const { note, search, peersReason, draftReason } = parseThinking(result.text);
+        const { note, search, peersReason, draftReason, experiment, verify, read } = parseThinking(result.text);
         text = note || '(the model returned no text for this step)';
         slot.lastThink.search = result.mocked ? null : search;
         slot.lastThink.peersReason = result.mocked ? null : peersReason;
         slot.lastThink.draftReason = result.mocked ? null : draftReason;
+        slot.lastThink.experiment = result.mocked ? null : experiment;
+        slot.lastThink.verify = result.mocked ? null : verify;
+        slot.lastThink.read = result.mocked ? null : read;
       }
       slot.status = 'thinking';
       pushFeed(slot, 'thinking', text);
@@ -806,9 +875,11 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
    *   - the slot's own last thinking step must have actually asked for it
    *     (a real "DRAFT: ..." line, parsed into `slot.lastThink.draftReason`);
    *   - the slot must have done at least one real session of grounding —
-   *     a real IACR ePrint search (`slot.lastSearch`) or a real GitHub
+   *     a real IACR ePrint search (`slot.lastSearch`), a real GitHub
    *     lookup of other competitors' open PRs on this track
-   *     (`slot.lastPeerReview`) — no real lookup yet, no attempt;
+   *     (`slot.lastPeerReview`), a real paper read (`slot.readPapers`) or a
+   *     real completed experiment (`slot.experiments`) — no real grounding
+   *     yet, no attempt;
    *   - bounded: at most `maxDraftAttemptsPerSession` per slot (falls back
    *     to sandbox-activity.js's default when no active loop is configured,
    *     so this stays bounded even when a caller drives `advance()` by hand).
@@ -822,7 +893,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       fromLoop
       && slot.lastThink?.draftReason
       && pipelineRunner?.candidateKindFor?.(track) !== 'research'
-      && (slot.lastSearch || slot.lastPeerReview)
+      && (slot.lastSearch || slot.lastPeerReview || slot.readPapers?.length || slot.experiments?.some((e) => e.status === 'completed'))
       && (slot.draftAttempts ?? 0) < (loopCfg?.maxDraftAttemptsPerSession ?? DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION),
     );
   }
@@ -842,6 +913,8 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     slot.draftAttempts = (slot.draftAttempts ?? 0) + 1;
     const lastSearchResults = slot.lastSearch?.results ?? [];
     const lastPeerResults = slot.lastPeerReview?.results ?? [];
+    const readPapers = slot.readPapers ?? [];
+    const experiments = slot.experiments ?? [];
     const prompt = `${loopGrounding(slot)} Earlier this cycle you said: "${slot.lastThink.draftReason}". Decide now, honestly and specifically.`;
     const result = await llmProvider.complete({ model, system: LOOP_DRAFT_SYSTEM, prompt, maxTokens: LOOP_DRAFT_MAX_TOKENS });
     if (costLedger && result.usage) {
@@ -858,16 +931,19 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       await runRealPipeline(slot);
       return;
     }
-    const check = validateLoopAttempt(attempt, { lastSearchResults, lastPeerResults });
+    const check = validateLoopAttempt(attempt, { lastSearchResults, lastPeerResults, readPapers, experiments, track });
     if (!check.ok) {
       slot.status = 'failed';
       pushFeed(slot, 'pipeline-loop-draft-rejected', `This RAM's model tried to draft its own candidate claim for ${track} but it failed this harness's own honesty/structure checks before HashSmash's real validation even ran: ${check.errors.join('; ')}. This is a real failed attempt, not a hidden one; nothing was submitted or shown as a result.`);
       return;
     }
-    const citedPaper = findCitedReference(attempt.citedPaperId, { lastSearchResults, lastPeerResults });
-    const citedDesc = citedPaper.kind === 'peer-pr' ? `competitor PR #${citedPaper.number}` : `ePrint ${citedPaper.id}`;
-    pushFeed(slot, 'pipeline-loop-draft-attempt', `This RAM's model proposed its own candidate claim for ${track} (heuristic "${attempt.heuristicId}", citing ${citedDesc}); it still has to pass the exact same real HashSmash pipeline as any other candidate.`);
-    const verification = await runLoopVerification(slot, attempt, citedPaper);
+    const citedPaper = findCitedReference(attempt.citedPaperId, { lastSearchResults, lastPeerResults, readPapers, experiments });
+    const supportingExperiment = attempt.experimentId && !/^none$/i.test(attempt.experimentId) && attempt.experimentId !== attempt.citedPaperId
+      ? findCitedReference(attempt.experimentId, { experiments })
+      : null;
+    const citedDesc = citationLabel(citedPaper);
+    pushFeed(slot, 'pipeline-loop-draft-attempt', `This RAM's model proposed its own candidate claim for ${track} (heuristic "${attempt.heuristicId}", citing ${citedDesc}${supportingExperiment ? `, supported by its own experiment ${supportingExperiment.id}` : ''}); it still has to pass the exact same real HashSmash pipeline as any other candidate.`);
+    const verification = await runLoopVerification(slot, attempt, citedPaper, supportingExperiment);
     pushFeed(
       slot,
       verification.pass ? 'pipeline-loop-verify-passed' : 'pipeline-loop-verify-failed',
@@ -875,7 +951,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         ? `A second, independent model call (asked specifically to try to find a problem with this claim, not to agree with it) could not find a real issue with it: "${verification.reason || 'no reason given'}". This candidate can now leave draft state.`
         : `A second, independent model call found a real problem with this claim and it stays a draft: "${verification.reason || 'no reason given'}".`,
     );
-    await runRealPipeline(slot, { loopDraft: { attempt, citedPaper, verification } });
+    await runRealPipeline(slot, { loopDraft: { attempt, citedPaper, verification, supportingExperiment } });
   }
 
   /**
@@ -889,12 +965,24 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
    * malformed response is treated as a fail -- the same safe default as a
    * real, honest "no".
    */
-  async function runLoopVerification(slot, attempt, citedPaper) {
+  async function runLoopVerification(slot, attempt, citedPaper, supportingExperiment = null) {
     const { model } = slot.assignment;
     const citedDesc = citedPaper.kind === 'peer-pr'
       ? `competitor pull request #${citedPaper.number} ("${citedPaper.title}")`
-      : `IACR ePrint ${citedPaper.id} ("${citedPaper.title}")`;
-    const prompt = `Claim to check, citing ${citedDesc}:\n`
+      : citedPaper.kind === 'experiment'
+        ? `the agent's own experiment ${citedPaper.id}`
+        : `IACR ePrint ${citedPaper.id} ("${citedPaper.title}")`;
+    // The verifier sees the cited source's REAL recorded content, never just a label:
+    // an experiment's actual numbers, or the abstract the agent actually read.
+    const sourceDetail = citedPaper.kind === 'experiment'
+      ? `CITED EXPERIMENT (real recorded result): ${describeExperimentRef(citedPaper)}\n`
+      : citedPaper.kind === 'eprint' && citedPaper.read
+        ? `CITED PAPER (the agent read its title, authors and abstract only, not the body): abstract as fetched: "${String(citedPaper.abstract ?? '').replace(/\s+/g, ' ').slice(0, 1500)}"\n`
+        : citedPaper.kind === 'eprint'
+          ? 'CITED PAPER: the agent saw only this title in a search result list; it did not read the paper.\n'
+          : '';
+    const supportDetail = supportingExperiment ? `SUPPORTING EXPERIMENT (real recorded result): ${describeExperimentRef(supportingExperiment)}\n` : '';
+    const prompt = `Claim to check, citing ${citedDesc}:\n${sourceDetail}${supportDetail}`
       + `STATEMENT: ${attempt.statement}\n`
       + `SCOPE: ${attempt.scope}\n`
       + `EXTRAPOLATION: ${attempt.extrapolation}\n`
@@ -1075,6 +1163,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       sessionId, timer: null, running: null, stopped: false, startedAt: now(),
       steps: 0, thinking: 0, failures: 0, lastBrowseThinking: -Infinity, browses: 0,
       lastPeersThinking: -Infinity, peers: 0,
+      lastExperimentThinking: -Infinity, experiments: 0, verifies: 0, lastReadThinking: -Infinity, reads: 0,
       notepadId: null, browserId: null, terminalId: null, inspects: 0, unverifiedTyping: 0,
       lastAdvanceEndMs: null, maxGapMs: 0, history: [],
     };
@@ -1174,6 +1263,17 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
             : `No open pull requests currently mention ${p.track}.`
         }`);
       }
+      // The real research tools (2026-10-07): READ one ePrint paper's own page,
+      // run one bounded EXPERIMENT against this exact target, VERIFY a pair.
+      // Each only when this step's own thinking asked for it, each rate
+      // limited / capped per session like SEARCH and PEERS.
+      const readWanted = wasIdle ? slot.lastThink?.read : null;
+      if (readWanted && loopIsCurrent(slot, entry)) await runLoopRead(slot, entry, readWanted);
+      const experimentWanted = wasIdle ? slot.lastThink?.experiment : null;
+      if (experimentWanted && loopIsCurrent(slot, entry)) await runLoopExperiment(slot, entry, experimentWanted);
+      const verifyWanted = wasIdle ? slot.lastThink?.verify : null;
+      if (verifyWanted && loopIsCurrent(slot, entry)) await runLoopVerify(slot, entry, verifyWanted);
+      if (!loopIsCurrent(slot, entry)) return;
       entry.failures = 0;
       scheduleLoopStep(slot, entry, loopCfg.stepPauseMs);
     } catch (err) {
@@ -1189,6 +1289,158 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       pushFeed(slot, 'sandbox-loop-error', `Research loop step failed (${err.message}); retrying in ${Math.round(delay / 1000)}s (${entry.failures}/${loopCfg.maxFailures} failures before it stops).`);
       scheduleLoopStep(slot, entry, delay);
     }
+  }
+
+  /** Records one experiment/verify result on the slot as EXP#<n> (bounded list, newest kept). */
+  function recordExperiment(slot, record) {
+    slot.experimentSeq = (slot.experimentSeq ?? 0) + 1;
+    const rec = { id: `EXP#${slot.experimentSeq}`, at: now(), ...record };
+    slot.experiments = [...(slot.experiments ?? []), rec].slice(-MAX_EXPERIMENT_RECORDS);
+    return rec;
+  }
+
+  /**
+   * Has the organizer's own reference Python (hashsmash.js organizerDigests,
+   * the exact call its certificate checker makes) recompute a pair's two
+   * digests, and compares them with what research-tools.js's JS port
+   * reported. `agrees: false` means the two implementations disagreed: the
+   * caller then discards the result rather than reporting either number.
+   * When no pipeline runner is configured (RAMHERD_PIPELINE unset) this says
+   * so plainly instead of pretending a check happened. Never throws.
+   */
+  async function organizerCheckPair(track, messageAHex, messageBHex, digestAHex, digestBHex) {
+    if (!pipelineRunner || typeof pipelineRunner.organizerDigests !== 'function') {
+      return { ran: false, error: 'the organizer\'s reference checker is not available on this host (no pipeline runner)' };
+    }
+    try {
+      const org = await pipelineRunner.organizerDigests({ track, messagesHex: [messageAHex, messageBHex] });
+      if (!org.ok) return { ran: false, error: org.error };
+      return { ran: true, agrees: org.digests[0] === digestAHex && org.digests[1] === digestBHex, checker: org.checker, profileId: org.profileId, digests: org.digests };
+    } catch (err) {
+      return { ran: false, error: err.message };
+    }
+  }
+
+  async function runLoopExperiment(slot, entry, text) {
+    const { track } = slot.assignment;
+    if (entry.thinking - entry.lastExperimentThinking < loopCfg.experimentEvery) return;
+    if (entry.experiments >= loopCfg.maxExperimentsPerSession) {
+      pushFeed(slot, 'research-experiment-skipped', `Not running the requested experiment: this desktop session already ran its cap of ${loopCfg.maxExperimentsPerSession} experiments. Nothing was computed.`);
+      return;
+    }
+    if (!researchTools || typeof researchTools.runExperiment !== 'function') {
+      pushFeed(slot, 'research-experiment-skipped', 'Not running the requested experiment: no experiment runner is configured in this deployment. Nothing was computed.');
+      return;
+    }
+    entry.lastExperimentThinking = entry.thinking;
+    const parsed = parseExperimentRequest(text, track);
+    if (!parsed.ok) {
+      pushFeed(slot, 'research-experiment-rejected', `This RAM asked for an experiment that was not run: ${parsed.error}. Nothing was computed.`);
+      return;
+    }
+    entry.experiments += 1;
+    let result;
+    try {
+      result = await researchTools.runExperiment(parsed.request);
+    } catch (err) {
+      result = { status: 'error', error: err.message };
+    }
+    if (!loopIsCurrent(slot, entry)) return;
+    if (!result || result.status !== 'completed') {
+      const rec = recordExperiment(slot, { status: result?.status ?? 'error', error: result?.error ?? 'no result', request: parsed.request });
+      pushFeed(slot, 'research-experiment-error', `Experiment ${rec.id} (${parsed.request.kind} on ${track}) produced no result: ${rec.error}. Nothing is reported from it.`);
+      return;
+    }
+    const pair = result.bestPair;
+    const organizerCheck = pair ? await organizerCheckPair(track, pair.messageAHex, pair.messageBHex, pair.digestAHex, pair.digestBHex) : { ran: false, error: 'no pair to recompute' };
+    if (!loopIsCurrent(slot, entry)) return;
+    const status = organizerCheck.ran && !organizerCheck.agrees ? 'discarded' : 'completed';
+    const rec = recordExperiment(slot, { status, request: parsed.request, clamped: parsed.clamped, result, organizerCheck });
+    if (status === 'discarded') {
+      pushFeed(slot, 'research-experiment-error', `Experiment ${rec.id} was DISCARDED: the organizer's own reference checker recomputed its reported pair and got different digests than this harness's port. Neither number is reported; this is a harness bug to investigate, not a result.`);
+      return;
+    }
+    const clampNote = parsed.clamped.length ? ` Request clamped: ${parsed.clamped.join('; ')}.` : '';
+    const orgNote = pair
+      ? (organizerCheck.ran ? ' The organizer\'s own reference Python recomputed the closest pair and agreed.' : ` The closest pair was not recomputed by the organizer's checker (${organizerCheck.error}).`)
+      : '';
+    pushFeed(slot, 'research-experiment', `Ran a real bounded experiment ${rec.id} on ${track} (this RAM's model asked for it): ${result.interpretation} `
+      + `[${result.samplesRun} of ${result.samplesRequested} requested samples actually run${result.stoppedEarly ? ', stopped at the per-call time cap' : ''}, ${Math.round(result.elapsedMs)} ms, seed "${result.params.seed}"].${clampNote}${orgNote}`);
+  }
+
+  async function runLoopVerify(slot, entry, text) {
+    const { track } = slot.assignment;
+    if (entry.verifies >= loopCfg.maxVerifiesPerSession) {
+      pushFeed(slot, 'research-verify-skipped', `Not running the requested VERIFY: this desktop session already ran its cap of ${loopCfg.maxVerifiesPerSession}. Nothing was checked.`);
+      return;
+    }
+    if (!researchTools || typeof researchTools.verifyPair !== 'function') {
+      pushFeed(slot, 'research-verify-skipped', 'Not running the requested VERIFY: no verifier is configured in this deployment. Nothing was checked.');
+      return;
+    }
+    const parsed = parseVerifyRequest(text);
+    if (!parsed.ok) {
+      pushFeed(slot, 'research-verify-rejected', `This RAM asked to verify a pair, but the request was not usable: ${parsed.error}. Nothing was checked.`);
+      return;
+    }
+    let { messageAHex, messageBHex } = parsed.request;
+    if (parsed.request.experimentRef) {
+      const ref = (slot.experiments ?? []).find((e) => e.id === parsed.request.experimentRef && e.status === 'completed' && e.result?.bestPair);
+      if (!ref) {
+        pushFeed(slot, 'research-verify-rejected', `This RAM asked to verify the pair from ${parsed.request.experimentRef}, but this session has no completed experiment with that id that recorded a pair. Nothing was checked.`);
+        return;
+      }
+      ({ messageAHex, messageBHex } = ref.result.bestPair);
+    }
+    entry.verifies += 1;
+    let result;
+    try {
+      result = researchTools.verifyPair({ track, messageAHex, messageBHex });
+    } catch (err) {
+      pushFeed(slot, 'research-verify-error', `VERIFY could not run: ${err.message}. Nothing was checked.`);
+      return;
+    }
+    const organizerCheck = await organizerCheckPair(track, result.messageAHex, result.messageBHex, result.digestAHex, result.digestBHex);
+    if (!loopIsCurrent(slot, entry)) return;
+    const status = organizerCheck.ran && !organizerCheck.agrees ? 'discarded' : 'completed';
+    const rec = recordExperiment(slot, { status, request: { kind: 'verify', fromExperiment: parsed.request.experimentRef ?? null }, result, organizerCheck });
+    if (status === 'discarded') {
+      pushFeed(slot, 'research-verify-error', `VERIFY ${rec.id} was DISCARDED: the organizer's own reference checker and this harness's port computed different digests for the same pair. No verdict is reported; this is a harness bug to investigate.`);
+      return;
+    }
+    const verdict = result.fullCollision
+      ? (organizerCheck.ran
+        ? 'a GENUINE full collision on this exact target: distinct messages, all 256 digest bits equal, confirmed by the organizer\'s own reference checker'
+        : 'distinct messages with all 256 digest bits equal under this harness\'s port, NOT yet confirmed by the organizer\'s own checker (unavailable here)')
+      : !result.distinct
+        ? 'NOT a collision: the two messages are identical'
+        : `NOT a collision: the digests differ (equal on the first ${result.equalPrefixBits} bits, Hamming distance ${result.hammingDistance} of 256)`;
+    pushFeed(slot, 'research-verify', `Verified a candidate pair as ${rec.id} on ${track}${parsed.request.experimentRef ? ` (the closest pair from ${parsed.request.experimentRef})` : ''}: ${verdict}.${organizerCheck.ran && !result.fullCollision ? ' The organizer\'s own reference checker recomputed both digests and agreed.' : ''}${!organizerCheck.ran && !result.fullCollision ? ` (Organizer checker not run: ${organizerCheck.error}.)` : ''}`);
+  }
+
+  async function runLoopRead(slot, entry, id) {
+    if (typeof sandboxActivity.readPaper !== 'function') return;
+    if (entry.thinking - entry.lastReadThinking < loopCfg.readEvery) return;
+    if (entry.reads >= loopCfg.maxReadsPerSession) {
+      pushFeed(slot, 'sandbox-read-skipped', `Not reading ePrint ${id}: this desktop session already read its cap of ${loopCfg.maxReadsPerSession} papers.`);
+      return;
+    }
+    entry.lastReadThinking = entry.thinking;
+    entry.reads += 1;
+    const r = await sandboxManager.runTask(slot.id, (sbx) => sandboxActivity.readPaper(sbx, { id, windowId: entry.browserId }));
+    if (!loopIsCurrent(slot, entry)) return;
+    entry.browserId = r.windowId;
+    const paper = r.paper;
+    if (!paper?.found) {
+      pushFeed(slot, 'sandbox-read', `Opened ${r.url} in Chrome on desktop ${entry.sessionId} (this RAM's model asked to read it): the IACR ePrint archive has no paper there, so nothing was read.`);
+      return;
+    }
+    const record = { id: paper.id, url: paper.url, title: paper.title, authors: paper.authors, abstract: paper.abstract, keywords: paper.keywords, category: paper.category, publicationInfo: paper.publicationInfo, at: now() };
+    slot.readPapers = [...(slot.readPapers ?? []).filter((p) => p.id !== paper.id), record].slice(-MAX_READ_PAPERS);
+    const abs = paper.abstract ? paper.abstract.replace(/\s+/g, ' ') : '';
+    pushFeed(slot, 'sandbox-read', `Read ePrint ${paper.id} "${paper.title}"${paper.authors.length ? ` by ${paper.authors.join(', ')}` : ''} in Chrome on desktop ${entry.sessionId} (this RAM's model asked to read it). ${
+      abs ? `Abstract (as fetched from the paper's own page): "${abs.length > 360 ? `${abs.slice(0, 357)}...` : abs}"` : 'The page has no abstract.'
+    } Title, authors and abstract only: the PDF body was not read.`);
   }
 
   /** Stops a slot's loop at once (no feed line: the reason is already in the feed). */
@@ -1220,8 +1472,13 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       peersEvery: loopCfg?.peersEvery ?? null,
       maxThinkingPerSession: loopCfg?.maxThinkingPerSession ?? null,
       maxDraftAttemptsPerSession: loopCfg?.maxDraftAttemptsPerSession ?? null,
+      maxExperimentsPerSession: loopCfg?.maxExperimentsPerSession ?? null,
+      maxVerifiesPerSession: loopCfg?.maxVerifiesPerSession ?? null,
+      maxReadsPerSession: loopCfg?.maxReadsPerSession ?? null,
+      researchToolsConfigured: Boolean(researchTools),
       loops: [...loops].map(([slotId, e]) => ({
         slotId, sessionId: e.sessionId, startedAt: e.startedAt, steps: e.steps, thinking: e.thinking, browses: e.browses, peers: e.peers, inspects: e.inspects,
+        experiments: e.experiments, verifies: e.verifies, reads: e.reads,
         failures: e.failures, maxGapMs: e.maxGapMs, unverifiedTyping: e.unverifiedTyping, history: e.history.map((h) => ({ ...h })),
       })),
     };

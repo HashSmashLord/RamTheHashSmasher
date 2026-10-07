@@ -278,6 +278,32 @@ export function precheckCandidate(candidateDir, repoRoot) {
 
 /** Matches the "PR#<number>" form a drafting call uses to cite a real competitor's open PR instead of an ePrint id. */
 const PEER_CITATION_RE = /^PR#(\d+)$/i;
+/** Matches the "EXP#<number>" form a drafting call uses to cite one of this session's own real experiment/verify results. */
+const EXPERIMENT_CITATION_RE = /^EXP#(\d+)$/i;
+
+/**
+ * Resolves an "EXP#<n>" id against this session's own real experiment
+ * records (slots.js runLoopExperiment / runLoopVerify). Only a record whose
+ * status is 'completed' resolves: a run that errored, timed out, or whose
+ * pair the organizer's own Python recomputation DISAGREED with (status
+ * 'discarded') is not a result and can never be cited.
+ */
+function findExperiment(id, experiments) {
+  const m = EXPERIMENT_CITATION_RE.exec(String(id ?? '').trim());
+  if (!m) return null;
+  const want = `EXP#${Number(m[1])}`;
+  const rec = (experiments || []).find((e) => e?.id === want);
+  if (!rec || rec.status !== 'completed' || !rec.result) return null;
+  return {
+    kind: 'experiment',
+    id: rec.id,
+    experimentKind: rec.result.kind,
+    track: rec.result.track,
+    summary: rec.summary ?? null,
+    result: rec.result,
+    organizerCheck: rec.organizerCheck ?? null,
+  };
+}
 
 /**
  * Resolves a drafting call's CITED_PAPER_ID against the slot's own real
@@ -291,10 +317,21 @@ const PEER_CITATION_RE = /^PR#(\d+)$/i;
  * runLoopDraftAttempt (what to actually write into the candidate) call this
  * so the two can never disagree about what was cited.
  *
+ * Two more real sources (2026-10-07):
+ *   - "EXP#<n>": one of this session's own real, completed experiment or
+ *     verify results (`experiments`, slots.js) — the RAM's own computed
+ *     evidence, resolved the same way: it must actually exist in session
+ *     state, never just be named.
+ *   - an ePrint id this session actually READ (`readPapers`,
+ *     sandbox-activity.js readPaper: title, authors and abstract really
+ *     fetched from the paper's own page) resolves too, with `read: true` and
+ *     the real abstract, so downstream text can say honestly that more than
+ *     a title was read. A search-result-only paper keeps the exact old shape.
+ *
  * @param {string|null} citedPaperId
- * @param {{ lastSearchResults?: Array<{id: string, title: string}>, lastPeerResults?: Array<{number: number, login: string|null, title: string, claimedScore: string|null, url: string|null}> }} [ctx]
+ * @param {{ lastSearchResults?: Array<{id: string, title: string}>, lastPeerResults?: Array<{number: number, login: string|null, title: string, claimedScore: string|null, url: string|null}>, readPapers?: Array<{id: string, title: string, authors?: string[], abstract?: string, url?: string}>, experiments?: Array<any> }} [ctx]
  */
-export function findCitedReference(citedPaperId, { lastSearchResults = [], lastPeerResults = [] } = {}) {
+export function findCitedReference(citedPaperId, { lastSearchResults = [], lastPeerResults = [], readPapers = [], experiments = [] } = {}) {
   if (typeof citedPaperId !== 'string' || !citedPaperId.trim()) return null;
   const id = citedPaperId.trim();
   const prMatch = PEER_CITATION_RE.exec(id);
@@ -303,9 +340,22 @@ export function findCitedReference(citedPaperId, { lastSearchResults = [], lastP
     const pr = lastPeerResults.find((r) => r?.number === number);
     return pr ? { kind: 'peer-pr', number: pr.number, login: pr.login ?? null, title: pr.title, url: pr.url ?? null, claimedScore: pr.claimedScore ?? null } : null;
   }
+  if (EXPERIMENT_CITATION_RE.test(id)) return findExperiment(id, experiments);
+  const read = (readPapers || []).find((r) => r?.id === id && r.title);
+  if (read) {
+    return { kind: 'eprint', id: read.id, title: read.title, read: true, authors: read.authors ?? [], abstract: read.abstract ?? '', url: read.url ?? null };
+  }
   const paper = lastSearchResults.find((r) => r?.id === id);
   return paper ? { kind: 'eprint', id: paper.id, title: paper.title } : null;
 }
+
+/**
+ * An affirmative claim, in a drafted STATEMENT or EXTRAPOLATION, that this
+ * session itself found/produced/computed an actual collision. Deliberately
+ * narrow (it does not look at LIMITATIONS, where "no collision was found" is
+ * the honest, expected wording).
+ */
+const CLAIMS_FOUND_COLLISION_RE = /\b(?:we|i|this (?:session|ram|run|experiment)|the experiment|my experiment)\s+(?:have\s+|has\s+)?(?:found|produced|obtained|computed|generated)\s+(?:a|an|the)\s+(?:real\s+|full\s+|genuine\s+|actual\s+|complete\s+)?collision\b/i;
 
 /**
  * Structural honesty gate for a loop-drafted candidate attempt (see
@@ -328,10 +378,24 @@ export function findCitedReference(citedPaperId, { lastSearchResults = [], lastP
  * another competitor's own self-reported, unverified claim — never treated
  * as more certain than that.
  *
+ * Since 2026-10-07 a citation may also be one of this session's own real,
+ * completed experiments ("EXP#<n>") or a paper this session actually read,
+ * and an attempt may name an additional supporting experiment
+ * (EXPERIMENT_ID). Each is resolved the same rigorous way (findCitedReference
+ * against real session state; a named-but-unreal experiment is rejected).
+ * Every check that existed before is unchanged; the additions only ever
+ * reject more:
+ *   - EXPERIMENT_ID, when given, must resolve to a real completed session
+ *     experiment;
+ *   - a cited/supporting experiment must be for this exact track (`track`);
+ *   - STATEMENT/EXTRAPOLATION may not say this session found an actual
+ *     collision unless a session VERIFY record shows a genuine full
+ *     collision that the organizer's own Python recomputation confirmed.
+ *
  * @param {ReturnType<typeof import('./sandbox-activity.js').parseDraftAttempt>} attempt
- * @param {{ lastSearchResults?: Array<{id: string, title: string}>, lastPeerResults?: Array<{number: number}> }} [ctx]
+ * @param {{ lastSearchResults?: Array<{id: string, title: string}>, lastPeerResults?: Array<{number: number}>, readPapers?: Array<any>, experiments?: Array<any>, track?: string|null }} [ctx]
  */
-export function validateLoopAttempt(attempt, { lastSearchResults = [], lastPeerResults = [] } = {}) {
+export function validateLoopAttempt(attempt, { lastSearchResults = [], lastPeerResults = [], readPapers = [], experiments = [], track = null } = {}) {
   const errors = [];
   if (!attempt || typeof attempt !== 'object' || attempt.attempt !== true) {
     return { ok: false, errors: ['no drafting attempt was actually made'] };
@@ -359,12 +423,90 @@ export function validateLoopAttempt(attempt, { lastSearchResults = [], lastPeerR
   // actually fetched for real — a real ePrint search result or a real
   // competitor PR this session actually looked at — never an invented or
   // remembered id.
+  const sources = { lastSearchResults, lastPeerResults, readPapers, experiments };
+  const cited = attempt.citedPaperId && attempt.citedPaperId !== 'NONE' ? findCitedReference(attempt.citedPaperId, sources) : null;
   if (!attempt.citedPaperId || attempt.citedPaperId === 'NONE') {
     errors.push('CITED_PAPER_ID is required: a loop-drafted claim must cite either a real ePrint paper or a real competitor PR this session actually looked up');
-  } else if (!findCitedReference(attempt.citedPaperId, { lastSearchResults, lastPeerResults })) {
+  } else if (!cited) {
     errors.push(`CITED_PAPER_ID "${attempt.citedPaperId}" does not match any real result from this session's own ePrint search or GitHub PR lookup`);
   }
+  // Additional real-grounding rails for the research tools (2026-10-07).
+  let supporting = null;
+  if (attempt.experimentId && !/^none$/i.test(String(attempt.experimentId).trim())) {
+    supporting = findCitedReference(attempt.experimentId, { experiments });
+    if (!supporting || supporting.kind !== 'experiment') {
+      errors.push(`EXPERIMENT_ID "${attempt.experimentId}" does not match any real, completed experiment this session actually ran`);
+      supporting = null;
+    }
+  }
+  for (const ref of [cited, supporting]) {
+    if (ref?.kind === 'experiment' && track && ref.track !== track) {
+      errors.push(`${ref.id} was run on ${ref.track}, not on this track (${track})`);
+    }
+  }
+  const claimsCollision = ['statement', 'extrapolation'].some((f) => CLAIMS_FOUND_COLLISION_RE.test(attempt[f] || ''));
+  if (claimsCollision) {
+    const confirmed = (experiments || []).some((e) => e?.status === 'completed' && e.result?.kind === 'verify' && e.result.fullCollision === true
+      && e.organizerCheck?.agrees === true && (!track || e.result.track === track));
+    if (!confirmed) {
+      errors.push('STATEMENT/EXTRAPOLATION says this session found an actual collision, but no VERIFY this session confirmed a genuine full collision with the organizer\'s own reference checker');
+    }
+  }
   return { ok: errors.length === 0, errors };
+}
+
+/** Short human label for any citation findCitedReference returns. */
+export function citationLabel(ref) {
+  if (!ref) return 'nothing';
+  if (ref.kind === 'peer-pr') return `competitor PR #${ref.number}`;
+  if (ref.kind === 'experiment') return `this session's own experiment ${ref.id}`;
+  return `ePrint ${ref.id}${ref.read ? ' (abstract read)' : ''}`;
+}
+
+/** One-line, plain description of a cited/supporting session experiment (restrictions, summaries). */
+export function describeExperimentRef(ref) {
+  const r = ref.result;
+  const org = ref.organizerCheck;
+  const orgText = org?.ran ? (org.agrees ? 'the organizer\'s own reference Python recomputed its reported pair and agreed' : 'no organizer recomputation agreement') : 'no pair needed organizer recomputation';
+  if (r.kind === 'birthday') {
+    return `${ref.id}: a real bounded birthday experiment on ${r.track} (${r.target.algorithm}, ${r.target.rounds} rounds) — ${r.samplesRun} samples actually hashed (seed "${r.params.seed}"), `
+      + `${r.prefixCollisionPairs} distinct pair(s) agreeing on the first ${r.params.prefixBits} digest bits vs about ${Number(r.expectedPairsIfRandom).toPrecision(3)} expected for a random function; ${orgText}. A prefix match is not a collision.`;
+  }
+  if (r.kind === 'differential') {
+    return `${ref.id}: a real bounded differential experiment on ${r.track} (${r.target.algorithm}, ${r.target.rounds} rounds) — ${r.samplesRun} message pairs differing by ${r.params.diffHex} at byte ${r.params.diffAt} (seed "${r.params.seed}"), `
+      + `mean output-difference weight ${Number(r.meanOutputDiffWeight).toFixed(2)}/256, minimum ${r.minOutputDiffWeight}, ${r.significantlyBiasedBits} significantly biased output bit(s), ${r.zeroDifferencePairs} identical-digest pair(s); ${orgText}. A low-weight difference is not a collision.`;
+  }
+  return `${ref.id}: a real VERIFY of one message pair on ${r.track} — distinct ${r.distinct}, all 256 digest bits equal ${r.digestsEqual} (equal prefix ${r.equalPrefixBits} bits, Hamming distance ${r.hammingDistance}); ${org?.ran ? (org.agrees ? 'the organizer\'s own reference Python recomputed both digests and agreed' : 'the organizer recomputation did not agree') : 'the organizer\'s Python was not available to recompute it'}.`;
+}
+
+/** proof.md lines describing a session experiment exactly as it was recorded: parameters, real numbers, how to reproduce. */
+function experimentEvidenceLines(ref, heading) {
+  const r = ref.result;
+  const lines = [heading, '', `- ${describeExperimentRef(ref)}`, ''];
+  lines.push(`- Target: \`${r.target.profileId}\` (${r.target.algorithm}, prefix rounds ${r.target.rounds}), as defined by the organizer's target profile.`);
+  if (r.kind === 'birthday' || r.kind === 'differential') {
+    lines.push(`- Parameters: \`${JSON.stringify(r.params)}\`; samples requested ${r.samplesRequested}, actually run ${r.samplesRun}${r.stoppedEarly ? ' (stopped early at the per-call time cap)' : ''}; ${r.hashEvaluations} target hash evaluations in ${Math.round(r.elapsedMs)} ms.`);
+    if (r.kind === 'birthday') {
+      lines.push(`- Organizer-vocabulary event: \`digest-xor-mask\` with the top ${r.params.prefixBits} bits masked, expected 0. Repeated (identical) inputs excluded: ${r.repeatedInputs}. Full-collision pairs: ${r.fullCollisionPairs}.`);
+    } else {
+      lines.push(`- Output bits never flipped: ${r.bitsNeverFlipped}; always flipped: ${r.bitsAlwaysFlipped}; largest single-bit bias ${Number(r.maxBitBias).toFixed(4)} (Hoeffding/Bonferroni threshold ${r.biasThreshold === null ? 'n/a' : Number(r.biasThreshold).toFixed(4)}, alpha 0.01, assuming independent samples).`);
+    }
+    const pair = r.bestPair;
+    if (pair) {
+      lines.push(`- Closest recorded pair: equal prefix ${pair.equalPrefixBits} bits, Hamming distance ${pair.hammingDistance}.`);
+      lines.push(`  - message_a: \`${pair.messageAHex}\``, `  - message_b: \`${pair.messageBHex}\``);
+      lines.push(`  - digest_a: \`${pair.digestAHex}\``, `  - digest_b: \`${pair.digestBHex}\``);
+    }
+    lines.push('- Reproduction: messages are SHA-256(`ramherd-experiment-v1|<track>|<kind>|<seed>` ...) counter-stream bytes, fully determined by the recorded seed and parameters (server/lib/research-tools.js).');
+  } else {
+    lines.push(`- message_a: \`${r.messageAHex}\``, `- message_b: \`${r.messageBHex}\``);
+    lines.push(`- digest_a: \`${r.digestAHex}\``, `- digest_b: \`${r.digestBHex}\``);
+  }
+  lines.push('- Computed by this harness on its own host with a JS port of the organizer\'s reference reduced-round function (pinned to the organizer\'s');
+  lines.push('  test vectors). It is not an organizer-executed experiments report; the organizer\'s judge has not re-run it.');
+  lines.push('- The organizer\'s target profile puts near-collisions and output truncation out of scope for an ordinary-collision claim:');
+  lines.push('  a prefix match, a biased output bit or a low-weight difference is evidence about the target, not a collision.');
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
@@ -654,7 +796,7 @@ export function createHashSmashRunner({
    *   - evidence_ids are computed from the real proof.md this call writes,
    *     not trusted from the model's own line-number guess.
    */
-  async function writeLoopDraftCandidate(workspaceDir, track, { slotId = 'unknown', attempt, citedPaper, verification = null }) {
+  async function writeLoopDraftCandidate(workspaceDir, track, { slotId = 'unknown', attempt, citedPaper, verification = null, supportingExperiment = null }) {
     assertTrack(track);
     const candidateDir = candidateDirFor(workspaceDir, track);
     if (relative(wsRoot, candidateDir).startsWith('..')) throw new Error('refusing to write outside the workspaces dir');
@@ -684,36 +826,55 @@ export function createHashSmashRunner({
     const verified = verification?.pass === true;
     claim.submission_state = verified ? 'ready' : 'draft';
     const isPeerPr = citedPaper?.kind === 'peer-pr';
+    const isExperiment = citedPaper?.kind === 'experiment';
+    const isReadPaper = citedPaper?.kind !== 'peer-pr' && !isExperiment && citedPaper?.read === true;
     const citationRestriction = isPeerPr
       ? `This RAM cited an open, unverified pull request from a real competitor on the real HashSmash repository: PR #${citedPaper.number}${citedPaper.login ? ` by @${citedPaper.login}` : ''} ("${citedPaper.title}")${citedPaper.claimedScore ? `, which self-reports a claimed score of ${citedPaper.claimedScore}` : ''}. That is another competitor's own self-reported claim, not verified by Yukon or anyone else, and an open PR may still be rejected or wrong; citing it is not the same as having confirmed it. It was found by a text match on this track's name in the PR's own title/body, which is not a guarantee the PR is actually that track's own submission.`
-      : `This RAM cited IACR ePrint ${citedPaper.id} ("${citedPaper.title}") from its own real literature search this session as grounding. Citing a paper's title is not the same as having verified its applicability to this exact target, and that distinction is deliberate, not an oversight.`;
+      : isExperiment
+        ? `This RAM cited its own real experiment this session as grounding — ${describeExperimentRef(citedPaper)} It was computed by this harness on its own host (a JS port of the organizer's reference function), not executed by the organizer, and what it measured is narrower than this claim: the extrapolation from it is this RAM's own, unverified.`
+        : isReadPaper
+          ? `This RAM cited IACR ePrint ${citedPaper.id} ("${citedPaper.title}"), whose title, authors and abstract it actually fetched and read from the paper's own ePrint page this session. The abstract is not the full paper: the body (PDF) was not read, and applying the paper to this exact target is this RAM's own, unverified step.`
+          : `This RAM cited IACR ePrint ${citedPaper.id} ("${citedPaper.title}") from its own real literature search this session as grounding. Citing a paper's title is not the same as having verified its applicability to this exact target, and that distinction is deliberate, not an oversight.`;
     const verificationRestriction = verified
       ? `This candidate passed a second, independent model call (a different prompt, framed adversarially to find a problem with it, not to agree with it) before submission_state was allowed to leave 'draft'. A real, automated check, not a human one, and not a guarantee of correctness.${verification.reason ? ` Its own stated reason: "${verification.reason}"` : ''}`
       : `submission_state is forced to draft: ${verification ? `the independent verification call did not pass (${verification.reason || 'no reason given'})` : 'no independent verification was attempted'}, so HashSmash intake correctly refuses to forward it to the judge.`;
     claim.restrictions = [
       `${LOOP_DRAFT_MARKER} (RAM slot ${slotId}). The claim.claim numbers above and the one heuristic below were written by this RAM's own model this session from its own real research, not the organizer's empty template. ${verificationRestriction}`,
       citationRestriction,
+      ...(supportingExperiment ? [`Supporting evidence named by this RAM: ${describeExperimentRef(supportingExperiment)} Host-side computation by this harness, not an organizer-executed experiments report.`] : []),
     ];
 
-    const citedSection = isPeerPr
-      ? [
-        '## Cited competitor submission',
-        '',
-        `- PR #${citedPaper.number}${citedPaper.login ? ` by @${citedPaper.login}` : ''}: "${citedPaper.title}" — an open, unverified pull`,
-        '  request on the real HashSmash repository, found via this session\'s real GitHub lookup.',
-        citedPaper.claimedScore
-          ? `  Self-reported claimed score: ${citedPaper.claimedScore} (their own claim, not independently verified;`
-          : '  No claimed score was stated in it.',
-        ...(citedPaper.claimedScore ? ['  an open PR can still be rejected or wrong).'] : []),
-        ...(citedPaper.url ? [`  ${citedPaper.url}`] : []),
-      ]
-      : [
-        '## Cited literature',
-        '',
-        `- IACR ePrint ${citedPaper.id}: "${citedPaper.title}" — found via this session's real ePrint`,
-        '  search. Only the search result title was read; the paper itself was not fetched or read in',
-        '  this session.',
-      ];
+    const citedSection = isExperiment
+      ? experimentEvidenceLines(citedPaper, '## Cited experiment (this session\'s own real computation)')
+      : isReadPaper
+        ? [
+          '## Cited literature',
+          '',
+          `- IACR ePrint ${citedPaper.id}: "${citedPaper.title}"${citedPaper.authors?.length ? ` by ${citedPaper.authors.join(', ')}` : ''} — fetched`,
+          '  and read this session from the paper\'s own ePrint page (title, authors and abstract). The paper\'s',
+          '  body (PDF) was not read.',
+          ...(citedPaper.abstract ? ['', `  Abstract as fetched: "${String(citedPaper.abstract).replace(/\s+/g, ' ').slice(0, 1200)}"`] : []),
+        ]
+        : isPeerPr
+          ? [
+            '## Cited competitor submission',
+            '',
+            `- PR #${citedPaper.number}${citedPaper.login ? ` by @${citedPaper.login}` : ''}: "${citedPaper.title}" — an open, unverified pull`,
+            '  request on the real HashSmash repository, found via this session\'s real GitHub lookup.',
+            citedPaper.claimedScore
+              ? `  Self-reported claimed score: ${citedPaper.claimedScore} (their own claim, not independently verified;`
+              : '  No claimed score was stated in it.',
+            ...(citedPaper.claimedScore ? ['  an open PR can still be rejected or wrong).'] : []),
+            ...(citedPaper.url ? [`  ${citedPaper.url}`] : []),
+          ]
+          : [
+            '## Cited literature',
+            '',
+            `- IACR ePrint ${citedPaper.id}: "${citedPaper.title}" — found via this session's real ePrint`,
+            '  search. Only the search result title was read; the paper itself was not fetched or read in',
+            '  this session.',
+          ];
+    if (supportingExperiment) citedSection.push('', ...experimentEvidenceLines(supportingExperiment, '## Supporting experiment (this session\'s own real computation)'));
 
     const proofLines = [
       `# ${LOOP_DRAFT_MARKER}: ${track}`,
@@ -791,6 +952,41 @@ export function createHashSmashRunner({
     }
     const claim = JSON.parse(readFileSync(join(candidateDir, 'claim.json'), 'utf8'));
     return { candidateDir, claim };
+  }
+
+  /**
+   * Recomputes digests with the ORGANIZER'S OWN reference checker, the exact
+   * call its certificate verifier makes (verifier/certificates.py:
+   * `digest(message, track.algorithm, track.rounds)` with the track from
+   * `get_frontier_track`). Read-only, credential-free, against the vendored
+   * repo itself (no workspace clone needed; PYTHONDONTWRITEBYTECODE keeps it
+   * byte-for-byte untouched). This is the authority research-tools.js's JS
+   * port is checked against at runtime: slots.js only reports an experiment
+   * pair or a VERIFY verdict as confirmed when both agree. Never throws.
+   *
+   * @param {{ track: string, messagesHex: string[] }} p
+   */
+  async function organizerDigests({ track, messagesHex }) {
+    try {
+      assertTrack(track);
+      if (!Array.isArray(messagesHex) || !messagesHex.length || messagesHex.length > 8 || !messagesHex.every((m) => typeof m === 'string' && /^(?:[0-9a-f]{2})*$/.test(m) && m.length <= 8192)) {
+        return { ok: false, error: 'organizerDigests takes 1..8 lowercase hex messages of at most 4096 bytes' };
+      }
+      const code = [
+        'import json,sys',
+        'from verifier.frontier_tracks import get_frontier_track',
+        'from verifier.hash_functions import digest',
+        't=get_frontier_track(sys.argv[1])',
+        'print(json.dumps({"algorithm":t.algorithm,"rounds":t.rounds,"profile_id":t.profile_id,"digests":[digest(bytes.fromhex(m),t.algorithm,t.rounds).hex() for m in sys.argv[2:]]}))',
+      ].join('\n');
+      const raw = await py(refRoot, ['-c', code, track, ...messagesHex]);
+      if (raw.exitCode !== 0) return { ok: false, error: `organizer digest failed (exit ${raw.exitCode}): ${(raw.stderr.trim().split('\n').at(-1) || '').slice(0, 200)}` };
+      const parsed = parseLastJson(raw.stdout);
+      if (!parsed || !Array.isArray(parsed.digests) || parsed.digests.length !== messagesHex.length) return { ok: false, error: 'organizer digest returned no usable output' };
+      return { ok: true, algorithm: parsed.algorithm, rounds: parsed.rounds, profileId: parsed.profile_id, digests: parsed.digests, checker: 'verifier/hash_functions.py:digest' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   }
 
   /** `scripts/local_tracks.py check <track>` — mechanical validation only. */
@@ -883,7 +1079,7 @@ export function createHashSmashRunner({
     const { candidateDir, claim } = research
       ? writeResearchCandidate(ws.dir, track)
       : loopDraft
-        ? await writeLoopDraftCandidate(ws.dir, track, { slotId, attempt: loopDraft.attempt, citedPaper: loopDraft.citedPaper, verification: loopDraft.verification })
+        ? await writeLoopDraftCandidate(ws.dir, track, { slotId, attempt: loopDraft.attempt, citedPaper: loopDraft.citedPaper, verification: loopDraft.verification, supportingExperiment: loopDraft.supportingExperiment ?? null })
         : await writeHarnessDraft(ws.dir, track, { slotId });
     const candidate = {
       kind: research ? 'research' : loopDraft ? 'loop-draft' : 'harness-draft',
@@ -894,7 +1090,7 @@ export function createHashSmashRunner({
       summary: research
         ? research.summary
         : loopDraft
-          ? `this RAM's own disclosed heuristic ("${loopDraft.attempt.heuristicId}"), citing ePrint ${loopDraft.citedPaper.id}, forced to stay a draft`
+          ? `this RAM's own disclosed heuristic ("${loopDraft.attempt.heuristicId}"), citing ${citationLabel(loopDraft.citedPaper)}${loopDraft.supportingExperiment ? ` (supporting experiment ${loopDraft.supportingExperiment.id})` : ''}, ${loopDraft.verification?.pass === true ? 'adversarially verified' : 'forced to stay a draft'}`
           : 'labeled harness draft (organizer template, no attack claimed)',
     };
     const attribution = writeAttribution({ slotId, track, model, approach, modelSource, candidate, head: ws.head });
@@ -928,6 +1124,7 @@ export function createHashSmashRunner({
     writeResearchCandidate,
     writeAttribution,
     precheck: precheckCandidate,
+    organizerDigests,
     check,
     intake,
     judge,

@@ -17,6 +17,7 @@ import { createSandboxManager, sandboxPolicy } from './lib/sandbox.js';
 import { runWorkbenchTask } from './lib/sandbox-task.js';
 import { contextBanner } from './lib/sandbox-context.js';
 import { desktopActivity } from './lib/sandbox-activity.js';
+import { realResearchTools } from './lib/research-tools.js';
 import * as yukonSandbox from './lib/yukon-sandbox.js';
 import { liveSubmitPolicy, createLiveSubmissionLedger } from './lib/live-submit.js';
 import { createCostLedger } from './lib/cost.js';
@@ -149,6 +150,12 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
       maxThinkingPerSession: sandbox.activeLoopMaxThinking, maxDraftAttemptsPerSession: sandbox.activeLoopMaxDraftAttempts,
     }
     : null;
+  // The loop's real research tools (research-tools.js): bounded EXPERIMENT runs
+  // on a worker thread and VERIFY of a candidate pair, both against the track's
+  // exact reduced-round target. Host CPU only, no paid call, no network; wired
+  // whenever the loop itself is. A reported pair is also recomputed by the
+  // organizer's own Python through pipelineRunner.organizerDigests when the
+  // pipeline is on (RAMHERD_PIPELINE=local), and the feed says so when it is not.
   // yukon-sandbox.js: scoped to the one blake3-r1-exploratory roster slot,
   // gated internally by RAMHERD_YUKON_SUBMIT + a real YUKON_API_KEY (see its
   // header). Passed whenever sandboxes are on at all, same as sandboxTask —
@@ -167,7 +174,7 @@ export function createStore({ budgetConfig, env = process.env, loadSandboxSdk, l
       ledger: createLiveSubmissionLedger({ persistPath: env.RAMHERD_DATA_DIR ? join(env.RAMHERD_DATA_DIR, 'live-submissions.json') : null, log }),
     }
     : null;
-  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, sandboxActivity: activeLoop ? desktopActivity : null, activeLoop, yukonSandbox: sandboxManager ? yukonSandbox : null, liveSubmit, costLedger, modelOverride: modelOverride(env), autoRestart });
+  const slotManager = createSlotManager({ llmProvider, pipelineRunner, sandboxManager, sandboxTask: sandboxManager ? runWorkbenchTask : null, sandboxContext: sandboxManager ? contextBanner : null, sandboxActivity: activeLoop ? desktopActivity : null, activeLoop, researchTools: activeLoop ? realResearchTools : null, yukonSandbox: sandboxManager ? yukonSandbox : null, liveSubmit, costLedger, modelOverride: modelOverride(env), autoRestart });
   // Same opt-in persistence pattern as rams.js below (RAMHERD_DATA_DIR, unset =
   // in-memory only, every existing createStore() test unaffected): real bug, found
   // 2026-10-06, a genuinely good approved idea silently wiped on every restart.

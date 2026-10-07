@@ -16,10 +16,17 @@ import {
   repoInspectSteps, researchTerminalTitle, ensureResearchTerminal, inspectRepoFile,
   peerSubmissionsUrl, peerSubmissionsCommand, parsePeerSubmissions, browsePeerSubmissions, PARSE_PEERS_PY,
   MAX_IDLE_MS, MAX_TYPED_CHARS, MAX_PEER_RESULTS, HASHSMASH_GITHUB_REPO,
+  eprintIdFrom, eprintPaperUrl, parseEprintPaperPage, paperPageCommand, readPaper, desktopActivity,
 } from '../server/lib/sandbox-activity.js';
+import { readFileSync } from 'node:fs';
+import { realResearchTools, runExperiment, parseExperimentRequest } from '../server/lib/research-tools.js';
+import { digestForTrack } from '../server/lib/reduced-hashes.js';
 import { ACTIVE_TRACKS } from '../server/lib/targets.js';
 
 const FAKE_KEY = 'e2b_fakekeyfortests0123456789';
+/** Real IACR ePrint pages, recorded 2026-10-07 (see the comment at the top of each file). */
+const EPRINT_1080_HTML = readFileSync(new URL('./helpers/eprint-2026-1080.html', import.meta.url), 'utf8');
+const EPRINT_404_HTML = readFileSync(new URL('./helpers/eprint-404.html', import.meta.url), 'utf8');
 
 function fakeSdk() {
   const gone = new Set();
@@ -91,12 +98,14 @@ function fakeActivity({
   const browsed = [];
   const inspected = [];
   const peered = [];
+  const reads = [];
   const state = { failType };
   return {
     typed,
     browsed,
     inspected,
     peered,
+    reads,
     state,
     activity: {
       ensureNotepad: async (sbx, { windowId }) => windowId ?? `win-${sbx.sandboxId}`,
@@ -116,13 +125,19 @@ function fakeActivity({
         peered.push({ sbx: sbx.sandboxId, track: assignment.track });
         return { windowId: windowId ?? `term-${sbx.sandboxId}`, url: peerSubmissionsUrl(), track: assignment.track, results: peerResults };
       },
+      // Real parsing of the recorded real ePrint pages: 2026/1080 is a real paper, anything else is the archive's real 404 page.
+      readPaper: async (sbx, { id, windowId }) => {
+        reads.push({ sbx: sbx.sandboxId, id });
+        const html = id === '2026/1080' ? EPRINT_1080_HTML : EPRINT_404_HTML;
+        return { windowId: windowId ?? 'chrome1', url: eprintPaperUrl(id), paper: parseEprintPaperPage(html, id) };
+      },
     },
   };
 }
 
 const HARD_STOP_MS = 60_000;
 
-function rig({ live = true, answers, activeLoop = {}, activity = fakeActivity(), pipelineRunner = null, llm } = {}) {
+function rig({ live = true, answers, activeLoop = {}, activity = fakeActivity(), pipelineRunner = null, llm, researchTools = null } = {}) {
   const sdk = fakeSdk();
   const clock = { t: 1_000_000 };
   const mgr = createSandboxManager({ apiKey: FAKE_KEY, loadSdk: sdk.loadSdk, timeoutMs: HARD_STOP_MS, reconcileMs: 0, now: () => clock.t });
@@ -133,6 +148,7 @@ function rig({ live = true, answers, activeLoop = {}, activity = fakeActivity(),
     sandboxTask: async () => ({ ok: true, repo: null, claim: null, check: null }),
     sandboxContext: { start: async () => {}, update: async () => {} },
     sandboxActivity: activity.activity,
+    researchTools,
     activeLoop: { enabled: true, live, ...activeLoop },
     setTimer: timers.setTimer, clearTimer: timers.clearTimer,
   });
@@ -155,21 +171,21 @@ const types = (snap) => snap.feed.map((f) => f.type);
 
 test('parseThinking takes the model\'s last SEARCH line out of the note and sanitizes it', () => {
   assert.deepEqual(parseThinking('I will re-derive the 31-step characteristic.\nSEARCH: SHA-256 "31-step" collision; rm -rf /'), {
-    note: 'I will re-derive the 31-step characteristic.', search: 'SHA-256 31-step collision rm -rf', peersReason: null, draftReason: null,
+    note: 'I will re-derive the 31-step characteristic.', search: 'SHA-256 31-step collision rm -rf', peersReason: null, draftReason: null, experiment: null, verify: null, read: null,
   });
-  assert.deepEqual(parseThinking('Just a plan.'), { note: 'Just a plan.', search: null, peersReason: null, draftReason: null });
+  assert.deepEqual(parseThinking('Just a plan.'), { note: 'Just a plan.', search: null, peersReason: null, draftReason: null, experiment: null, verify: null, read: null });
   assert.equal(parseThinking('x\n**SEARCH:** ab').search, null, 'too short after sanitizing');
   assert.equal(parseThinking(`x\nsearch: ${'a'.repeat(200)}`).search.length, 80);
 });
 
 test('parseThinking takes the model\'s DRAFT line out of the note too, independently of SEARCH', () => {
   assert.deepEqual(parseThinking('I will try X next.\nDRAFT: I found a specific disclosed heuristic.'), {
-    note: 'I will try X next.', search: null, peersReason: null, draftReason: 'I found a specific disclosed heuristic.',
+    note: 'I will try X next.', search: null, peersReason: null, draftReason: 'I found a specific disclosed heuristic.', experiment: null, verify: null, read: null,
   });
   // Both lines can appear in the same step and are extracted independently.
   assert.deepEqual(
     parseThinking('Plan.\nSEARCH: some query\nDRAFT: a real reason here'),
-    { note: 'Plan.', search: 'some query', peersReason: null, draftReason: 'a real reason here' },
+    { note: 'Plan.', search: 'some query', peersReason: null, draftReason: 'a real reason here', experiment: null, verify: null, read: null },
   );
   assert.equal(parseThinking('x\nDRAFT: hi').draftReason, null, 'too short after trimming');
   assert.equal(parseThinking('No draft line here.').draftReason, null);
@@ -177,12 +193,12 @@ test('parseThinking takes the model\'s DRAFT line out of the note too, independe
 
 test('parseThinking takes the model\'s PEERS line out of the note too, independently of SEARCH and DRAFT', () => {
   assert.deepEqual(parseThinking('I will check the field.\nPEERS: see what others on this track found.'), {
-    note: 'I will check the field.', search: null, peersReason: 'see what others on this track found.', draftReason: null,
+    note: 'I will check the field.', search: null, peersReason: 'see what others on this track found.', draftReason: null, experiment: null, verify: null, read: null,
   });
   // All three lines can appear in the same step and are extracted independently.
   assert.deepEqual(
     parseThinking('Plan.\nSEARCH: some query\nPEERS: a real reason\nDRAFT: a real reason here'),
-    { note: 'Plan.', search: 'some query', peersReason: 'a real reason', draftReason: 'a real reason here' },
+    { note: 'Plan.', search: 'some query', peersReason: 'a real reason', draftReason: 'a real reason here', experiment: null, verify: null, read: null },
   );
   assert.equal(parseThinking('x\nPEERS: hi').peersReason, null, 'too short after trimming');
   assert.equal(parseThinking('No peers line here.').peersReason, null);
@@ -215,6 +231,7 @@ test('parseDraftAttempt: a well-formed "ATTEMPT: yes" answer is parsed field by 
     successProbability: 0.6,
     heuristicId: 'loop-heuristic-1',
     citedPaperId: '2026/1234',
+    experimentId: null,
     statement: 'A specific disclosed statement about the construction.',
     scope: 'Exactly the construction and parameters this applies to.',
     extrapolation: 'What was actually measured this session and how far this extends it.',
@@ -455,6 +472,9 @@ test('store: no loop without the flag; with the flag but mock LLM it is configur
   assert.deepEqual([mock.slotManager.activeLoopStatus().configured, mock.slotManager.activeLoopStatus().live], [true, false]);
   const live = createStore({ budgetConfig, env: { RAMHERD_SANDBOX: 'e2b', E2B_API_KEY: FAKE_KEY, RAMHERD_SANDBOX_ACTIVE_LOOP: 'true', RAMHERD_LIVE: 'true', OPENROUTER_API_KEY: 'sk-or-fake' }, loadSandboxSdk: fakeSdk().loadSdk });
   assert.equal(live.slotManager.activeLoopStatus().live, true);
+  // The real research tools ride with the loop: wired whenever it is, never otherwise.
+  assert.equal(live.slotManager.activeLoopStatus().researchToolsConfigured, true);
+  assert.equal(off.slotManager.activeLoopStatus().researchToolsConfigured, false);
 });
 
 // ---- the loop drives the REAL status, and the desktop types the same feed lines ----
@@ -990,4 +1010,225 @@ test('drafting attempts are bounded: after maxDraftAttemptsPerSession, further D
   assert.equal(r.llm.calls.length, 4, 'thinking, drafting #1, verification #1 (the draft passed), thinking #2 — no drafting #2');
   assert.equal(runner.calls.length, 2);
   assert.equal(runner.calls[1].loopDraft, null, 'the cap held: cycle 2 got the ordinary harness draft');
+});
+
+// ---------------------------------------------------------------------------
+// The real research tools (2026-10-07): READ (full ePrint paper page),
+// EXPERIMENT and VERIFY (research-tools.js, real computation). The loop tests
+// below use the REAL experiment engine (realResearchTools), not a fake: every
+// number asserted in a feed line is recomputed independently here.
+// ---------------------------------------------------------------------------
+
+test('parseThinking extracts EXPERIMENT, VERIFY and READ lines independently; READ only ever yields a bare ePrint id', () => {
+  const t = parseThinking('Plan.\nSEARCH: sha256 trail\nEXPERIMENT: differential at=0 xor=80 samples=1024\n**VERIFY:** EXP#2\nREAD: https://eprint.iacr.org/2026/1080');
+  assert.equal(t.note, 'Plan.');
+  assert.equal(t.search, 'sha256 trail');
+  assert.equal(t.experiment, 'differential at=0 xor=80 samples=1024');
+  assert.equal(t.verify, 'EXP#2');
+  assert.equal(t.read, '2026/1080');
+  for (const ok of ['2026/1080', 'ePrint 2026/1080', 'https://eprint.iacr.org/2026/1080', 'https://eprint.iacr.org/2026/1080.pdf', '2026/0042']) {
+    assert.match(eprintIdFrom(ok), /^2026\/(1080|42)$/, ok);
+  }
+  for (const bad of ['https://evil.example/2026/1080', 'https://eprint.iacr.org/2026/1080?x=1', 'file:///etc/passwd', '2026/1080; rm -rf /', '../2026/1080', '1066/1', 'arxiv 2401.12345']) {
+    assert.equal(eprintIdFrom(bad), null, bad);
+    assert.equal(parseThinking(`x\nREAD: ${bad}`).read, null, bad);
+  }
+  assert.throws(() => eprintPaperUrl('https://evil.example/x'), /not an IACR ePrint paper id/);
+  assert.equal(eprintPaperUrl('2026/1080'), 'https://eprint.iacr.org/2026/1080');
+  assert.equal(paperPageCommand('2026/1080'), "curl -sS -m 20 -A 'ramherd-research-loop' 'https://eprint.iacr.org/2026/1080' | head -c 262144");
+});
+
+test('parseEprintPaperPage on a REAL recorded ePrint page returns far more than the title-only search did: authors, full abstract, keywords, metadata', () => {
+  const paper = parseEprintPaperPage(EPRINT_1080_HTML, '2026/1080');
+  assert.equal(paper.found, true);
+  assert.equal(paper.title, 'Pushing the Limit of Memory-efficient Collision Attack Framework for SHA-2');
+  assert.deepEqual(paper.authors, ['Yingxin Li', 'Fukang Liu', 'Gaoli Wang', 'Jiali Shi']);
+  assert.match(paper.abstract, /^The SHA-2 family hash is standardized by NIST/);
+  assert.match(paper.abstract, /the first practical collision attacks on 35-step SHA-256 and SHA-512 can be achieved/);
+  assert.ok(paper.abstract.length > 10 * paper.title.length, 'abstract-level text, not just a title');
+  assert.deepEqual(paper.keywords, ['Hash functions', 'SHA-2', 'Collision attack', 'Message difference']);
+  assert.equal(paper.category, 'Attacks and cryptanalysis');
+  assert.equal(paper.publicationInfo, 'A minor revision of an IACR publication in CRYPTO 2026');
+  assert.equal(paper.pdfUrl, 'https://eprint.iacr.org/2026/1080.pdf');
+  assert.equal(paper.bodyRead, false, 'the PDF body is never claimed as read');
+  // The archive's real 404 page (no such paper) is "not found", never a guessed paper.
+  assert.deepEqual(parseEprintPaperPage(EPRINT_404_HTML, '2026/99999'), { found: false, id: '2026/99999', url: 'https://eprint.iacr.org/2026/99999' });
+  assert.deepEqual(parseEprintPaperPage('', '2026/1'), { found: false, id: '2026/1', url: 'https://eprint.iacr.org/2026/1' });
+});
+
+test('readPaper types the fixed-domain paper URL into Chrome, fetches the same page with curl, and parses the real page', async () => {
+  const cmds = [];
+  const sbx = {
+    commands: {
+      run: async (cmd) => {
+        cmds.push(cmd);
+        if (cmd.startsWith('xdotool getwindowname')) return { stdout: 'Chrome\n' };
+        if (cmd.startsWith('curl')) return { stdout: EPRINT_1080_HTML };
+        return { stdout: '' };
+      },
+    },
+  };
+  const r = await readPaper(sbx, { id: 'ePrint 2026/1080', windowId: '77' });
+  assert.equal(r.url, 'https://eprint.iacr.org/2026/1080');
+  assert.equal(r.windowId, '77');
+  assert.equal(r.paper.authors.length, 4);
+  assert.ok(cmds.some((c) => c.includes("xdotool type --delay 25 -- 'https://eprint.iacr.org/2026/1080'")), 'the URL is typed live where a viewer sees it');
+  assert.ok(cmds.some((c) => c.startsWith("curl -sS -m 20 -A 'ramherd-research-loop' 'https://eprint.iacr.org/2026/1080'")));
+  await assert.rejects(readPaper(sbx, { id: 'https://evil.example/2026/1080' }), /not an IACR ePrint paper id/);
+  assert.equal(typeof desktopActivity.readPaper, 'function', 'wired into the real desktop activity');
+});
+
+test('a READ line reads the real paper page, logs title/authors/abstract honestly, and the next thinking step is grounded in the abstract', async () => {
+  const r = rig({ answers: ['Look at the 35-step result.\nREAD: 2026/1080', 'Next.'], activeLoop: { readEvery: 1 } });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // idle -> thinking -> READ
+  const snap = r.m.getSlot('slot-0');
+  assert.deepEqual(r.activity.reads.map((x) => x.id), ['2026/1080']);
+  const line = snap.feed.at(-1);
+  assert.equal(line.type, 'sandbox-read');
+  assert.match(line.message, /Read ePrint 2026\/1080 "Pushing the Limit of Memory-efficient Collision Attack Framework for SHA-2" by Yingxin Li, Fukang Liu, Gaoli Wang, Jiali Shi/);
+  assert.match(line.message, /Abstract \(as fetched from the paper's own page\): "The SHA-2 family hash/);
+  assert.match(line.message, /the PDF body was not read/);
+  for (let i = 0; i < 4; i++) await r.step(); // -> next thinking step
+  assert.match(r.llm.calls[1].prompt, /Papers you actually read this session.*2026\/1080.*abstract: The SHA-2 family hash/);
+});
+
+test('a READ of a paper id the archive does not have is reported as not found, and nothing is recorded as read', async () => {
+  const r = rig({ answers: ['Check this.\nREAD: 2026/99999'] });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step();
+  const line = r.m.getSlot('slot-0').feed.at(-1);
+  assert.equal(line.type, 'sandbox-read');
+  assert.match(line.message, /has no paper there, so nothing was read/);
+});
+
+test('an EXPERIMENT line runs a REAL bounded experiment whose reported numbers equal an independent recomputation', async () => {
+  const r = rig({ researchTools: realResearchTools, answers: ['Test output bias.\nEXPERIMENT: differential at=60 xor=80 samples=512 seed=loop', 'Next.'] });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // idle -> thinking -> experiment (real worker)
+  const snap = r.m.getSlot('slot-0');
+  const line = snap.feed.at(-1);
+  assert.equal(line.type, 'research-experiment');
+  const independent = runExperiment(parseExperimentRequest('differential at=60 xor=80 samples=512 seed=loop', 'sha256-r31-exploratory').request);
+  assert.match(line.message, /^Ran a real bounded experiment EXP#1 on sha256-r31-exploratory/);
+  assert.ok(line.message.includes(`mean output-difference weight ${independent.meanOutputDiffWeight.toFixed(2)} of 256`), line.message);
+  assert.ok(line.message.includes(`minimum ${independent.minOutputDiffWeight}`));
+  assert.match(line.message, /\[512 of 512 requested samples actually run/);
+  assert.match(line.message, /not a collision|out of scope for an ordinary-collision claim/);
+  assert.match(line.message, /not recomputed by the organizer's checker \(the organizer's reference checker is not available on this host/, 'no pipeline runner here: said plainly, not pretended');
+  for (let i = 0; i < 4; i++) await r.step(); // -> next thinking step
+  assert.match(r.llm.calls[1].prompt, /Your own real experiments this session.*EXP#1: a real bounded differential experiment on sha256-r31-exploratory.*512 message pairs/);
+});
+
+test('a malformed or unsupported EXPERIMENT request is reported as not run; nothing is computed or invented', async () => {
+  const calls = [];
+  const tools = { runExperiment: async (q) => { calls.push(q); return realResearchTools.runExperiment(q); }, verifyPair: realResearchTools.verifyPair };
+  const r = rig({ researchTools: tools, answers: ['Find a full collision.\nEXPERIMENT: birthday bits=256 samples=2^60'] });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step();
+  const line = r.m.getSlot('slot-0').feed.at(-1);
+  assert.equal(line.type, 'research-experiment-rejected');
+  assert.match(line.message, /bits must be 8\.\.44.*Nothing was computed/);
+  assert.equal(calls.length, 0);
+});
+
+test('VERIFY EXP#<n> recomputes the experiment\'s recorded pair for real: correctly NOT a collision, with the real equal-prefix length', async () => {
+  const organizerCalls = [];
+  const runner = {
+    supportsTrack: () => false,
+    candidateKindFor: () => 'harness-draft',
+    // Stands in for hashsmash.js organizerDigests: recomputes with the real port (the real Python path is tested in hashsmash.test.js).
+    organizerDigests: async ({ track, messagesHex }) => { organizerCalls.push(messagesHex); return { ok: true, checker: 'verifier/hash_functions.py:digest', digests: messagesHex.map((m) => Buffer.from(digestForTrack(track, Buffer.from(m, 'hex'))).toString('hex')) }; },
+  };
+  const r = rig({ pipelineRunner: runner, researchTools: realResearchTools, answers: ['Prefix test.\nEXPERIMENT: birthday bits=20 samples=4000 seed=v', 'Check it.\nVERIFY: EXP#1'] });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // thinking #1 -> experiment EXP#1
+  const exp = r.m.getSlot('slot-0').feed.at(-1);
+  assert.equal(exp.type, 'research-experiment');
+  assert.match(exp.message, /The organizer's own reference Python recomputed the closest pair and agreed/);
+  for (let i = 0; i < 4; i++) await r.step(); // -> thinking #2 -> VERIFY EXP#1
+  const v = r.m.getSlot('slot-0').feed.at(-1);
+  assert.equal(v.type, 'research-verify');
+  const independent = runExperiment(parseExperimentRequest('birthday bits=20 samples=4000 seed=v', 'sha256-r31-exploratory').request).bestPair;
+  assert.match(v.message, new RegExp(`Verified a candidate pair as EXP#2 .*the closest pair from EXP#1.*NOT a collision: the digests differ \\(equal on the first ${independent.equalPrefixBits} bits, Hamming distance ${independent.hammingDistance} of 256\\)`));
+  assert.deepEqual(organizerCalls.at(-1), [independent.messageAHex, independent.messageBHex], 'the exact recorded pair went to the organizer checker');
+});
+
+test('if the organizer\'s own checker disagrees with the port, the result is DISCARDED: no number reported, nothing citable', async () => {
+  const runner = { supportsTrack: () => false, candidateKindFor: () => 'harness-draft', organizerDigests: async ({ messagesHex }) => ({ ok: true, digests: messagesHex.map(() => '00'.repeat(32)) }) };
+  const r = rig({ pipelineRunner: runner, researchTools: realResearchTools, answers: ['x.\nEXPERIMENT: birthday bits=16 samples=2000'] });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step();
+  const line = r.m.getSlot('slot-0').feed.at(-1);
+  assert.equal(line.type, 'research-experiment-error');
+  assert.match(line.message, /EXP#1 was DISCARDED.*Neither number is reported/);
+});
+
+test('experiments are capped per session and rate limited; a mocked thinking answer never triggers any tool', async () => {
+  const calls = [];
+  const tools = { runExperiment: async (q) => { calls.push(q); return realResearchTools.runExperiment(q); }, verifyPair: realResearchTools.verifyPair };
+  const ask = 'Again.\nEXPERIMENT: differential at=1 xor=01 samples=64';
+  const r = rig({ researchTools: tools, answers: [ask, ask, ask], activeLoop: { maxExperimentsPerSession: 2, maxThinkingPerSession: 10 } });
+  r.m.setSlotCount(1);
+  await r.boot();
+  for (let i = 0; i < 9; i++) await r.step(); // three thinking steps
+  assert.equal(calls.length, 2);
+  assert.ok(r.m.getSlot('slot-0').feed.some((f) => f.type === 'research-experiment-skipped' && /cap of 2 experiments/.test(f.message)));
+  assert.equal(r.m.activeLoopStatus().loops[0].experiments, 2);
+
+  const mockedCalls = [];
+  const mockTools = { runExperiment: async (q) => { mockedCalls.push(q); return { status: 'completed' }; }, verifyPair: () => { throw new Error('must not run'); } };
+  const mocked = { calls: [], provider: { kind: 'openrouter', async complete(q) { mocked.calls.push(q); return { text: 'x\nEXPERIMENT: differential at=1 xor=01\nVERIFY: 00 01\nREAD: 2026/1080', mocked: true, model: q.model }; } } };
+  const r2 = rig({ llm: mocked, researchTools: mockTools });
+  r2.m.setSlotCount(1);
+  await r2.boot();
+  await r2.step();
+  assert.equal(mockedCalls.length, 0);
+  assert.equal(r2.activity.reads.length, 0);
+});
+
+test('end to end: a draft citing the RAM\'s own real experiment EXP#1 passes the unchanged honesty gate, and the verifier is shown the real recorded numbers', async () => {
+  const runner = stubPipelineRunner();
+  runner.organizerDigests = async ({ track, messagesHex }) => ({ ok: true, digests: messagesHex.map((m) => Buffer.from(digestForTrack(track, Buffer.from(m, 'hex'))).toString('hex')) });
+  const answer = VALID_DRAFT_ANSWER.replace('CITED_PAPER_ID: 2026/1120', 'CITED_PAPER_ID: EXP#1');
+  const r = rig({
+    pipelineRunner: runner, researchTools: realResearchTools,
+    answers: ['Measure first.\nEXPERIMENT: birthday bits=20 samples=3000 seed=e2e\nDRAFT: the measurement supports a disclosed estimate', answer, 'VERDICT: FAIL\nREASON: A 20-bit prefix count says nothing about a 256-bit collision cost.'],
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); // thinking + real experiment EXP#1 (the only grounding: no search, no peers)
+  await r.step(); // -> running-experiment
+  await r.step(); // -> drafting call, validation, verification call, pipeline
+  assert.equal(r.llm.calls.length, 3);
+  assert.equal(r.llm.calls[2].system, LOOP_VERIFY_SYSTEM);
+  assert.match(r.llm.calls[2].prompt, /citing the agent's own experiment EXP#1/);
+  assert.match(r.llm.calls[2].prompt, /CITED EXPERIMENT \(real recorded result\): EXP#1: a real bounded birthday experiment on sha256-r31-exploratory .* 3000 samples actually hashed/);
+  const draft = runner.calls[0].loopDraft;
+  assert.equal(draft.citedPaper.kind, 'experiment');
+  assert.equal(draft.citedPaper.result.samplesRun, 3000);
+  assert.equal(draft.verification.pass, false);
+  assert.ok(r.m.getSlot('slot-0').feed.some((f) => f.type === 'pipeline-loop-draft-attempt' && /citing this session's own experiment EXP#1/.test(f.message)));
+});
+
+test('a draft citing an experiment this session never ran is rejected before the pipeline, exactly like a fake paper id', async () => {
+  const runner = stubPipelineRunner();
+  const r = rig({
+    pipelineRunner: runner, researchTools: realResearchTools,
+    answers: ['Measure.\nEXPERIMENT: birthday bits=20 samples=1000\nDRAFT: I have a measured estimate', VALID_DRAFT_ANSWER.replace('CITED_PAPER_ID: 2026/1120', 'CITED_PAPER_ID: EXP#7')],
+  });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); await r.step(); await r.step();
+  const slot = r.m.getSlot('slot-0');
+  assert.equal(slot.status, 'failed');
+  assert.equal(slot.feed.at(-1).type, 'pipeline-loop-draft-rejected');
+  assert.match(slot.feed.at(-1).message, /CITED_PAPER_ID "EXP#7" does not match any real result/);
+  assert.equal(runner.calls.length, 0);
 });

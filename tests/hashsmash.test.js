@@ -30,6 +30,7 @@ import {
 } from '../server/lib/hashsmash.js';
 import { createSlotManager } from '../server/lib/slots.js';
 import { createMockLlmProvider } from '../server/lib/llm.js';
+import { parseExperimentRequest, runExperiment, verifyPair } from '../server/lib/research-tools.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TRACK = 'sha256-r31-exploratory';
@@ -771,6 +772,171 @@ test('r32.c independently reproduces every finite fact the package states', { sk
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// The research loop's real tools (research-tools.js): a drafted claim may cite
+// one of this session's own real, completed experiments ("EXP#<n>") or a paper
+// it actually read. Same rigor as an ePrint/PR citation: it must resolve to
+// real session state, and everything that existed before still applies.
+// ---------------------------------------------------------------------------
+
+function realExperimentRecords() {
+  const p = parseExperimentRequest('birthday bits=20 samples=4000 seed=cite', TRACK);
+  const result = runExperiment(p.request);
+  const other = parseExperimentRequest('differential at=60 xor=80 samples=256 seed=cite', 'blake3-r1-exploratory');
+  return [
+    { id: 'EXP#1', status: 'completed', request: p.request, result, organizerCheck: { ran: true, agrees: true } },
+    { id: 'EXP#2', status: 'discarded', request: p.request, result, organizerCheck: { ran: true, agrees: false } },
+    { id: 'EXP#3', status: 'timed-out', request: p.request, error: 'no result' },
+    { id: 'EXP#4', status: 'completed', request: other.request, result: runExperiment(other.request), organizerCheck: { ran: false, error: 'n/a' } },
+  ];
+}
+
+const READ_PAPERS = [{
+  id: '2026/1080', url: 'https://eprint.iacr.org/2026/1080',
+  title: 'Pushing the Limit of Memory-efficient Collision Attack Framework for SHA-2',
+  authors: ['Yingxin Li', 'Fukang Liu', 'Gaoli Wang', 'Jiali Shi'],
+  abstract: 'The SHA-2 family hash is standardized by NIST ... the first practical collision attacks on 35-step SHA-256 and SHA-512 can be achieved for i=0.',
+}];
+
+test('findCitedReference resolves "EXP#<n>" only to a real, COMPLETED experiment of this session -- never a discarded, errored or unknown one', () => {
+  const experiments = realExperimentRecords();
+  const ref = findCitedReference('EXP#1', { experiments });
+  assert.equal(ref.kind, 'experiment');
+  assert.equal(ref.id, 'EXP#1');
+  assert.equal(ref.experimentKind, 'birthday');
+  assert.equal(ref.track, TRACK);
+  assert.equal(ref.result.samplesRun, 4000);
+  assert.equal(findCitedReference('exp#1', { experiments }).id, 'EXP#1', 'case-insensitive marker');
+  assert.equal(findCitedReference('EXP#2', { experiments }), null, 'discarded: the organizer recomputation disagreed');
+  assert.equal(findCitedReference('EXP#3', { experiments }), null, 'timed out: no result exists');
+  assert.equal(findCitedReference('EXP#9', { experiments }), null, 'never ran');
+  assert.equal(findCitedReference('EXP#1', {}), null, 'experiments must come from this session, not be assumed');
+});
+
+test('findCitedReference: a paper this session actually READ resolves with read:true and its real abstract; search-only keeps the old shape', () => {
+  const ref = findCitedReference('2026/1080', { lastSearchResults: REAL_SEARCH_RESULTS, readPapers: READ_PAPERS });
+  assert.equal(ref.kind, 'eprint');
+  assert.equal(ref.read, true);
+  assert.equal(ref.title, READ_PAPERS[0].title, 'the real fetched title wins over the search-list title');
+  assert.deepEqual(ref.authors, READ_PAPERS[0].authors);
+  assert.match(ref.abstract, /35-step SHA-256/);
+  assert.deepEqual(findCitedReference('2026/1120', { lastSearchResults: REAL_SEARCH_RESULTS, readPapers: READ_PAPERS }), { kind: 'eprint', id: '2026/1120', title: 'Pushing Collision Attacks on SHA-2 to 39 Steps' });
+});
+
+test('validateLoopAttempt: citing a real completed experiment is accepted, with every pre-existing check still applied', () => {
+  const experiments = realExperimentRecords();
+  assert.deepEqual(validateLoopAttempt(validAttempt({ citedPaperId: 'EXP#1' }), { experiments, track: TRACK }), { ok: true, errors: [] });
+  // Pre-existing rails are untouched by an experiment citation.
+  assert.equal(validateLoopAttempt(validAttempt({ citedPaperId: 'EXP#1', successProbability: 0.1 }), { experiments, track: TRACK }).ok, false);
+  assert.equal(validateLoopAttempt(validAttempt({ citedPaperId: 'EXP#1', limitations: 'This bound is proven and guaranteed for every message pair.' }), { experiments, track: TRACK }).ok, false);
+  assert.equal(validateLoopAttempt(validAttempt({ citedPaperId: 'EXP#1', statement: 'short' }), { experiments, track: TRACK }).ok, false);
+  for (const id of ['EXP#2', 'EXP#3', 'EXP#9']) {
+    const res = validateLoopAttempt(validAttempt({ citedPaperId: id }), { experiments, track: TRACK });
+    assert.equal(res.ok, false, id);
+    assert.match(res.errors.join(' '), /does not match any real result/, id);
+  }
+});
+
+test('validateLoopAttempt: an experiment from a different track, or a named EXPERIMENT_ID that never ran, is rejected', () => {
+  const experiments = realExperimentRecords();
+  const wrongTrack = validateLoopAttempt(validAttempt({ citedPaperId: 'EXP#4' }), { experiments, track: TRACK });
+  assert.equal(wrongTrack.ok, false);
+  assert.match(wrongTrack.errors.join(' '), /EXP#4 was run on blake3-r1-exploratory, not on this track/);
+  const unreal = validateLoopAttempt(validAttempt({ experimentId: 'EXP#9' }), { lastSearchResults: REAL_SEARCH_RESULTS, experiments, track: TRACK });
+  assert.equal(unreal.ok, false);
+  assert.match(unreal.errors.join(' '), /EXPERIMENT_ID "EXP#9" does not match any real, completed experiment/);
+  assert.equal(validateLoopAttempt(validAttempt({ experimentId: 'EXP#1' }), { lastSearchResults: REAL_SEARCH_RESULTS, experiments, track: TRACK }).ok, true);
+  for (const none of ['NONE', 'none', null]) {
+    assert.equal(validateLoopAttempt(validAttempt({ experimentId: none }), { lastSearchResults: REAL_SEARCH_RESULTS, experiments, track: TRACK }).ok, true, String(none));
+  }
+});
+
+test('validateLoopAttempt: claiming this session FOUND a collision is rejected unless a VERIFY confirmed one with the organizer\'s own checker', () => {
+  const experiments = realExperimentRecords();
+  const claim = validAttempt({ citedPaperId: 'EXP#1', statement: 'This session found a real collision for the reduced target using the cited experiment\'s pair.' });
+  const res = validateLoopAttempt(claim, { experiments, track: TRACK });
+  assert.equal(res.ok, false);
+  assert.match(res.errors.join(' '), /no VERIFY this session confirmed a genuine full collision/);
+  // The honest wording in LIMITATIONS never trips it.
+  assert.equal(validateLoopAttempt(validAttempt({ citedPaperId: 'EXP#1', limitations: 'No collision was found this session; this is an estimate from one bounded prefix experiment.' }), { experiments, track: TRACK }).ok, true);
+  // A VERIFY of a non-colliding pair does not count, nor does one the organizer did not confirm.
+  const notColliding = { id: 'EXP#5', status: 'completed', result: verifyPair({ track: TRACK, messageAHex: '00', messageBHex: '01' }), organizerCheck: { ran: true, agrees: true } };
+  assert.equal(validateLoopAttempt(claim, { experiments: [...experiments, notColliding], track: TRACK }).ok, false);
+  const unconfirmed = { id: 'EXP#6', status: 'completed', result: { kind: 'verify', track: TRACK, fullCollision: true }, organizerCheck: { ran: false } };
+  assert.equal(validateLoopAttempt(claim, { experiments: [...experiments, unconfirmed], track: TRACK }).ok, false);
+  const confirmed = { id: 'EXP#7', status: 'completed', result: { kind: 'verify', track: TRACK, fullCollision: true }, organizerCheck: { ran: true, agrees: true } };
+  assert.equal(validateLoopAttempt(claim, { experiments: [...experiments, confirmed], track: TRACK }).ok, true);
+});
+
+test('organizerDigests: the organizer\'s own reference checker recomputes real experiment pairs and agrees with the JS port, on every pipeline track', { skip: SKIP }, async () => {
+  const r = runner();
+  for (const track of PIPELINE_TRACKS) {
+    const res = runExperiment(parseExperimentRequest('birthday bits=16 samples=2000 seed=org', track).request);
+    const p = res.bestPair;
+    const org = await r.organizerDigests({ track, messagesHex: [p.messageAHex, p.messageBHex] });
+    assert.equal(org.ok, true, org.error);
+    assert.deepEqual(org.digests, [p.digestAHex, p.digestBHex], track);
+    assert.equal(org.checker, 'verifier/hash_functions.py:digest');
+  }
+  // The organizer's own 8-round control is NOT a collision on a real track, and the organizer agrees.
+  const v = verifyPair({ track: TRACK, messageAHex: '00'.repeat(40), messageBHex: `${'00'.repeat(32)}01${'00'.repeat(7)}` });
+  const org = await r.organizerDigests({ track: TRACK, messagesHex: [v.messageAHex, v.messageBHex] });
+  assert.deepEqual(org.digests, [v.digestAHex, v.digestBHex]);
+  assert.notEqual(org.digests[0], org.digests[1]);
+  assert.equal((await r.organizerDigests({ track: TRACK, messagesHex: ['not hex'] })).ok, false);
+});
+
+test('loop-authored draft citing a real session experiment: written with its real numbers and pair, passes real check, and intake still stops it as a draft', { skip: SKIP }, async () => {
+  const r = runner();
+  const experiments = realExperimentRecords();
+  const attempt = validAttempt({ citedPaperId: 'EXP#1' });
+  assert.equal(validateLoopAttempt(attempt, { experiments, track: TRACK }).ok, true);
+  const citedPaper = findCitedReference('EXP#1', { experiments });
+  const res = await r.runCycle({ slotId: 'loop-draft-exp', track: TRACK, loopDraft: { attempt, citedPaper } });
+  assert.equal(res.precheck.ok, true, res.precheck.errors.join('; '));
+  assert.match(res.candidate.summary, /this session's own experiment EXP#1/);
+  const claim = JSON.parse(readFileSync(join(res.candidateDir, 'claim.json'), 'utf8'));
+  assert.equal(claim.submission_state, 'draft');
+  assert.equal(claim.heuristics[0].role, 'supporting');
+  assert.match(claim.restrictions[1], /its own real experiment this session/);
+  assert.match(claim.restrictions[1], /4000 samples actually hashed/);
+  assert.match(claim.restrictions[1], /not executed by the organizer/);
+  const proof = readFileSync(join(res.candidateDir, 'proof.md'), 'utf8');
+  const exp = citedPaper.result;
+  assert.match(proof, /## Cited experiment \(this session's own real computation\)/);
+  assert.ok(proof.includes(exp.bestPair.messageAHex) && proof.includes(exp.bestPair.messageBHex), 'the real recorded pair is in the package');
+  assert.ok(proof.includes(`${exp.prefixCollisionPairs} distinct pair(s)`));
+  assert.match(proof, /not an organizer-executed experiments report/);
+  assert.match(proof, /a prefix match, a biased output bit or a low-weight difference is evidence about the target, not a collision/);
+  assert.match(proof, /No new collision, witness, or independently-reviewed proof/);
+  const [check, intake, ...rest] = res.stages;
+  assert.equal(check.status, 'mechanically_valid');
+  assert.equal(intake.outcome, 'draft-not-submitted');
+  assert.deepEqual(rest, []);
+});
+
+test('loop-authored draft citing a paper it actually READ plus a supporting experiment: says abstract-level reading honestly, and passes real check', { skip: SKIP }, async () => {
+  const r = runner();
+  const experiments = realExperimentRecords();
+  const attempt = validAttempt({ citedPaperId: '2026/1080', experimentId: 'EXP#1' });
+  assert.equal(validateLoopAttempt(attempt, { readPapers: READ_PAPERS, experiments, track: TRACK }).ok, true);
+  const citedPaper = findCitedReference('2026/1080', { readPapers: READ_PAPERS });
+  const supportingExperiment = findCitedReference('EXP#1', { experiments });
+  const res = await r.runCycle({ slotId: 'loop-draft-read', track: TRACK, loopDraft: { attempt, citedPaper, supportingExperiment } });
+  assert.equal(res.precheck.ok, true, res.precheck.errors.join('; '));
+  const claim = JSON.parse(readFileSync(join(res.candidateDir, 'claim.json'), 'utf8'));
+  assert.match(claim.restrictions[1], /actually fetched and read from the paper's own ePrint page/);
+  assert.match(claim.restrictions[1], /the body \(PDF\) was not read/);
+  assert.match(claim.restrictions[2], /Supporting evidence named by this RAM: EXP#1/);
+  const proof = readFileSync(join(res.candidateDir, 'proof.md'), 'utf8');
+  assert.match(proof, /by Yingxin Li, Fukang Liu, Gaoli Wang, Jiali Shi/);
+  assert.match(proof, /Abstract as fetched: "The SHA-2 family hash/);
+  assert.match(proof, /## Supporting experiment/);
+  assert.equal(/Only the search result title was read/.test(proof), false, 'a read paper is not described as title-only');
+  assert.equal(res.stages[0].status, 'mechanically_valid');
+  assert.equal(res.stages[1].outcome, 'draft-not-submitted');
 });
 
 // Runs last so it covers every test above, including the r32 research cycles.
