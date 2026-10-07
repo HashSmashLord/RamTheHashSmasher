@@ -7,8 +7,14 @@ primary_region = "lhr"
   internal_port = 8080
   force_https = true
   auto_stop_machines = false
-  auto_start_machines = true
-  min_machines_running = 1
+  # Operator shut the whole project down 2026-10-08 (real E2B/OpenRouter spend, project
+  # finished) -- auto_start_machines was waking the machine right back up on any stray
+  # request (confirmed real: a plain health-check curl did it), and min_machines_running=1
+  # was telling the platform to keep one running regardless. Both off so a stopped machine
+  # actually stays stopped. Flip both back (and the RAMHERD_* secrets this same change
+  # turned off) to bring it back up for real.
+  auto_start_machines = false
+  min_machines_running = 0
 
   [[http_service.checks]]
     grace_period = "10s"
