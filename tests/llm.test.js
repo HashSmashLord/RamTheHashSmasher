@@ -162,3 +162,27 @@ test('RAMHERD_LLM_MODEL alone never turns live mode on', () => {
   assert.equal(createLlmProvider({ RAMHERD_LLM_MODEL: 'anthropic/claude-opus-5.5' }).kind, 'mock');
   assert.equal(createLlmProvider({ RAMHERD_LLM_MODEL: 'x', OPENROUTER_API_KEY: 'sk-fake' }).kind, 'mock');
 });
+
+test('createOpenRouterProvider reports why generation stopped and how many tokens went to hidden reasoning', async () => {
+  // The exact shape OpenRouter returned live (2026-10-07) when a reasoning model
+  // spent its whole max_tokens budget reasoning: finish_reason "length", empty content.
+  const fakeFetch = async () => ({
+    ok: true,
+    json: async () => ({
+      choices: [{ finish_reason: 'length', message: { content: '', reasoning: 'thinking...' } }],
+      usage: { prompt_tokens: 1279, completion_tokens: 800, total_tokens: 2079, cost: 0.004, completion_tokens_details: { reasoning_tokens: 800 } },
+    }),
+  });
+  const result = await createOpenRouterProvider({ apiKey: 'sk-fake', fetchImpl: fakeFetch }).complete({ prompt: 'x', maxTokens: 800 });
+  assert.equal(result.text, '');
+  assert.equal(result.finishReason, 'length');
+  assert.equal(result.reasoningTokens, 800);
+  assert.deepEqual(result.usage, { promptTokens: 1279, completionTokens: 800, totalTokens: 2079, costUsd: 0.004 });
+});
+
+test('createOpenRouterProvider leaves finishReason and reasoningTokens null when the response omits them', async () => {
+  const fakeFetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) });
+  const result = await createOpenRouterProvider({ apiKey: 'sk-fake', fetchImpl: fakeFetch }).complete({ prompt: 'x' });
+  assert.equal(result.finishReason, null);
+  assert.equal(result.reasoningTokens, null);
+});

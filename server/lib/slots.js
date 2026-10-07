@@ -227,7 +227,7 @@ import { contextPayload } from './sandbox-context.js';
 import {
   parseThinking, parseDraftAttempt, parseVerifyVerdict, noteBlock, MAX_IDLE_MS, DEFAULT_STEP_PAUSE_SEC, MIN_STEP_PAUSE_SEC, MAX_STEP_PAUSE_SEC,
   DEFAULT_BROWSE_EVERY, DEFAULT_PEERS_EVERY, DEFAULT_MAX_THINKING_PER_SESSION, LOOP_THINKING_MAX_TOKENS,
-  DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION, LOOP_DRAFT_MAX_TOKENS, LOOP_VERIFY_MAX_TOKENS,
+  DEFAULT_MAX_DRAFT_ATTEMPTS_PER_SESSION, LOOP_DRAFT_MAX_TOKENS, LOOP_VERIFY_MAX_TOKENS, LOOP_REASONING,
   DEFAULT_EXPERIMENT_EVERY, DEFAULT_MAX_EXPERIMENTS_PER_SESSION, DEFAULT_MAX_VERIFIES_PER_SESSION, DEFAULT_READ_EVERY, DEFAULT_MAX_READS_PER_SESSION,
 } from './sandbox-activity.js';
 import { validateLoopAttempt, findCitedReference, describeExperimentRef, citationLabel } from './hashsmash.js';
@@ -347,6 +347,20 @@ export function updateBestResult(slot, detail) {
     slot.bestResult.successProbability = detail.successProbability;
   }
   return slot.bestResult;
+}
+
+/**
+ * The feed line for a loop thinking step whose reply had no usable text.
+ * Says WHY when the provider told us: "length" with nothing written means
+ * the model spent its whole output budget on hidden reasoning (the
+ * 2026-10-07 live stall), which is not the same as choosing to say nothing.
+ */
+export function emptyReplyNote(result, maxTokens) {
+  if (result?.finishReason === 'length') {
+    const r = Number.isFinite(result.reasoningTokens) ? ` (${result.reasoningTokens} of them on hidden reasoning)` : '';
+    return `(the model used its whole ${maxTokens}-token output budget${r} before writing any answer, so nothing was decided or run this step)`;
+  }
+  return '(the model returned no text for this step)';
 }
 
 /** Real recent history + the running best-so-far + last real search results, appended to a loop thinking prompt. */
@@ -652,13 +666,18 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
         slot.suggestions.map((s) => s.text).join(' | ') || 'none'
       }.`;
       const result = await llmProvider.complete(fromLoop
-        ? { model, system: LOOP_THINKING_SYSTEM, prompt: `${base}${loopGrounding(slot)}`, maxTokens: LOOP_THINKING_MAX_TOKENS }
+        ? { model, system: LOOP_THINKING_SYSTEM, prompt: `${base}${loopGrounding(slot)}`, maxTokens: LOOP_THINKING_MAX_TOKENS, reasoning: LOOP_REASONING }
         : { model, system: 'You are a HashSmash solver agent. Describe, in one sentence, the next concrete thing you will try.', prompt: base });
       let text = result.text;
       slot.lastThink = { mocked: Boolean(result.mocked), search: null, peersReason: null, draftReason: null, experiment: null, verify: null, read: null };
       if (fromLoop) {
-        const { note, search, peersReason, draftReason, experiment, verify, read } = parseThinking(result.text);
-        text = note || '(the model returned no text for this step)';
+        const truncated = result.finishReason === 'length';
+        const { note, search, peersReason, draftReason, experiment, verify, read } = parseThinking(result.text, { truncated });
+        text = note
+          ? (truncated ? `${note} [this answer was cut off at the ${LOOP_THINKING_MAX_TOKENS}-token limit; a tool line cut off with it was not run]` : note)
+          : emptyReplyNote(result, LOOP_THINKING_MAX_TOKENS);
+        slot.lastThink.empty = !note;
+        slot.lastThink.finishReason = result.finishReason ?? null;
         slot.lastThink.search = result.mocked ? null : search;
         slot.lastThink.peersReason = result.mocked ? null : peersReason;
         slot.lastThink.draftReason = result.mocked ? null : draftReason;
@@ -916,12 +935,22 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     const readPapers = slot.readPapers ?? [];
     const experiments = slot.experiments ?? [];
     const prompt = `${loopGrounding(slot)} Earlier this cycle you said: "${slot.lastThink.draftReason}". Decide now, honestly and specifically.`;
-    const result = await llmProvider.complete({ model, system: LOOP_DRAFT_SYSTEM, prompt, maxTokens: LOOP_DRAFT_MAX_TOKENS });
+    const result = await llmProvider.complete({ model, system: LOOP_DRAFT_SYSTEM, prompt, maxTokens: LOOP_DRAFT_MAX_TOKENS, reasoning: LOOP_REASONING });
     if (costLedger && result.usage) {
       costLedger.record({ slotId: slot.id, ramId: slot.ramId, model, usage: result.usage, ref: now() });
     }
     if (result.mocked) {
       pushFeed(slot, 'pipeline-loop-draft-skipped', 'The drafting call came back as a mock (dry-run) answer; that is never treated as a real decision. Running the normal labeled harness draft for this cycle instead.');
+      await runRealPipeline(slot);
+      return;
+    }
+    // A reply cut off at the token limit is not a decision either way: never
+    // read as "no" (that would misreport it as an honest decline), and never
+    // as a draft (its last fields, e.g. LIMITATIONS, would be incomplete).
+    if (result.finishReason === 'length' || !String(result.text ?? '').trim()) {
+      pushFeed(slot, 'pipeline-loop-draft-skipped', `The drafting call did not produce a complete answer (${
+        result.finishReason === 'length' ? `cut off at the ${LOOP_DRAFT_MAX_TOKENS}-token limit${String(result.text ?? '').trim() ? '' : ' while the model was still reasoning, before it wrote anything'}` : 'the model returned no text'
+      }), so nothing was drafted and no decision was recorded. Running the normal labeled harness draft for this cycle instead.`);
       await runRealPipeline(slot);
       return;
     }
@@ -988,11 +1017,17 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       + `EXTRAPOLATION: ${attempt.extrapolation}\n`
       + `LIMITATIONS: ${attempt.limitations}\n`
       + `TIME_LOG2: ${attempt.timeLog2}, MEMORY_LOG2_BYTES: ${attempt.memoryLog2Bytes}, SUCCESS_PROBABILITY: ${attempt.successProbability}`;
-    const result = await llmProvider.complete({ model, system: LOOP_VERIFY_SYSTEM, prompt, maxTokens: LOOP_VERIFY_MAX_TOKENS });
+    const result = await llmProvider.complete({ model, system: LOOP_VERIFY_SYSTEM, prompt, maxTokens: LOOP_VERIFY_MAX_TOKENS, reasoning: LOOP_REASONING });
     if (costLedger && result.usage) {
       costLedger.record({ slotId: slot.id, ramId: slot.ramId, model, usage: result.usage, ref: now() });
     }
     if (result.mocked) return { pass: false, reason: 'verification call came back as a mock (dry-run) answer, never treated as a real pass' };
+    // A verdict cut off at the token limit is never a pass (a bare "VERDICT: PASS"
+    // whose REASON was cut off must not count), same safe default as a malformed one.
+    if (result.finishReason === 'length') {
+      return { pass: false, reason: `the reviewer's answer was cut off at the ${LOOP_VERIFY_MAX_TOKENS}-token limit${String(result.text ?? '').trim() ? '' : ' before it wrote any verdict'}; an incomplete review is never treated as a pass` };
+    }
+    if (!String(result.text ?? '').trim()) return { pass: false, reason: 'the reviewer model returned no text, so there is no verdict; never treated as a pass' };
     return parseVerifyVerdict(result.text);
   }
 
@@ -1161,7 +1196,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
     }
     const entry = {
       sessionId, timer: null, running: null, stopped: false, startedAt: now(),
-      steps: 0, thinking: 0, failures: 0, lastBrowseThinking: -Infinity, browses: 0,
+      steps: 0, thinking: 0, emptyThinking: 0, failures: 0, lastBrowseThinking: -Infinity, browses: 0,
       lastPeersThinking: -Infinity, peers: 0,
       lastExperimentThinking: -Infinity, experiments: 0, verifies: 0, lastReadThinking: -Infinity, reads: 0,
       notepadId: null, browserId: null, terminalId: null, inspects: 0, unverifiedTyping: 0,
@@ -1202,6 +1237,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       if (entry.history.length > 50) entry.history.shift();
       if (wasIdle) {
         entry.thinking += 1;
+        if (slot.lastThink?.empty) entry.emptyThinking += 1;
         if (slot.lastThink?.mocked) {
           pushFeed(slot, 'sandbox-loop-stopped', 'Always-on research loop stopped: the model call came back as a mock (dry-run) answer, so nothing is typed as if it were real thinking.');
           stopLoop(slot.id);
@@ -1477,7 +1513,7 @@ export function createSlotManager({ llmProvider, pipelineRunner = null, sandboxM
       maxReadsPerSession: loopCfg?.maxReadsPerSession ?? null,
       researchToolsConfigured: Boolean(researchTools),
       loops: [...loops].map(([slotId, e]) => ({
-        slotId, sessionId: e.sessionId, startedAt: e.startedAt, steps: e.steps, thinking: e.thinking, browses: e.browses, peers: e.peers, inspects: e.inspects,
+        slotId, sessionId: e.sessionId, startedAt: e.startedAt, steps: e.steps, thinking: e.thinking, emptyThinking: e.emptyThinking, browses: e.browses, peers: e.peers, inspects: e.inspects,
         experiments: e.experiments, verifies: e.verifies, reads: e.reads,
         failures: e.failures, maxGapMs: e.maxGapMs, unverifiedTyping: e.unverifiedTyping, history: e.history.map((h) => ({ ...h })),
       })),

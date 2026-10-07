@@ -102,18 +102,43 @@ export const DEFAULT_MAX_EXPERIMENTS_PER_SESSION = 20;
 export const DEFAULT_MAX_VERIFIES_PER_SESSION = 20;
 export const DEFAULT_READ_EVERY = 1;
 export const DEFAULT_MAX_READS_PER_SESSION = 12;
-/** max_tokens for the dedicated drafting call (slots.js's LOOP_DRAFT_SYSTEM). */
-export const LOOP_DRAFT_MAX_TOKENS = 700;
-/** max_tokens for the adversarial verification call (slots.js's LOOP_VERIFY_SYSTEM) -- a two-line verdict, no reasoning dump needed. */
-export const LOOP_VERIFY_MAX_TOKENS = 200;
 /**
- * max_tokens for a loop thinking call. Measured on the real roster model
- * (anthropic/claude-opus-5.5 via OpenRouter, 2026-10-05): reasoning is
- * mandatory on that endpoint and used all of the default 300 tokens, leaving
- * an empty answer; with 800 it finished (about 200 reasoning tokens) with a
- * full answer and its SEARCH line, for about $0.008. A ceiling, not a spend.
+ * Output budgets for the loop's three model calls (thinking, drafting,
+ * adversarial verification), and the reasoning setting sent with each.
+ *
+ * Root cause of the 2026-10-07 live stall (most roster slots returning NO
+ * TEXT on 56-97% of thinking steps, across deepseek, qwen, claude-fable and
+ * claude-opus): every roster model is a reasoning model, and OpenRouter
+ * counts hidden reasoning tokens against `max_tokens`. With the EXPERIMENT /
+ * VERIFY / READ tool instructions (27b516c) the thinking system prompt about
+ * doubled, and real experiment numbers in the grounding give a model much
+ * more to deliberate over, so reasoning alone used the whole old 800-token
+ * budget and the reply came back with finish_reason "length" and an empty
+ * answer. Measured on real calls with the exact live prompt at 800 tokens:
+ * qwen3.8-max-prime and deepseek-v4-pro 800/800 reasoning tokens, 0 chars
+ * of answer; claude-fable-5.1 606 reasoning tokens, answer cut off mid
+ * sentence (so any trailing tool line is lost); gpt-6.1-sol-pro (the one
+ * slot that never stalled) only 177 reasoning tokens. Uncapped, qwen used
+ * 7220 reasoning tokens and deepseek 2260.
+ *
+ * The fix is uniform, not per model: ask every model for low reasoning
+ * effort (OpenRouter's normalized `reasoning.effort`), and give the call a
+ * ceiling with real headroom. Measured with exactly this on all six roster
+ * models (post-experiment prompt): every one finished ("stop") with a full
+ * answer; reasoning tokens qwen 936, deepseek 2978 (deepseek-v4-pro does
+ * not honor effort or a reasoning budget on this endpoint, hence the
+ * headroom), opus 164, gpt 87, fable 0, glm 0; about $0.004-0.026 per call.
+ * These are ceilings, not spends: a call is only billed for what it uses.
+ * When a reply is still cut off (finish_reason "length"), slots.js says so
+ * plainly and never acts on the cut-off last line (parseThinking).
  */
-export const LOOP_THINKING_MAX_TOKENS = 800;
+export const LOOP_REASONING = Object.freeze({ effort: 'low' });
+/** max_tokens for a loop thinking call (see above). */
+export const LOOP_THINKING_MAX_TOKENS = 6000;
+/** max_tokens for the dedicated drafting call (slots.js's LOOP_DRAFT_SYSTEM): same reasoning models, a longer structured answer. */
+export const LOOP_DRAFT_MAX_TOKENS = 6000;
+/** max_tokens for the adversarial verification call (slots.js's LOOP_VERIFY_SYSTEM): a two-line verdict, but the same reasoning has to fit first. */
+export const LOOP_VERIFY_MAX_TOKENS = 6000;
 /** The idle ceiling the loop is built to: never this long between two steps unless one is mid-call. */
 export const MAX_IDLE_MS = 60_000;
 
@@ -132,6 +157,11 @@ export function asciiText(text) {
     .trim();
 }
 
+/** One trailing signal line of a thinking reply ("SEARCH: ...", "EXPERIMENT: ...", ...). */
+const SIGNAL_LINE = /^\s*\**\s*(SEARCH|PEERS|DRAFT|EXPERIMENT|VERIFY|READ)\s*:\**\s*(.+)$/i;
+/** The start of a signal line, value possibly not written yet (a reply cut off mid-line). */
+const SIGNAL_START = /^\s*\**\s*(SEARCH|PEERS|DRAFT|EXPERIMENT|VERIFY|READ)\s*:/i;
+
 /**
  * Splits a model's thinking text into the note and its optional trailing
  * signal lines: a "SEARCH: ..." query, a "PEERS: ..." request to look at
@@ -147,9 +177,18 @@ export function asciiText(text) {
  * and rate limits, whether to act on any of these — this function only
  * extracts what was said. READ only ever yields a bare ePrint id (the URL
  * is built from it later, on the one allowed domain); anything else is null.
+ *
+ * `truncated` (the provider reported finish_reason "length"): the reply was
+ * cut off at the token limit, so its last line is incomplete by definition.
+ * That line is never read as a signal (a half-written "READ: 2026/10" or
+ * "EXPERIMENT: birthday bits=1" must not run something the model did not
+ * ask for); if it looks like a signal line it is dropped, otherwise it stays
+ * in the note as the prose the model actually wrote.
  */
-export function parseThinking(text) {
+export function parseThinking(text, { truncated = false } = {}) {
   const lines = String(text ?? '').split('\n');
+  let cutLine = null;
+  if (truncated && lines.length) cutLine = lines.pop();
   let search = null;
   let peers = null;
   let draft = null;
@@ -158,7 +197,7 @@ export function parseThinking(text) {
   let read = null;
   const kept = [];
   for (const line of lines) {
-    const m = /^\s*\**\s*(SEARCH|PEERS|DRAFT|EXPERIMENT|VERIFY|READ)\s*:\**\s*(.+)$/i.exec(line);
+    const m = SIGNAL_LINE.exec(line);
     if (!m) { kept.push(line); continue; }
     const value = m[2].replace(/\*+\s*$/, '');
     switch (m[1].toUpperCase()) {
@@ -170,6 +209,7 @@ export function parseThinking(text) {
       default: read = value;
     }
   }
+  if (cutLine !== null && !SIGNAL_START.test(cutLine)) kept.push(cutLine);
   const query = search ? search.replace(/[^A-Za-z0-9 .+-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
   const peersReason = peers ? peers.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
   const reason = draft ? draft.replace(/\s+/g, ' ').trim().slice(0, 200) : '';

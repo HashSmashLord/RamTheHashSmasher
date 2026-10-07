@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createSandboxManager, sandboxPolicy } from '../server/lib/sandbox.js';
-import { createSlotManager, LOOP_THINKING_SYSTEM, LOOP_DRAFT_SYSTEM, LOOP_VERIFY_SYSTEM } from '../server/lib/slots.js';
+import { createSlotManager, LOOP_THINKING_SYSTEM, LOOP_DRAFT_SYSTEM, LOOP_VERIFY_SYSTEM, emptyReplyNote } from '../server/lib/slots.js';
 import { createMockLlmProvider } from '../server/lib/llm.js';
 import { createStore } from '../server/store.js';
 import { loadConfig } from '../server/config.js';
@@ -17,6 +17,7 @@ import {
   peerSubmissionsUrl, peerSubmissionsCommand, parsePeerSubmissions, browsePeerSubmissions, PARSE_PEERS_PY,
   MAX_IDLE_MS, MAX_TYPED_CHARS, MAX_PEER_RESULTS, HASHSMASH_GITHUB_REPO,
   eprintIdFrom, eprintPaperUrl, parseEprintPaperPage, paperPageCommand, readPaper, desktopActivity,
+  LOOP_THINKING_MAX_TOKENS, LOOP_DRAFT_MAX_TOKENS, LOOP_VERIFY_MAX_TOKENS, LOOP_REASONING,
 } from '../server/lib/sandbox-activity.js';
 import { readFileSync } from 'node:fs';
 import { realResearchTools, runExperiment, parseExperimentRequest } from '../server/lib/research-tools.js';
@@ -511,7 +512,8 @@ test('after the workbench, the loop advances the real status back to back, forev
   assert.match(r.llm.calls[1].prompt, /Target: SHA-256 reduced to 31 rounds/);
   assert.match(r.llm.calls[1].prompt, /recent activity, newest last: .*\[thinking\] Plan step 1/);
   assert.match(r.llm.calls[1].prompt, /no real measured result yet this session/);
-  assert.equal(r.llm.calls[1].maxTokens, 800);
+  assert.equal(r.llm.calls[1].maxTokens, LOOP_THINKING_MAX_TOKENS);
+  assert.deepEqual(r.llm.calls[1].reasoning, LOOP_REASONING);
   assert.equal(r.llm.calls[1].model, 'anthropic/claude-opus-5.5');
   assert.equal(r.m.activeLoopStatus().loops[0].thinking, 3);
   // A second, distinct honest activity: a terminal looks at this RAM's own
@@ -1231,4 +1233,174 @@ test('a draft citing an experiment this session never ran is rejected before the
   assert.equal(slot.feed.at(-1).type, 'pipeline-loop-draft-rejected');
   assert.match(slot.feed.at(-1).message, /CITED_PAPER_ID "EXP#7" does not match any real result/);
   assert.equal(runner.calls.length, 0);
+});
+
+// ---- 2026-10-07 live stall: reasoning models spending the whole output budget before answering ----
+//
+// A fake provider that behaves the way OpenRouter's reasoning models were
+// measured to behave on the real live prompt: hidden reasoning counts against
+// max_tokens, and a call that runs out while still reasoning comes back with
+// finish_reason "length" and EMPTY content. Reasoning needs (tokens) are the
+// real measured figures: deepseek-v4-pro ignores reasoning.effort (about 950
+// on a first step, about 3000 once an experiment result is in the grounding);
+// qwen3.8-max-prime honors it (2700 / 7200 at default effort, 400 / 950 at low).
+
+const PROFILES = {
+  'deepseek-like': (req) => (/Your own real experiments this session/.test(req.prompt) ? 2978 : 951),
+  'qwen-like': (req) => {
+    const post = /Your own real experiments this session/.test(req.prompt);
+    return req.reasoning?.effort === 'low' ? (post ? 936 : 371) : (post ? 7220 : 2731);
+  },
+};
+
+function fakeReasoningLlm(profile, answers = []) {
+  const calls = [];
+  const need = PROFILES[profile];
+  return {
+    calls,
+    provider: {
+      kind: 'openrouter',
+      async complete(req) {
+        calls.push(req);
+        const maxTokens = req.maxTokens ?? 300;
+        const reasoning = need(req);
+        const usage = { promptTokens: 1280, completionTokens: Math.min(maxTokens, reasoning + 150), totalTokens: 0, costUsd: 0.001 };
+        if (reasoning >= maxTokens) {
+          return { text: '', mocked: false, model: req.model, usage, finishReason: 'length', reasoningTokens: maxTokens };
+        }
+        const text = answers.length ? answers.shift() : 'EXP#1 looked like a random function; I have no result to beat yet.\nEXPERIMENT: birthday bits=8 samples=256 seed=again';
+        return { text, mocked: false, model: req.model, usage, finishReason: 'stop', reasoningTokens: reasoning };
+      },
+    },
+  };
+}
+
+const FIRST_STEP = 'No measured result yet; test output bias on the exact target first.\nEXPERIMENT: differential at=60 xor=80 samples=512 seed=loop';
+
+for (const profile of Object.keys(PROFILES)) {
+  test(`regression (live stall, ${profile} model): the old 800-token thinking budget really did return empty once an experiment was in the grounding`, async () => {
+    // Reproduce the exact live trigger: run the loop for one real experiment,
+    // then replay its real post-experiment thinking request under the OLD config.
+    const llm = fakeReasoningLlm(profile, [FIRST_STEP]);
+    const r = rig({ llm, researchTools: realResearchTools });
+    r.m.setSlotCount(1);
+    await r.boot();
+    for (let i = 0; i < 5; i++) await r.step(); // thinking + EXP#1, ..., the next thinking step
+    const postExperiment = llm.calls.find((c) => /Your own real experiments this session/.test(c.prompt));
+    assert.ok(postExperiment, 'the next thinking prompt carries the real experiment result');
+    const old = await llm.provider.complete({ ...postExperiment, maxTokens: 800, reasoning: undefined });
+    assert.equal(old.text, '', 'the stall reproduces under the old budget');
+    assert.equal(old.finishReason, 'length');
+  });
+
+  test(`regression (live stall, ${profile} model): with the fixed budget the loop keeps thinking and keeps using its tools, cycle after cycle`, async () => {
+    const llm = fakeReasoningLlm(profile, [FIRST_STEP]);
+    const r = rig({ llm, researchTools: realResearchTools });
+    r.m.setSlotCount(1);
+    await r.boot();
+    for (let i = 0; i < 16; i++) await r.step(); // four full research cycles
+    const feed = r.m.getSlot('slot-0').feed;
+    const thinking = feed.filter((f) => f.type === 'thinking');
+    assert.equal(thinking.length, 4);
+    assert.equal(thinking.filter((f) => /returned no text|output budget/.test(f.message)).length, 0, 'no empty thinking step at all');
+    assert.equal(feed.filter((f) => f.type === 'research-experiment').length, 4, 'every step\'s EXPERIMENT line was actually run');
+    for (const c of llm.calls) {
+      assert.equal(c.maxTokens, LOOP_THINKING_MAX_TOKENS);
+      assert.deepEqual(c.reasoning, LOOP_REASONING);
+    }
+    assert.equal(r.m.activeLoopStatus().loops[0].emptyThinking, 0);
+  });
+}
+
+test('the loop budgets leave real headroom over the largest reasoning need measured live, for all three loop calls', () => {
+  const worst = 2978; // deepseek-v4-pro, post-experiment prompt, effort ignored
+  for (const budget of [LOOP_THINKING_MAX_TOKENS, LOOP_DRAFT_MAX_TOKENS, LOOP_VERIFY_MAX_TOKENS]) {
+    assert.ok(budget >= worst * 1.5, `budget ${budget} must leave headroom over ${worst} reasoning tokens plus the answer`);
+  }
+  assert.deepEqual(LOOP_REASONING, { effort: 'low' });
+});
+
+test('a thinking reply that is still empty says plainly WHY (budget used reasoning), is counted, and runs nothing', async () => {
+  const llm = { calls: [], provider: { kind: 'openrouter', async complete(req) { llm.calls.push(req); return { text: '', mocked: false, model: req.model, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2, costUsd: 0 }, finishReason: 'length', reasoningTokens: req.maxTokens }; } } };
+  const r = rig({ llm, researchTools: realResearchTools });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step();
+  const thinking = r.m.getSlot('slot-0').feed.filter((f) => f.type === 'thinking');
+  assert.equal(thinking.length, 1);
+  assert.equal(thinking[0].message, emptyReplyNote({ finishReason: 'length', reasoningTokens: LOOP_THINKING_MAX_TOKENS }, LOOP_THINKING_MAX_TOKENS));
+  assert.match(thinking[0].message, /used its whole 6000-token output budget \(6000 of them on hidden reasoning\) before writing any answer/);
+  assert.equal(r.m.activeLoopStatus().loops[0].emptyThinking, 1);
+  assert.equal(r.m.getSlot('slot-0').feed.some((f) => f.type.startsWith('research-')), false);
+  // Without a reported reason, the old neutral wording stays.
+  assert.equal(emptyReplyNote({ finishReason: 'stop' }, 6000), '(the model returned no text for this step)');
+});
+
+test('parseThinking on a cut-off reply never acts on the incomplete last line, but keeps the prose that was written', () => {
+  // A complete signal line before the cut still counts; the half-written one after it never does.
+  const cut = parseThinking('I will check the paper and run a probe.\nSEARCH: keccak five round collision\nREAD: 2026/10', { truncated: true });
+  assert.equal(cut.search, 'keccak five round collision');
+  assert.equal(cut.read, null, 'a cut-off READ id (2026/10 of 2026/1080) must not fetch a different paper');
+  assert.equal(cut.note, 'I will check the paper and run a probe.');
+  assert.equal(parseThinking('Next I will test.\nEXPERIMENT: birthday bits=1', { truncated: true }).experiment, null);
+  // Prose cut off mid-sentence stays in the note.
+  assert.equal(parseThinking('EXP#1 looked random, so next I will', { truncated: true }).note, 'EXP#1 looked random, so next I will');
+  // Not truncated: unchanged behaviour, the last line is a real signal.
+  assert.equal(parseThinking('Read it.\nREAD: 2026/1080').read, '2026/1080');
+});
+
+test('a cut-off thinking reply is labeled as cut off in the feed and its cut-off tool line is not run', async () => {
+  const llm = { calls: [], provider: { kind: 'openrouter', async complete(req) { llm.calls.push(req); return { text: 'Probing bias next.\nEXPERIMENT: differential at=60 xor=8', mocked: false, model: req.model, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2, costUsd: 0 }, finishReason: 'length' }; } } };
+  const r = rig({ llm, researchTools: realResearchTools });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step();
+  const feed = r.m.getSlot('slot-0').feed;
+  const thinking = feed.find((f) => f.type === 'thinking');
+  assert.match(thinking.message, /^Probing bias next\. \[this answer was cut off at the 6000-token limit; a tool line cut off with it was not run\]$/);
+  assert.equal(feed.some((f) => f.type.startsWith('research-')), false);
+});
+
+test('a drafting call cut off at the token limit is reported as incomplete, never as an honest "no" and never as a draft', async () => {
+  const runner = stubPipelineRunner();
+  const answers = ['Trying a tighter filter.\nSEARCH: sha256 reduced round collision\nDRAFT: I might have something.'];
+  const llm = { calls: [], provider: { kind: 'openrouter', async complete(req) {
+    llm.calls.push(req);
+    if (req.system === LOOP_DRAFT_SYSTEM) return { text: VALID_DRAFT_ANSWER.split('\n').slice(0, -1).join('\n') + '\nLIMITATIONS: No coll', mocked: false, model: req.model, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2, costUsd: 0 }, finishReason: 'length' };
+    return { text: answers.shift() ?? 'Next.', mocked: false, model: req.model, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2, costUsd: 0 }, finishReason: 'stop' };
+  } } };
+  const r = rig({ pipelineRunner: runner, llm, activeLoop: { browseEvery: 1 } });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); await r.step(); await r.step();
+  const draftCall = llm.calls.find((c) => c.system === LOOP_DRAFT_SYSTEM);
+  assert.equal(draftCall.maxTokens, LOOP_DRAFT_MAX_TOKENS);
+  assert.deepEqual(draftCall.reasoning, LOOP_REASONING);
+  const feed = r.m.getSlot('slot-0').feed;
+  assert.ok(feed.some((f) => f.type === 'pipeline-loop-draft-skipped' && /cut off at the 6000-token limit/.test(f.message)));
+  assert.equal(feed.some((f) => f.type === 'pipeline-loop-draft-declined'), false);
+  assert.equal(feed.some((f) => f.type === 'pipeline-loop-draft-attempt'), false);
+  assert.equal(runner.calls.length, 1);
+  assert.equal(runner.calls[0].loopDraft, null, 'the ordinary labeled harness draft ran, not a cut-off claim');
+});
+
+test('an adversarial verdict cut off at the token limit is never a pass, even if it starts "VERDICT: PASS"', async () => {
+  const runner = stubPipelineRunner();
+  const answers = ['Trying a tighter filter.\nSEARCH: sha256 reduced round collision\nDRAFT: I might have something.', VALID_DRAFT_ANSWER];
+  const llm = { calls: [], provider: { kind: 'openrouter', async complete(req) {
+    llm.calls.push(req);
+    const usage = { promptTokens: 1, completionTokens: 1, totalTokens: 2, costUsd: 0 };
+    if (req.system === LOOP_VERIFY_SYSTEM) return { text: 'VERDICT: PASS\nREASON: The extrapolation', mocked: false, model: req.model, usage, finishReason: 'length' };
+    return { text: answers.shift() ?? 'Next.', mocked: false, model: req.model, usage, finishReason: 'stop' };
+  } } };
+  const r = rig({ pipelineRunner: runner, llm, activeLoop: { browseEvery: 1 } });
+  r.m.setSlotCount(1);
+  await r.boot();
+  await r.step(); await r.step(); await r.step();
+  const verifyCall = llm.calls.find((c) => c.system === LOOP_VERIFY_SYSTEM);
+  assert.equal(verifyCall.maxTokens, LOOP_VERIFY_MAX_TOKENS);
+  assert.deepEqual(verifyCall.reasoning, LOOP_REASONING);
+  const draft = runner.calls[0].loopDraft;
+  assert.equal(draft.verification.pass, false);
+  assert.match(draft.verification.reason, /cut off at the 6000-token limit; an incomplete review is never treated as a pass/);
 });

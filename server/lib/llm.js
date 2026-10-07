@@ -34,7 +34,7 @@
 /**
  * @typedef {object} LlmProvider
  * @property {'mock'|'openrouter'|string} kind
- * @property {(req: { system?: string, prompt: string, model?: string, maxTokens?: number, reasoning?: object }) => Promise<{ text: string, mocked: boolean, model: string|null, usage: LlmUsage }>} complete
+ * @property {(req: { system?: string, prompt: string, model?: string, maxTokens?: number, reasoning?: object }) => Promise<{ text: string, mocked: boolean, model: string|null, usage: LlmUsage, finishReason: string|null, reasoningTokens?: number|null }>} complete
  */
 
 /** Usage shape for a call that made no real request (mock mode, or a provider that reports none). */
@@ -61,6 +61,7 @@ export function createMockLlmProvider() {
         mocked: true,
         model: model || null,
         usage: zeroUsage(),
+        finishReason: 'stop',
       };
     },
   };
@@ -104,6 +105,13 @@ export function createOpenRouterProvider({ apiKey, model: defaultModel = 'openro
       }
       const data = await res.json();
       const text = data?.choices?.[0]?.message?.content ?? '';
+      // Why generation stopped ("stop", or "length" when max_tokens ran out).
+      // Kept rather than dropped: on a reasoning model, hidden reasoning counts
+      // against max_tokens, and "length" with an empty `text` means the model
+      // spent the whole budget reasoning and never wrote an answer. Without
+      // this a caller cannot tell that apart from a model that chose to say
+      // nothing (the 2026-10-07 live loop stall, see sandbox-activity.js).
+      const finishReason = data?.choices?.[0]?.finish_reason ?? null;
       // OpenRouter always includes `usage` on the completed response (no
       // request flag needed): prompt/completion/total tokens by the model's
       // own tokenizer, and `cost` in USD actually charged to the account. A
@@ -117,7 +125,10 @@ export function createOpenRouterProvider({ apiKey, model: defaultModel = 'openro
         totalTokens: Number.isFinite(u?.total_tokens) ? u.total_tokens : 0,
         costUsd: Number.isFinite(u?.cost) ? u.cost : null,
       };
-      return { text, mocked: false, model: useModel, usage };
+      // Hidden reasoning tokens (already inside completionTokens), when reported.
+      const rt = u?.completion_tokens_details?.reasoning_tokens;
+      const reasoningTokens = Number.isFinite(rt) ? rt : null;
+      return { text, mocked: false, model: useModel, usage, finishReason, reasoningTokens };
     },
   };
 }
