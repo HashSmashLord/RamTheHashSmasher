@@ -53,7 +53,14 @@ export const ACTIVE_TRACKS = [
     rounds: 6,
     lane: 'exploratory',
     editablePath: 'lanes/exploratory/candidates/sha3-256-r6',
-    defaultModel: 'z-ai/glm-5.3-prime',
+    // Swapped from z-ai/glm-5.3-prime 2026-10-07: confirmed broken on this harness across
+    // every epoch a research-guidance review ever checked it -- zero browse/read/experiment/
+    // peer-review calls, ever; its own "thinking" entries are one- or two-word fragments
+    // ("Next", "I", "No"), never a complete thought, so it never reaches a tool call at all.
+    // gpt-6.1-sol-pro is the roster's most reliable performer on this exact harness (0%
+    // empty-thinking in the same live review that caught glm-5.3-prime's failure), already
+    // proven working on sha3-256-r5 -- reused here rather than guessing an unproven slug.
+    defaultModel: 'openai/gpt-6.1-sol-pro',
   },
   {
     track: 'blake3-r1-exploratory',

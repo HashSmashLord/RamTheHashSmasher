@@ -35,7 +35,7 @@ const EXPECTED_ROSTER = [
   ['sha256-r31-exploratory', 'anthropic/claude-opus-5.5'],
   ['sha256-r32-exploratory', 'anthropic/claude-fable-5.1'],
   ['sha3-256-r5-exploratory', 'openai/gpt-6.1-sol-pro'],
-  ['sha3-256-r6-exploratory', 'z-ai/glm-5.3-prime'],
+  ['sha3-256-r6-exploratory', 'openai/gpt-6.1-sol-pro'],
   ['blake3-r1-exploratory', 'deepseek/deepseek-v4-pro'],
   ['blake3-r2-exploratory', 'qwen/qwen3.8-max-prime'],
 ];
