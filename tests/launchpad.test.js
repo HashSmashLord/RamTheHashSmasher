@@ -92,9 +92,9 @@ test('every approach in the catalog has a human label', () => {
   assert.deepEqual(Object.keys(APPROACH_LABELS).sort(), [...APPROACHES].sort());
 });
 
-test('model: only the six verified roster slugs', () => {
-  assert.deepEqual([...LAUNCHPAD_MODELS], DEFAULT_ROSTER.map((r) => r.model));
-  assert.equal(LAUNCHPAD_MODELS.length, 6);
+test('model: only the roster\'s own verified slugs, deduped -- six roster seats, five unique slugs since 2026-10-07 (sha3-256-r6 swapped onto gpt-6.1-sol-pro, already sha3-256-r5\'s model)', () => {
+  assert.deepEqual([...LAUNCHPAD_MODELS], [...new Set(DEFAULT_ROSTER.map((r) => r.model))]);
+  assert.equal(LAUNCHPAD_MODELS.length, 5);
   for (const m of LAUNCHPAD_MODELS) assert.equal(validateModel(m).ok, true);
   for (const bad of ['openrouter/auto', 'anthropic/claude-opus-5', 'ANTHROPIC/CLAUDE-OPUS-5.5', '', null, ['anthropic/claude-opus-5.5']]) {
     assert.equal(validateModel(bad).ok, false, String(bad));

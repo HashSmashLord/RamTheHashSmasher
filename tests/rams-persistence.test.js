@@ -285,7 +285,7 @@ test('create -> confirm -> simulated restart -> still visible on GET /api/launch
   const createRes = await first.postJson('/api/launchpad/rams', {
     owner: wallet(), hashFamily: 'SHA3-256', track: 'sha3-256-r6-exploratory', approach: 'literature-replication',
     approachDetail: 'Adapt the known 6-round Keccak collision attack to the exploratory cost model.',
-    model: 'z-ai/glm-5.3-prime', tokenName: 'Keccak Knocker', tokenSymbol: 'KECK', image: TEST_IMAGE_ID,
+    model: 'openai/gpt-6.1-sol-pro', tokenName: 'Keccak Knocker', tokenSymbol: 'KECK', image: TEST_IMAGE_ID,
   });
   assert.equal(createRes.status, 201);
   const ram = (await createRes.json()).ram;

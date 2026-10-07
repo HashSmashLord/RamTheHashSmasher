@@ -42,12 +42,20 @@ export const APPROACHES = Object.freeze([
   Object.freeze({ id: 'trail-search-heuristics', label: 'New search heuristics for differential trails' }),
 ]);
 
-/** The six OpenRouter model slugs a RAM can run (the launch roster's models). */
+/**
+ * The OpenRouter model slugs a RAM can run (the launch roster's models, one per
+ * track, in roster order -- gpt-6.1-sol-pro appears twice since 2026-10-07: the
+ * sha3-256-r6 seat was swapped off z-ai/glm-5.3-prime, confirmed broken on this
+ * harness (server/lib/targets.js). Duplicate entries are harmless for the
+ * MODELS.includes() check this drives; server/lib/launchpad.js's own
+ * LAUNCHPAD_MODELS (derived straight from the real roster) is the source of
+ * truth this list must keep matching.
+ */
 export const MODELS = Object.freeze([
   'anthropic/claude-opus-5.5',
   'anthropic/claude-fable-5.1',
   'openai/gpt-6.1-sol-pro',
-  'z-ai/glm-5.3-prime',
+  'openai/gpt-6.1-sol-pro',
   'deepseek/deepseek-v4-pro',
   'qwen/qwen3.8-max-prime',
 ]);
@@ -151,7 +159,11 @@ export function validateApproach(id, detail) {
 /** One of the six model slugs, exactly. */
 export function validateModel(slug) {
   const errors = {};
-  if (typeof slug !== 'string' || !MODELS.includes(slug)) errors.model = 'Choose one of the six models.';
+  // Five distinct slugs, not six: gpt-6.1-sol-pro now covers two roster seats (sha3-256-r5 and
+  // sha3-256-r6, since the latter's original model was swapped off a confirmed-broken one,
+  // 2026-10-07) -- MODELS itself still has 6 entries (one per seat) so .includes() stays simple,
+  // but the user-facing count has to say what's actually true.
+  if (typeof slug !== 'string' || !MODELS.includes(slug)) errors.model = `Choose one of the roster's models (${new Set(MODELS).size} to choose from).`;
   return result(errors);
 }
 

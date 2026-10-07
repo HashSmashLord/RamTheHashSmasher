@@ -20,12 +20,12 @@ test('store with no RAMHERD_LLM_MODEL: six slots get the six roster models, in o
     'anthropic/claude-opus-5.5',
     'anthropic/claude-fable-5.1',
     'openai/gpt-6.1-sol-pro',
-    'z-ai/glm-5.3-prime',
+    'openai/gpt-6.1-sol-pro',
     'deepseek/deepseek-v4-pro',
     'qwen/qwen3.8-max-prime',
   ]);
   const after = await store.slotManager.advance(slots[3].id);
-  assert.match(after.feed.at(-1).message, /\[mock\].*z-ai\/glm-5\.3-prime/);
+  assert.match(after.feed.at(-1).message, /\[mock\].*openai\/gpt-6\.1-sol-pro/);
 });
 
 test('store with RAMHERD_LLM_MODEL set: every slot uses the override, and it stays mock without the live gate', async () => {

@@ -266,7 +266,7 @@ const ROSTER_MODELS = [
   'anthropic/claude-opus-5.5',
   'anthropic/claude-fable-5.1',
   'openai/gpt-6.1-sol-pro',
-  'z-ai/glm-5.3-prime',
+  'openai/gpt-6.1-sol-pro',
   'deepseek/deepseek-v4-pro',
   'qwen/qwen3.8-max-prime',
 ];

@@ -294,7 +294,7 @@ function rawBody() {
     hashFamily: 'SHA3-256',
     approach: 'literature-replication',
     approachDetail: 'Adapt the known 6-round Keccak collision attack to the exploratory cost model.',
-    model: 'z-ai/glm-5.3-prime',
+    model: 'openai/gpt-6.1-sol-pro',
     tokenName: 'Keccak Knocker',
     tokenSymbol: 'KECK',
   };

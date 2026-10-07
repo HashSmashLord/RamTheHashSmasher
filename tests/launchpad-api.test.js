@@ -63,7 +63,7 @@ const body = (over = {}) => ({
   track: 'sha3-256-r6-exploratory',
   approach: 'literature-replication',
   approachDetail: 'Adapt the known 6-round Keccak collision attack to the exploratory cost model.',
-  model: 'z-ai/glm-5.3-prime',
+  model: 'openai/gpt-6.1-sol-pro',
   tokenName: 'Keccak Knocker',
   tokenSymbol: 'KECK',
   image: TEST_IMAGE_ID,
@@ -214,7 +214,7 @@ test('admin: confirm needs the token and brief approval; then an owned slot runs
   const owned = slots.find((x) => x.id === active.slotId);
   assert.equal(owned.kind, 'owned');
   assert.equal(owned.owner, ram.owner);
-  assert.equal(owned.assignment.model, 'z-ai/glm-5.3-prime');
+  assert.equal(owned.assignment.model, 'openai/gpt-6.1-sol-pro');
 
   // A budget-driven reallocation (0 fees -> 0 roster slots) leaves it running.
   await s.postJson('/api/admin/reallocate', {}, { headers: s.adminHeaders() });
